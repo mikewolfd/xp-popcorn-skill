@@ -149,6 +149,19 @@ Task 4: "Run full test suite and verify no regressions" — blocked by 3
 
 Include enough context in each task description for a teammate to execute it independently. State what to do, why it matters, and what success looks like.
 
+**When to include a separate verification task:**
+- A different agent runs verification than wrote the code (fresh eyes)
+- Integration or E2E tests that weren't part of the unit test task
+- Verification requires a different environment (staging, browser, device)
+
+**When to fold verification into the last task's exit criteria:**
+- Same agent would re-run the same tests
+- The test-writing task already runs all tests
+- The project is small enough that "run tests" takes seconds
+
+Don't create thin verification tasks just to have 4 tasks. 3 well-scoped tasks
+are better than 4 where the last one is "run tests again."
+
 ### 4. Spawn Teammates
 
 Run the "Discover Native Agents" procedure from the Role Roster section. Then launch 2-3 teammates using the Agent tool with `team_name: "popcorn-xp"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
@@ -212,6 +225,10 @@ You receive messages from teammates automatically. Your role during execution:
   - **WARNING findings**: relay as SMELLs to the driver
   - **NITs/OBSERVATIONs**: note in LOG.md, don't interrupt the driver
   - The code-reviewer never messages teammates directly — you are the relay.
+  **Note:** The Agent tool may auto-inherit team_name from the lead's session. The
+  code-reviewer functions correctly despite this — it does not use SendMessage,
+  TaskUpdate, or team coordination tools. Its independence is behavioral (enforced
+  by its prompt), not structural.
 - **Do not do the work yourself.** You are the lead, not a driver. If you find yourself wanting to read a file or write code, delegate it to a teammate instead.
 
 ### 6. Verify and Close
@@ -222,12 +239,13 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
 2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
 3. **Retrospective (mandatory).** Before presenting results to the user, conduct the retro. Ask each active teammate: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses. If teammates have already shut down or are unresponsive, conduct the retro yourself from your observations as lead — you saw every message and every idle notification.
 4. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
-5. Shut down teammates. Send each a shutdown_request individually (broadcast does not support structured messages):
+5. Shut down teammates. For each teammate, send a plain-text heads-up followed by
+   the structured request — the plain text primes them to accept:
    ```
+   SendMessage(to: "craftsman", summary: "session over", message: "Session is over. Approve the shutdown request that follows.")
    SendMessage(to: "craftsman", message: {type: "shutdown_request"})
-   SendMessage(to: "expert", message: {type: "shutdown_request"})
    ```
-   If a teammate cycles idle without acknowledging the shutdown after 2 attempts, send a plain-text message telling them the session is over and to approve the pending shutdown request. If they still don't respond after a third attempt, move on — they will be cleaned up by TeamDelete.
+   If a teammate doesn't acknowledge after 2 attempts, move on — TeamDelete cleans up.
 6. After teammates shut down (or after 3 failed shutdown attempts):
    ```
    TeamDelete
