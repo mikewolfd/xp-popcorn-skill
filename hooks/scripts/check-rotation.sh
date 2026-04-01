@@ -7,7 +7,21 @@ set -euo pipefail
 # before they let a single agent drive the entire session.
 # No-op when no active popcorn-xp session or fewer than 2 completed tasks.
 
-TASKS_DIR="${HOME}/.claude/tasks/popcorn-xp"
+# Read hook input from stdin — TaskCompleted provides team_name
+INPUT=$(cat)
+TEAM_NAME=$(echo "$INPUT" | jq -r '.team_name // empty' 2>/dev/null)
+
+# If no team_name in hook input, scan for the most recently modified tasks directory
+if [ -z "$TEAM_NAME" ]; then
+  TASKS_BASE="${HOME}/.claude/tasks"
+  [ ! -d "$TASKS_BASE" ] && exit 0
+  TASKS_DIR=$(ls -td "$TASKS_BASE"/*/ 2>/dev/null | head -1)
+  [ -z "$TASKS_DIR" ] && exit 0
+  # Remove trailing slash
+  TASKS_DIR="${TASKS_DIR%/}"
+else
+  TASKS_DIR="${HOME}/.claude/tasks/${TEAM_NAME}"
+fi
 
 [ ! -d "$TASKS_DIR" ] && exit 0
 

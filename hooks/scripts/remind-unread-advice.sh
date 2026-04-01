@@ -30,6 +30,6 @@ summary=""
 [ "$steers" -gt 0 ] && { [ -n "$summary" ] && summary="$summary, "; summary="${summary}${steers} STEER(s)"; }
 [ "$fyis" -gt 0 ] && { [ -n "$summary" ] && summary="$summary, "; summary="${summary}${fyis} FYI(s)"; }
 
-echo "{\"systemMessage\":\"Popcorn XP: ${total} open advice item(s) in .popcorn-xp/ADVICE.md (${summary}). Read the file and resolve items before your next action — OBJECTIONs and SMELLs must be resolved before task completion.\"}"
+echo "{\"systemMessage\":\"Popcorn XP: ${total} open advice item(s) in .popcorn-xp/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work.\"}"
 
 exit 0
