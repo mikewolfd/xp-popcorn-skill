@@ -49,9 +49,69 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 
 The code-reviewer is **not** part of the team. Do not spawn it with `team_name`. The lead launches it independently via the Agent tool at review checkpoints (see Monitor section) and relays its findings to the team.
 
-**Checking for local overrides:** Before spawning teammates, check if the project has custom agents in `.claude/agents/` that overlap with the popcorn-xp roles (e.g., a project-specific `test-engineer` or `code-scout`). Prefer local agents when they exist — they carry project-specific context. Use popcorn-xp agents as defaults when no local override exists.
-
 The lens shapes how an agent thinks, not what it's allowed to do. Any teammate can drive, navigate, write tests, or review code. When rotating, prefer giving the driver role to whoever was just navigating — they carry context from watching the code emerge.
+
+### Discover Native Agents
+
+Before selecting from the popcorn-xp roster, scan the operating repo and installed plugins for agents that align with the personas you need. Native agents carry project-specific context, conventions, and tool configurations that popcorn-xp defaults lack — prefer them when the fit is clear.
+
+**Step 1 — Scan the repo for local agent definitions:**
+
+```
+Glob("{project}/.claude/agents/*.md")
+Glob("{project}/agents/*.md")
+Glob("{project}/.claude-plugin/agents/*.md")
+```
+
+Read the frontmatter (`name`, `description`) of each discovered file. These are custom agents the project has defined.
+
+**Step 2 — Check installed plugin agents:**
+
+Review the available `subagent_type` values from the system (these appear in the Agent tool's agent type list). Installed plugins register agents like `test-engineer`, `code-scout`, `flutter-architect`, `elixir-phoenix-social`, etc. These are already loaded and ready to use.
+
+**Step 3 — Map to popcorn-xp personas:**
+
+For each discovered agent, match it to the popcorn-xp persona whose lens it best serves:
+
+| If the agent's purpose is... | It aligns with... |
+|---|---|
+| Exploring codebases, mapping scope, finding constraints | **scout** |
+| Implementing features, refactoring, clean code | **craftsman** |
+| Correctness analysis, edge cases, invariants, auditing | **expert** |
+| Writing/designing tests, running verification | **tester** |
+| API design, service boundaries, contracts | **service-designer** |
+| UI/UX design, visual patterns, accessibility | **visual-designer** |
+| User flow validation, acceptance testing, E2E | **qa** |
+| Requirements, prioritization, scope decisions | **product-manager** |
+| Independent code review, evidence-based auditing | **code-reviewer** |
+
+A native agent doesn't need to match perfectly — it needs to serve the same lens. A `flutter-architect` can fill the craftsman role for a Flutter project. An `elixir-phoenix-social` can fill the expert role for an Elixir service. A `test-engineer` is a direct replacement for tester.
+
+**Step 4 — Select the roster:**
+
+For each persona you need in the session:
+1. If a native agent clearly aligns → use it (pass its `subagent_type`)
+2. If multiple native agents compete for the same persona → pick the one whose description most closely matches the task at hand
+3. If no native agent aligns → fall back to the popcorn-xp default
+
+**How to spawn a native agent as a teammate:**
+
+Use the native agent's `subagent_type` but include the popcorn-xp protocol in the prompt. The native agent definition provides "how I think about this domain"; the protocol provides "how I collaborate in a pair session."
+
+```
+Agent(
+  name: "test-engineer",
+  subagent_type: "test-engineer",
+  team_name: "popcorn-xp",
+  prompt: "<driver/navigator/advisor template from protocol.md>
+           Role: test-engineer (filling tester persona)
+           Lens: <use the native agent's own description as the lens>"
+)
+```
+
+The native agent's behavioral instructions (from its definition file) load automatically via `subagent_type`. Your prompt adds the session protocol on top — the agent gets both its domain expertise AND the collaboration structure.
+
+**What to record:** When writing the team composition in Step 4 of the Workflow, note which personas were filled by native agents and why. This helps the retro assess whether the native agents performed better than defaults would have.
 
 ## Workflow
 
@@ -91,9 +151,11 @@ Include enough context in each task description for a teammate to execute it ind
 
 ### 4. Spawn Teammates
 
-Launch 2-3 teammates using the Agent tool with `team_name: "popcorn-xp"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
+Run the "Discover Native Agents" procedure from the Role Roster section. Then launch 2-3 teammates using the Agent tool with `team_name: "popcorn-xp"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
 
-**Driver teammate** — the role best suited to the first task:
+For each persona slot, use the native agent if one was discovered, otherwise fall back to the popcorn-xp default. When using a native agent, pass its `subagent_type` so its domain-specific instructions load automatically.
+
+**Example: all defaults (no native agents found)**
 
 ```
 Agent(
@@ -103,24 +165,33 @@ Agent(
 )
 ```
 
-**Navigator teammate** — the role that provides the most useful counter-lens:
+**Example: native agent filling a persona slot**
 
 ```
 Agent(
-  name: "expert",
+  name: "test-engineer",
+  subagent_type: "test-engineer",
   team_name: "popcorn-xp",
-  prompt: "<navigator coordinator prompt from protocol.md>"
+  prompt: "<driver coordinator prompt from protocol.md>
+           Role: test-engineer (filling tester persona)
+           Lens: <native agent's description>"
 )
 ```
 
-**Advisor teammate** (optional) — when a third perspective adds value:
+**Example: mixed team (native + defaults)**
 
 ```
-Agent(
-  name: "tester",
-  team_name: "popcorn-xp",
-  prompt: "<advisor coordinator prompt from protocol.md>"
-)
+# Native flutter-architect fills craftsman for a Flutter project
+Agent(name: "flutter-architect", subagent_type: "flutter-architect",
+  team_name: "popcorn-xp", prompt: "<driver prompt, lens from native agent>")
+
+# No native expert found — use default
+Agent(name: "expert", team_name: "popcorn-xp",
+  prompt: "<navigator prompt from protocol.md>")
+
+# Native test-engineer fills tester
+Agent(name: "test-engineer", subagent_type: "test-engineer",
+  team_name: "popcorn-xp", prompt: "<advisor prompt, lens from native agent>")
 ```
 
 Assign the first task to the driver via TaskUpdate.
@@ -176,6 +247,7 @@ Write `.popcorn-xp/RETRO.md` after every session. This file accumulates across s
 - Driver(s): {who drove which tasks}
 - Navigator(s): {who navigated which tasks}
 - Advisor(s): {if any}
+- Native agents used: {list any native agents that filled persona slots, e.g., "test-engineer → tester, flutter-architect → craftsman" — or "none" if all defaults}
 
 ### What Worked
 - {concrete observation — e.g., "rotation after task 2 gave the expert context they used to catch OBJ-3-01"}

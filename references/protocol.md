@@ -418,6 +418,8 @@ For most coding tasks, start with two agents:
 
 A third agent (`tester`) can be added when verification tasks appear on the TaskList.
 
+**Native agent substitution:** These defaults apply when no native agents were discovered. If the lead's discovery step found native agents that align with these personas (e.g., a project-specific `flutter-architect` for craftsman, or a `test-engineer` for tester), use those instead. The persona role (driver/navigator/advisor) stays the same — only the agent filling it changes. See the "Discover Native Agents" section in SKILL.md.
+
 **Rotation rule:** When the first task completes, swap roles. The navigator becomes the driver for the next task — they've been watching the code emerge and carry context. The previous driver becomes the navigator — they know what they did and can catch misunderstandings. Don't assign tasks to the "best-fit" lens. The expert who navigated the implementation should drive the tests. The craftsman who drove the implementation should navigate the hardening. Rotation is for knowledge sharing. **At least one rotation is mandatory per session.** A session where the same agent drives every task is a solo session with an expensive spectator — the lead should intervene before that happens.
 
 ## Integration Notes
