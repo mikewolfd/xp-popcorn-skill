@@ -1,29 +1,15 @@
 ---
 name: popcorn-xp
-description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Runs a short-turn XP-style collaboration where the main agent orchestrates 3-4 subagents with distinct lenses, relays findings between rounds, and integrates the final code and verification.
+description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Launches an Agent Teams pair-programming session where autonomous teammates coordinate through direct messaging, typed advice with blocking objections, and role rotation.
 ---
 
 # Popcorn XP
 
-Run a small team around one coding task. Preserve the XP idea of frequent handoffs and different perspectives, but adapt it to the current agent's native delegation model:
+Launch an XP pair-programming session. You (the lead) set up the team and step back. Teammates pair-program directly with each other via SendMessage. One driver edits, one navigator steers, they swap roles between tasks. Advice has teeth — OBJECTIONs block task completion.
 
-- The main agent owns integration, testing, and the user-facing thread.
-- Subagents explore, review, design tests, and optionally attempt bounded patches.
-- Collaboration happens through short rounds, relayed summaries, and shared session notes.
+## Trigger
 
-## XP Shape
-
-Model each round like XP pairing:
-
-- one active driver edits
-- one active navigator steers in real time
-- any additional agents advise briefly without becoming extra drivers
-- goals stay small enough that rotation is normal
-- the team keeps WIP low and collectively owns the code
-
-## Use Only On Explicit Multi-Agent Requests
-
-Trigger this skill when the user explicitly asks for a team-style workflow, for example:
+Activate when the user explicitly asks for a team-style workflow:
 
 - "pair program on this"
 - "run an XP session"
@@ -31,127 +17,218 @@ Trigger this skill when the user explicitly asks for a team-style workflow, for 
 - "let a team of agents work this"
 - "popcorn this task"
 
-Do not use this skill for ordinary single-agent coding.
+Do not activate for ordinary single-agent coding.
 
 ## Role Roster
 
-Prefer 3 agents by default. Use 4 only when the task has enough surface area to justify it.
+The plugin ships with agent definitions in `agents/` that can be used as teammates. Pick 2-3 agents that match the task. Default to the core four for coding tasks; add specialists when the task calls for them.
 
-- `scout`: repo mapping, requirements, affected files, unknowns
-- `craftsman`: implementation shape, API boundaries, refactors, readability
-- `expert`: invariants, edge cases, correctness risks
-- `tester`: test plan, regression coverage, validation gaps
+**Core roles (coding tasks):**
 
-The role is the lens, not the limit. Any agent may inspect code, review, write tests, or suggest implementation details.
+| Agent | Lens | Model |
+|-------|------|-------|
+| `popcorn-xp:scout` | "Are we solving the right problem?" | sonnet |
+| `popcorn-xp:craftsman` | "Is this clean and readable?" | opus |
+| `popcorn-xp:expert` | "Does this actually work in edge cases?" | opus (has project memory) |
+| `popcorn-xp:tester` | "How will we prove this?" | opus |
+
+**Specialist roles (when needed):**
+
+| Agent | Lens | Model |
+|-------|------|-------|
+| `popcorn-xp:service-designer` | "Does the interface serve the experience — API to UI?" | sonnet |
+| `popcorn-xp:visual-designer` | "Does this look right and feel right?" | sonnet |
+| `popcorn-xp:qa` | "Does this work from the user's perspective?" | sonnet |
+| `popcorn-xp:product-manager` | "What problem are we solving, and is this the right way?" | sonnet |
+
+**Checking for local overrides:** Before spawning teammates, check if the project has custom agents in `.claude/agents/` that overlap with the popcorn-xp roles (e.g., a project-specific `test-engineer` or `code-scout`). Prefer local agents when they exist — they carry project-specific context. Use popcorn-xp agents as defaults when no local override exists.
+
+The lens shapes how an agent thinks, not what it's allowed to do. Any teammate can drive, navigate, write tests, or review code. When rotating, prefer giving the driver role to whoever was just navigating — they carry context from watching the code emerge.
 
 ## Workflow
 
-1. Inspect the repo yourself first.
-   - Read the relevant files locally before delegating.
-   - Decide the immediate local next step before spawning agents.
-   - Build a checklist with 3-6 concrete items.
+### 1. Understand the Task
 
-2. Create session files.
-   - Create `.popcorn-xp/CONTEXT.md`, `.popcorn-xp/LOCK.md`, `.popcorn-xp/LOG.md`, and `.popcorn-xp/ADVICE.md`.
-   - `CONTEXT.md` holds the task, roster, and checklist.
-   - `LOCK.md` is the source of truth for who is currently driving.
-   - `LOG.md` holds detailed execution history and progress checkpoints.
-   - `ADVICE.md` is the single place for steering input from non-driver agents.
-   - Treat `LOG.md` and `ADVICE.md` as append-only history.
-   - Mirror the current driver in `CONTEXT.md` and `ADVICE.md`, but treat `LOCK.md` as authoritative.
-   - If the host does not let subagents write shared files directly, have them return append-ready log or advice entries and mirror those entries into the files from the main thread.
+Before creating the team, understand the problem yourself. If you have file access, read the relevant code. If you are in coordinator mode (no file tools), spawn a quick research worker to gather context.
 
-3. Launch round 1 in parallel.
-   - Use the platform's native subagent or delegation mechanism.
-   - Start up to 4 subagents in one batch.
-   - Give each role a non-overlapping task and a concrete deliverable.
-   - Keep the first round focused on orientation, correctness risks, and test strategy.
+**Check for prior retros.** If `.popcorn-xp/RETRO.md` exists, read it. It contains process observations from previous sessions on this codebase — what worked, what didn't, what to change. Apply any relevant recommendations.
 
-4. Synthesize locally.
-   - Continue reading code while agents run.
-   - Merge their outputs into one concrete plan.
-   - Wait only on the result that blocks the next critical-path step.
+Build a mental model of:
+- What files are involved
+- What the user wants changed
+- What could go wrong
+- How to verify success
 
-5. Run popcorn rounds.
-   - Pick exactly one driver for each round.
-   - Pick one primary navigator for that round.
-   - Any additional agents act as lightweight reviewers or advisors, not extra drivers.
-   - Reuse the same agents if the platform supports follow-up messaging; otherwise launch a fresh short round with the latest state.
-   - Each round should be one small chunk with one immediate goal: inspect one risk, validate one assumption, draft one bounded change, or design one test slice.
-   - Before the driver starts, update `LOCK.md`, sync the mirrored current-driver sections in `CONTEXT.md` and `ADVICE.md`, then read the latest `LOG.md` and `ADVICE.md`.
-   - During the round, record enough detail in `LOG.md` that other agents can steer while the driver is working.
-   - During the round, re-read new entries in `ADVICE.md` after each checkpoint and before any major edit, test run, or handoff.
-   - Add a new checkpoint entry before any test run, before any major edit, and whenever the driver changes plan.
-   - Put all advice in `ADVICE.md`, not in scattered replies or mixed into the log, and give each advice entry a stable ID.
-   - Rotate the driver regularly across rounds when a different perspective is useful or when you want to spread knowledge.
-   - Keep WIP low: finish or hand off the current goal cleanly before opening another implementation thread.
-   - When the round ends, update `LOCK.md` to the next driver or mark the session done, then sync `CONTEXT.md` and `ADVICE.md`.
-   - Relay new state yourself. Do not assume subagents share live conversational state.
+Break the work into 3-6 concrete tasks.
 
-6. Integrate in the main thread.
-   - Apply the final code edits in the main workspace unless a delegated worker owns a clearly disjoint patch you can review and integrate safely.
-   - Never assign overlapping write ownership.
-   - Run the relevant tests yourself before finalizing.
+### 2. Create the Team
 
-7. Close the loop.
-   - Update `LOCK.md` to `done`.
-   - Sync the mirrored current-driver sections in `CONTEXT.md` and `ADVICE.md`.
-   - Add a final session summary to `LOG.md`.
-   - Summarize what each role found.
-   - Call out any unresolved risk or test gap.
-   - Mark advice items as resolved or still-open in `ADVICE.md` by advice ID.
-   - Close agents that are no longer needed.
+```
+TeamCreate "popcorn-xp"
+```
 
-## Good Round Sizes
+### 3. Create Tasks
 
-- Identify touched modules and likely test files
-- Check one invariant or edge-case family
-- Draft one bounded patch in an owned file set
-- Review one diff for regressions
-- Propose exact test cases for one behavior
-- Add checkpoint entries to `LOG.md` so advisors can react before handoff
-- End the round with a clear next move so another driver can pick it up cleanly
+Use TaskCreate for each work item. Set dependencies with TaskUpdate so tasks unblock in order.
 
-## Bad Round Sizes
+Example task breakdown:
+```
+Task 1: "Map affected files, entry points, and constraints"
+Task 2: "Implement depth validation in parseBlock()" — blocked by 1
+Task 3: "Add regression tests for invalid input" — blocked by 2
+Task 4: "Run full test suite and verify no regressions" — blocked by 3
+```
 
-- "implement the whole feature"
-- "review the entire repo"
-- overlapping edits to the same files
-- asking every agent the same question
-- letting multiple agents code against the same live goal
-- carrying multiple active implementation threads at once
+Include enough context in each task description for a teammate to execute it independently. State what to do, why it matters, and what success looks like.
 
-## Prompt Pattern
+### 4. Spawn Teammates
 
-Every subagent prompt should include:
+Launch 2-3 teammates using the Agent tool with `team_name: "popcorn-xp"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
 
-- the task in one short paragraph
-- the role lens
-- whether the role is driver, navigator, or advisor
-- explicit ownership
-- the exact output you want next
-- which round's driver is currently editing
-- a reminder that it is not alone in the codebase and must not revert others' work
+**Driver teammate** — the role best suited to the first task:
 
-See `references/protocol.md` for reusable role blurbs, launch prompts, and follow-up prompt structure.
+```
+Agent(
+  name: "craftsman",
+  team_name: "popcorn-xp",
+  prompt: "<driver coordinator prompt from protocol.md>"
+)
+```
+
+**Navigator teammate** — the role that provides the most useful counter-lens:
+
+```
+Agent(
+  name: "expert",
+  team_name: "popcorn-xp",
+  prompt: "<navigator coordinator prompt from protocol.md>"
+)
+```
+
+**Advisor teammate** (optional) — when a third perspective adds value:
+
+```
+Agent(
+  name: "tester",
+  team_name: "popcorn-xp",
+  prompt: "<advisor coordinator prompt from protocol.md>"
+)
+```
+
+Assign the first task to the driver via TaskUpdate.
+
+### 5. Monitor
+
+You receive messages from teammates automatically. Your role during execution:
+
+- **Acknowledge completion messages.** When a teammate finishes a task, check TaskList and assign or approve the next task.
+- **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
+- **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
+- **Handle rotation.** When a task completes, swap the driver and navigator roles. The agent that was navigating should drive the next task — they've been watching the code and carry context the other agent doesn't. Resist assigning tasks to the "best-fit" role; rotation is for knowledge sharing, not specialization.
+- **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
+- **Do not do the work yourself.** You are the lead, not a driver. If you find yourself wanting to read a file or write code, delegate it to a teammate instead.
+
+### 6. Verify and Close
+
+When all tasks are complete:
+
+1. Ask a teammate (typically the tester) to run final verification.
+2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
+3. **Retrospective** — ask each teammate: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses.
+4. Present a technical summary to the user: what was done, what each role found, any remaining risk.
+5. Shut down teammates:
+   ```
+   SendMessage(to: "*", message: {type: "shutdown_request"})
+   ```
+6. After teammates shut down:
+   ```
+   TeamDelete
+   ```
+7. **Write the retro file.** After TeamDelete, write `.popcorn-xp/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
+
+### Retro File Format
+
+Write `.popcorn-xp/RETRO.md` after every session. This file accumulates across sessions — append a new entry, don't overwrite prior retros.
+
+```markdown
+# Popcorn XP Retro
+
+## Session: {date} — {task summary}
+
+### Team
+- Driver(s): {who drove which tasks}
+- Navigator(s): {who navigated which tasks}
+- Advisor(s): {if any}
+
+### What Worked
+- {concrete observation — e.g., "rotation after task 2 gave the expert context they used to catch OBJ-3-01"}
+- {concrete observation}
+
+### What Didn't Work
+- {concrete observation — e.g., "navigator went idle for 3 checkpoints because checkpoints were too small to analyze"}
+- {concrete observation}
+
+### Advice System
+- OBJECTIONs raised: {count}
+- OBJECTIONs fixed: {count}
+- OBJECTIONs rejected: {count}
+- SMELLs/STEERs/FYIs: {count}
+- Assessment: {did the advice system create the right dynamic? too many objections? too few? did the driver push back enough?}
+
+### Rotation
+- {did rotation spread knowledge? did assigning by lens-fit happen despite the protocol? did the navigator-becomes-driver pattern work?}
+
+### Process Observations
+- {anything about the protocol itself — too much ceremony? not enough checkpoints? file format issues?}
+- {teammate feedback from the retro conversation}
+
+### Recommendations
+- {what to change next time — e.g., "start with scout driving orientation before craftsman drives implementation"}
+- {what to keep — e.g., "the expert-as-navigator pattern caught 2 real bugs"}
+```
+
+This file is for the human. Read it before starting the next popcorn-xp session on the same codebase — it's the team's institutional memory about how the process works here.
+
+## Advice System
+
+Strong opinions, loosely held. The driver has their own approach and should defend it. Advice is input from a different lens — not instructions to follow. The navigator might be wrong. The driver might be wrong. The point is engagement, not compliance.
+
+| Type | Meaning | Driver response | Blocks? |
+|------|---------|----------------|---------|
+| **OBJECTION** | "This is wrong." | Engage: fix if they're right, reject with reasoning if not. Both valid. | Yes |
+| **SMELL** | "This looks off." | Read it. Use your judgment. Acknowledge when you can. | No |
+| **STEER** | "Try a different approach." | Consider it honestly. Your way might be better. | No |
+| **FYI** | "Noticed this, might matter later." | Noted. | No |
+
+Only OBJECTIONs block task completion. Everything else is the driver's call. The navigator should use OBJECTION sparingly — overusing it makes them a blocker, not a partner.
+
+Advice is sent via SendMessage (real-time) and appended to `.popcorn-xp/ADVICE.md` (persistent record).
+
+Three hooks support the advice lifecycle:
+- **TaskCompleted** — blocks on open OBJECTIONs, reminds of other open advice
+- **TeammateIdle** — reminds the agent of open advice items when they go idle
+- **SubagentStop** — backup block on open OBJECTIONs
+
+## Session Files
+
+Three files in `.popcorn-xp/`:
+
+- **LOG.md** — Append-only execution history. What was done, what was learned, what was decided. Written by teammates during the session.
+- **ADVICE.md** — Persistent record of all typed advice and resolutions. Written by teammates during the session.
+- **RETRO.md** — Accumulated retrospective entries. Written by the lead after each session. Read this before starting the next session — it's the team's process memory.
+
+The first teammate to start work creates `.popcorn-xp/`, LOG.md, and ADVICE.md. The lead creates RETRO.md after TeamDelete.
 
 ## Quality Bar
 
-- Different roles must contribute materially different information.
-- `ADVICE.md` is the only steering file. Do not split advice across multiple places.
-- `LOCK.md` is the source of truth for the active driver.
-- `LOG.md` and `ADVICE.md` are append-only session history.
-- Mirrored current-driver sections in `CONTEXT.md` and `ADVICE.md` must stay synchronized with `LOCK.md`.
-- Advice entries must have stable IDs so resolution is traceable.
-- Drivers must check for new advice during the round, not only at the start or handoff.
-- Each round should feel like a real XP pairing slice: one driver, one navigator, one small goal.
-- Rotate drivers often enough to spread knowledge and avoid long solo runs.
-- Keep WIP low and preserve collective code ownership.
-- `LOG.md` must be detailed enough that the next agent can reconstruct what happened without guessing.
-- Keep rounds short enough that you can redirect based on what you learn.
-- The main thread remains responsible for correctness, integration, and final verification.
-- If the task becomes straightforward after orientation, stop spawning more rounds and finish locally.
+- Only one driver edits at a time. The navigator reads and advises. No concurrent edits.
+- OBJECTIONs block task completion. No exceptions.
+- Different roles must contribute materially different perspectives.
+- Task descriptions carry enough context for independent execution.
+- LOG.md is detailed enough that the next agent can reconstruct what happened.
+- The lead manages the team but does not do the work.
+- Stop spawning rounds when additional tasks stop changing the plan.
 
 ## Reference
 
-Read `references/protocol.md` when you need prompt templates or role instructions.
+Read `references/protocol.md` for teammate prompt templates, advice format, and session file templates. Include the relevant protocol sections in teammate prompts when spawning them.
