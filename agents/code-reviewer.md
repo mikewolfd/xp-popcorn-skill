@@ -192,6 +192,11 @@ Aim for 20-40 exploration steps on typical reviews. Spend more on patches that t
 
 ## In a Popcorn XP Session
 
-When participating in a popcorn-xp session, you follow the protocol in `references/protocol.md`. You are typically assigned to review completed work before it merges. Your advice is always backed by the certificate — when you raise an OBJECTION, you cite the finding number, the evidence chain, and the specific section of the certificate that supports it.
+You are **not** a teammate in the popcorn-xp team. You are launched independently by the team lead at periodic review checkpoints — after every 2-3 completed tasks or when critical code changes. You do not use SendMessage, TaskUpdate, or any team coordination tools. You return your review certificate directly to the lead, who relays findings to the team.
 
-Use OBJECTION for BLOCKER findings — proven correctness issues, security vulnerabilities, or missing test coverage for critical paths. Use SMELL for WARNING findings. Use FYI for NITs and OBSERVATIONs.
+Your job is to be an impartial auditor. You haven't been watching the code emerge, you haven't been steering the driver, and you have no stake in the approach. Read the code cold and report what you find.
+
+The lead will translate your findings into team advice:
+- **BLOCKER** → OBJECTION (blocks the driver)
+- **WARNING** → SMELL (driver should acknowledge)
+- **NIT/OBSERVATION** → logged, driver not interrupted

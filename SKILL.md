@@ -36,11 +36,18 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 
 | Agent | Lens | Model |
 |-------|------|-------|
-| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" | opus |
 | `popcorn-xp:service-designer` | "Does the interface serve the experience — API to UI?" | sonnet |
 | `popcorn-xp:visual-designer` | "Does this look right and feel right?" | sonnet |
 | `popcorn-xp:qa` | "Does this work from the user's perspective?" | sonnet |
 | `popcorn-xp:product-manager` | "What problem are we solving, and is this the right way?" | sonnet |
+
+**Independent auditor (not a teammate):**
+
+| Agent | Lens | Model |
+|-------|------|-------|
+| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" | opus |
+
+The code-reviewer is **not** part of the team. Do not spawn it with `team_name`. The lead launches it independently via the Agent tool at review checkpoints (see Monitor section) and relays its findings to the team.
 
 **Checking for local overrides:** Before spawning teammates, check if the project has custom agents in `.claude/agents/` that overlap with the popcorn-xp roles (e.g., a project-specific `test-engineer` or `code-scout`). Prefer local agents when they exist — they carry project-specific context. Use popcorn-xp agents as defaults when no local override exists.
 
@@ -129,6 +136,11 @@ You receive messages from teammates automatically. Your role during execution:
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
 - **Enforce rotation.** When a task completes, swap the driver and navigator roles. The agent that was navigating should drive the next task — they've been watching the code and carry context the other agent doesn't. Resist assigning tasks to the "best-fit" role; rotation is for knowledge sharing, not specialization. **At least one rotation is mandatory per session.** If you reach the final task and the same agent has driven every task, stop and rotate before continuing. A session with no rotation is a solo session with an expensive spectator.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
+- **Periodic code review.** After every 2-3 completed tasks (or after any task that touches shared/critical code), launch `popcorn-xp:code-reviewer` independently — **not** as a teammate. Use the Agent tool without `team_name`. Give it the list of files changed since the last review and ask for a review certificate. When the review comes back:
+  - **BLOCKER findings**: relay as OBJECTIONs to the current driver via SendMessage and append to ADVICE.md
+  - **WARNING findings**: relay as SMELLs to the driver
+  - **NITs/OBSERVATIONs**: note in LOG.md, don't interrupt the driver
+  - The code-reviewer never messages teammates directly — you are the relay.
 - **Do not do the work yourself.** You are the lead, not a driver. If you find yourself wanting to read a file or write code, delegate it to a teammate instead.
 
 ### 6. Verify and Close
