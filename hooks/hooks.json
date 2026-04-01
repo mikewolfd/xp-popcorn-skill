@@ -1,5 +1,5 @@
 {
-  "description": "Popcorn XP advice lifecycle hooks — ensures all advice is read, acknowledged, and resolved",
+  "description": "Popcorn XP lifecycle hooks — advice enforcement, rotation checks, and retro gating",
   "hooks": {
     "TaskCompleted": [
       {
@@ -10,6 +10,12 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-advice-on-complete.sh",
             "timeout": 10,
             "statusMessage": "Checking advice before task completion..."
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-rotation.sh",
+            "timeout": 10,
+            "statusMessage": "Checking driver rotation..."
           }
         ]
       }
@@ -34,6 +40,19 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/remind-unread-advice.sh",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "TeamDelete",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-retro-before-delete.sh",
+            "timeout": 10,
+            "statusMessage": "Checking for retrospective..."
           }
         ]
       }

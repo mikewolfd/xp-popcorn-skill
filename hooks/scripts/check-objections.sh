@@ -13,7 +13,8 @@ ADVICE="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp/ADVICE.md"
 
 open_section=$(sed -n '/^## Open$/,/^## Resolved$/p' "$ADVICE" 2>/dev/null || true)
 
-if echo "$open_section" | grep -q "^### OBJECTION"; then
+# Match both "### OBJECTION" (prescribed format) and bare "OBJECTION OBJ-" / "OBJ-" (actual usage)
+if echo "$open_section" | grep -qiE "^(###\s+)?OBJECTION|^(###\s+)?OBJ-"; then
   echo '{"decision":"block","reason":"Open OBJECTIONs exist in .popcorn-xp/ADVICE.md. You must resolve all OBJECTIONs before stopping — either fix the issue or explicitly reject with a stated reason."}' >&2
   exit 2
 fi

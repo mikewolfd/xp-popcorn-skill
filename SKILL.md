@@ -118,6 +118,8 @@ Agent(
 
 Assign the first task to the driver via TaskUpdate.
 
+**Reuse orientation agents.** If you spawn a scout or research-focused agent for an initial orientation task, plan a second assignment for them later in the session — test review, demo validation, or a verification task. An agent that goes idle after one task and never returns is wasted capacity. Either give them follow-up work or don't spawn them.
+
 ### 5. Monitor
 
 You receive messages from teammates automatically. Your role during execution:
@@ -125,23 +127,25 @@ You receive messages from teammates automatically. Your role during execution:
 - **Acknowledge completion messages.** When a teammate finishes a task, check TaskList and assign or approve the next task.
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
-- **Handle rotation.** When a task completes, swap the driver and navigator roles. The agent that was navigating should drive the next task — they've been watching the code and carry context the other agent doesn't. Resist assigning tasks to the "best-fit" role; rotation is for knowledge sharing, not specialization.
+- **Enforce rotation.** When a task completes, swap the driver and navigator roles. The agent that was navigating should drive the next task — they've been watching the code and carry context the other agent doesn't. Resist assigning tasks to the "best-fit" role; rotation is for knowledge sharing, not specialization. **At least one rotation is mandatory per session.** If you reach the final task and the same agent has driven every task, stop and rotate before continuing. A session with no rotation is a solo session with an expensive spectator.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
 - **Do not do the work yourself.** You are the lead, not a driver. If you find yourself wanting to read a file or write code, delegate it to a teammate instead.
 
 ### 6. Verify and Close
 
-When all tasks are complete:
+When all tasks are complete, follow this sequence exactly. Do not skip steps or reorder — the retro happens **before** the user-facing summary, not after.
 
 1. Ask a teammate (typically the tester) to run final verification.
 2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
-3. **Retrospective** — ask each teammate: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses.
-4. Present a technical summary to the user: what was done, what each role found, any remaining risk.
-5. Shut down teammates:
+3. **Retrospective (mandatory).** Before presenting results to the user, conduct the retro. Ask each active teammate: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses. If teammates have already shut down or are unresponsive, conduct the retro yourself from your observations as lead — you saw every message and every idle notification.
+4. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
+5. Shut down teammates. Send each a shutdown_request individually (broadcast does not support structured messages):
    ```
-   SendMessage(to: "*", message: {type: "shutdown_request"})
+   SendMessage(to: "craftsman", message: {type: "shutdown_request"})
+   SendMessage(to: "expert", message: {type: "shutdown_request"})
    ```
-6. After teammates shut down:
+   If a teammate cycles idle without acknowledging the shutdown after 2 attempts, send a plain-text message telling them the session is over and to approve the pending shutdown request. If they still don't respond after a third attempt, move on — they will be cleaned up by TeamDelete.
+6. After teammates shut down (or after 3 failed shutdown attempts):
    ```
    TeamDelete
    ```
