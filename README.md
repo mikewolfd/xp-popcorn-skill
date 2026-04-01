@@ -2,6 +2,8 @@
 
 XP pair programming for Claude Code agents. One driver edits, one navigator steers, they rotate roles, and advice has teeth.
 
+> Claude Code only. This skill depends on Claude Code's Agent Teams and Coordinator Mode features, so it will not run in Codex, Cursor, or other agents.
+
 ## What It Does
 
 When you say "popcorn this task" or "run an XP session," the skill launches a pair of Claude Code agents that pair-program on your task. One drives (edits code), one navigates (watches, reads ahead, steers via typed advice), and they swap roles between tasks. Communication is direct — agents message each other in near-real-time without the orchestrator in the loop.
@@ -149,6 +151,7 @@ Parser rejects unmatched endRepeat, depth validated, tests green. Next: @tester 
 ### Requirements
 
 - Claude Code v2.1.32+
+- Claude Code build with Coordinator Mode available
 - Opus 4.6 model
 
 ### Recommended: tmux for Live Visibility
@@ -162,35 +165,38 @@ tmux new-session -s claude
 
 Without tmux (in-process backend), teammates run in the background and you only see the results. iTerm2 with the `it2` CLI also works for split-pane visibility on macOS.
 
-### Enable Agent Teams
+### Enable Required Claude Code Flags
 
 Add to `~/.claude/settings.json`:
 
 ```json
 {
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_COORDINATOR_MODE": "1"
   }
 }
 ```
 
 Restart Claude Code after editing.
 
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` enables the Agent Teams feature. `CLAUDE_CODE_COORDINATOR_MODE` forces the lead into coordinator mode so it cannot fall back to direct file edits. If your Claude Code build does not include coordinator mode support, the env var alone will not enable it.
+
 ### Install the Skill
 
-Add the skill directory to your Claude Code session:
+Install from the repository with `npx skills`:
 
 ```bash
-claude --plugin-dir /path/to/popcorn-xp
+npx skills add https://github.com/mikewolfd/xp-popcorn-skill --skill popcorn-xp
 ```
 
-Or add it to your project's `.claude/settings.json`:
+To install from a local checkout instead:
 
-```json
-{
-  "pluginDirs": ["/path/to/popcorn-xp"]
-}
+```bash
+npx skills add /path/to/xp-popcorn-skill --skill popcorn-xp
 ```
+
+The `npx skills` install path is just distribution. Runtime is still Claude Code only.
 
 ## Usage
 
@@ -461,9 +467,11 @@ At runtime, `SKILL.md` is loaded by Claude Code via skill auto-discovery. The le
 ## Limitations
 
 - **Experimental** — Agent Teams is a research preview. The feature may change or be removed.
+- **Claude-only** — This repository installs through `npx skills`, but the runtime workflow only works in Claude Code.
 - **Token cost** — Each teammate has its own context window. 3 agents = ~3x token cost.
 - **Context isolation** — Teammates don't share context windows. They communicate via messages, not shared memory. Important context must be sent explicitly.
 - **Message cap** — 50 messages per teammate before oldest are dropped. Long sessions may lose early messages (LOG.md and ADVICE.md preserve the history).
+- **Special env flags required** — Set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and `CLAUDE_CODE_COORDINATOR_MODE=1` before starting Claude Code.
 - **Coordinator mode required** — The lead needs coordinator mode to enforce the "no direct file access" constraint. Without it, the lead tends to do everything itself.
 - **Opus 4.6 required** — Agent Teams requires the Opus model.
 
