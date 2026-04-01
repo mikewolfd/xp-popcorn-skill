@@ -36,6 +36,7 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 
 | Agent | Lens | Model |
 |-------|------|-------|
+| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" | opus |
 | `popcorn-xp:service-designer` | "Does the interface serve the experience — API to UI?" | sonnet |
 | `popcorn-xp:visual-designer` | "Does this look right and feel right?" | sonnet |
 | `popcorn-xp:qa` | "Does this work from the user's perspective?" | sonnet |
