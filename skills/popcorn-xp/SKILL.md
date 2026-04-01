@@ -149,6 +149,8 @@ Task 4: "Run full test suite and verify no regressions" — blocked by 3
 
 Include enough context in each task description for a teammate to execute it independently. State what to do, why it matters, and what success looks like.
 
+**Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` so tasks auto-unblock as each dependency completes. Teammates self-claim the next unblocked task based on rotation convention (navigator becomes driver), so the chain should reflect the intended execution order. You assign the first task; after that, the normal path flows through built-in task dependencies without your intervention.
+
 **When to include a separate verification task:**
 - A different agent runs verification than wrote the code (fresh eyes)
 - Integration or E2E tests that weren't part of the unit test task
@@ -215,10 +217,10 @@ Assign the first task to the driver via TaskUpdate.
 
 You receive messages from teammates automatically. Your role during execution:
 
-- **Acknowledge completion messages.** When a teammate finishes a task, check TaskList and assign or approve the next task.
+- **Let rotation self-progress.** Teammates self-claim the next unblocked task based on rotation convention: the navigator becomes the driver, the driver becomes the navigator. You set up the dependency chain in Step 3; the platform auto-unblocks tasks and teammates self-claim. Only intervene to override (wrong agent claimed, reorder needed, scope changed) or if self-claim stalls. The check-rotation hook blocks same-agent consecutive driving as a safety net.
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
-- **Enforce rotation.** When a task completes, swap the driver and navigator roles. The agent that was navigating should drive the next task — they've been watching the code and carry context the other agent doesn't. Resist assigning tasks to the "best-fit" role; rotation is for knowledge sharing, not specialization. **At least one rotation is mandatory per session.** If you reach the final task and the same agent has driven every task, stop and rotate before continuing. A session with no rotation is a solo session with an expensive spectator.
+- **Watch for rotation failures.** **At least one rotation is mandatory per session.** If the same agent has driven every task and you're approaching the final task, intervene and force a swap. A session with no rotation is a solo session with an expensive spectator.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
 - **Periodic code review.** After every 2-3 completed tasks (or after any task that touches shared/critical code), launch `popcorn-xp:code-reviewer` independently — **not** as a teammate. Use the Agent tool without `team_name`. Give it the list of files changed since the last review and ask for a review certificate. When the review comes back:
   - **BLOCKER findings**: relay as OBJECTIONs to the current driver via SendMessage and append to ADVICE.md

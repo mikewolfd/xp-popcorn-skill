@@ -151,6 +151,17 @@ Parser rejects unmatched endRepeat, depth validated, tests green. Next: @tester 
 - Claude Code v2.1.32+
 - Opus 4.6 model
 
+### Recommended: tmux for Live Visibility
+
+Running inside tmux gives each teammate its own pane — you can watch the driver edit and the navigator read in real time, side by side. This is the closest experience to watching a real pair.
+
+```bash
+tmux new-session -s claude
+# then launch claude code inside the session
+```
+
+Without tmux (in-process backend), teammates run in the background and you only see the results. iTerm2 with the `it2` CLI also works for split-pane visibility on macOS.
+
 ### Enable Agent Teams
 
 Add to `~/.claude/settings.json`:
@@ -247,10 +258,10 @@ The navigator teammate:
 
 ### 4. Rotation
 
-When a task completes, the driver and navigator swap roles for the next task:
-- The agent that was navigating becomes the driver. They've been watching the code emerge and carry context the other agent doesn't have.
-- The agent that was driving becomes the navigator. They know what they just did and can catch the new driver's misunderstandings.
-- The lead facilitates the swap via TaskUpdate, or teammates self-claim.
+When a task completes, the driver and navigator swap roles for the next task. Rotation is self-driven using built-in task dependencies — the lead sets up the dependency chain, the platform auto-unblocks tasks, and teammates self-claim based on rotation convention:
+- The agent that was navigating self-claims the next unblocked task and becomes the driver. They've been watching the code emerge and carry context the other agent doesn't have.
+- The agent that was driving sends a handoff message (what changed, what's tricky) and becomes the navigator. They know what they just did and can catch the new driver's misunderstandings.
+- The lead intervenes only on exceptions — wrong agent claimed, reorder needed, scope changed. The check-rotation hook blocks same-agent consecutive driving as a safety net.
 - If a third agent (advisor) is present, the lead may rotate them into the pair.
 
 Rotation is for knowledge sharing, not for matching roles to tasks. Resist the urge to assign the "implementation task" to the craftsman and the "testing task" to the tester. The craftsman who navigated the implementation should drive the tests — they'll catch things the tester won't.

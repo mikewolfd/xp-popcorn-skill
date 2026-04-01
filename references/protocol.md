@@ -88,8 +88,10 @@ also have other advisor teammates.
       but resolve them if you can — it helps the next driver.
    b. Mark the task completed with TaskUpdate.
    c. SendMessage to team-lead: "Task [id] complete. [brief summary]."
-      The lead assigns the next driver based on rotation — don't recommend yourself.
-   d. Check TaskList for your next task, or go idle.
+   d. Transition to navigator. Send a handoff message to your navigator (the next
+      driver): what you changed, what's tricky, what to watch for in the files you
+      touched. Then shift to reading and advising — stop editing code.
+   e. If no task unblocks or the transition is unclear, go idle — the lead will assign.
 
 ## Session Files
 
@@ -118,22 +120,22 @@ you do not need to WRITE to them directly.
 - If you get stuck, SendMessage to team-lead or your navigator for help.
 - When you go idle and get woken up, first check .popcorn-xp/ADVICE.md and LOG.md
   for anything new since your last action.
-- Rotation is mandatory. After your task, the navigator becomes the next driver.
-  Don't recommend yourself for the next task.
+- Rotation is mandatory. After your task, you become the navigator — your navigator
+  becomes the next driver. Don't self-claim the next driving task.
 - If you receive a shutdown_request message, approve it immediately. Do not send
   more task content. The session is over.
 
 ## Rotation
 
-After your task completes, you will likely become the NAVIGATOR for the next task.
-The lead will tell you when this happens via SendMessage. When you rotate to navigator:
+After your task completes, you become the NAVIGATOR. The agent who was navigating
+self-claims the next unblocked task and becomes driver. Your role shifts immediately:
 - Stop editing code files. Your job becomes reading and advising.
 - Send typed advice to the new driver instead of making changes.
+- Send a handoff message to the new driver: what you changed, what's tricky, what
+  to watch out for in the files you touched. This context is your biggest
+  contribution as the new navigator — you know the code better than anyone.
 - You carry context from driving — use it to catch misunderstandings the new driver
   might have about your design choices.
-
-Rotation is mandatory. Don't recommend yourself for the next task — the lead handles
-assignment based on rotation.
 
 ## Task Context
 
@@ -201,7 +203,12 @@ You have two modes: reacting to checkpoints and reading ahead.
 **Round completion:**
 4. When the driver completes their task, send a brief round assessment to team-lead:
    "Round assessment: [what went well, what was caught, any remaining concerns]"
-5. Check TaskList — you should expect to drive the next task (rotation swaps roles).
+5. Self-claim the next unblocked task — you are the next driver. You've been watching
+   the code emerge and carry the most context. Claim it with TaskUpdate (set owner to
+   your name, status to in_progress). Send your first checkpoint to the previous
+   driver, who is now your navigator.
+   If no task is available yet, go idle — the platform will unblock it when the
+   dependency completes, or the lead will assign.
 
 ## Advice Rules
 
@@ -248,13 +255,16 @@ You have two modes: reacting to checkpoints and reading ahead.
 
 ## Rotation
 
-After this task completes, you will likely become the DRIVER for the next task —
-you've been watching the code emerge and carry the most context. The lead will tell
-you when this happens via SendMessage. When you rotate to driver:
+After this task completes, you become the DRIVER for the next task. You've been
+watching the code emerge and carry the most context. Self-claim the next unblocked
+task from TaskList:
+- Claim it: TaskUpdate with your name as owner, status in_progress.
 - You now have FULL EDIT PERMISSIONS. Read, write, create, delete files.
-- Mark your new task in_progress with TaskUpdate and start working.
 - Send checkpoints to your new navigator (the previous driver).
 - Your read-ahead knowledge from navigating becomes your implementation advantage.
+
+If the lead overrides your self-claim (reassigns, reorders, or redirects), follow
+their direction — they see the full session and the user's intent.
 
 ## Task Context
 
@@ -447,7 +457,7 @@ A third agent (`tester`) can be added when verification tasks appear on the Task
 
 ## Integration Notes
 
-- The lead (team-lead) manages the TaskList and round transitions. Teammates do the work.
+- The lead sets up the dependency chain and session lifecycle. Teammates self-progress through the task chain based on rotation convention (navigator claims the next unblocked task). The lead intervenes on exceptions — reordering, reassignment, scope changes — not on every transition.
 - If a teammate needs context the lead has, the lead sends it via SendMessage.
 - If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
 - The lead runs final verification through a teammate, not directly (coordinator mode has no file tools).
