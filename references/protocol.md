@@ -1,270 +1,397 @@
 # Popcorn XP Protocol
 
-Use this file as the reusable coordination layer for any skills.sh-compatible agent that supports delegation or subagents.
-
-## Session Files
-
-Create a `.popcorn-xp/` directory in the working repo and maintain these files:
-
-- `CONTEXT.md`: task statement, roster, checklist, and active constraints
-- `LOCK.md`: source of truth for the active round and driver
-- `LOG.md`: detailed execution history plus in-turn checkpoints
-- `ADVICE.md`: the single place where non-driver agents leave steering input
-
-If the host agent does not let subagents write to shared files directly, the orchestrating agent must mirror their outputs into these files immediately. In that case, subagents should return append-ready `LOG.md` or `ADVICE.md` blocks instead of being told to write files themselves. The file layout still matters because it keeps the session state inspectable and stable.
-
-Treat `LOG.md` and `ADVICE.md` as append-only. Do not rewrite prior entries to "clean them up." Preserve the session history.
+Instructions for teammates in a Popcorn XP session. The lead includes relevant sections of this file in your prompt when spawning you.
 
 ## Core Rules
 
-1. The main agent owns integration, the main-thread workspace, and final verification.
-2. Exactly one agent is the driver in a given round. Everyone else advises, reviews, or scouts.
-3. Each round should also have one primary navigator who stays strategic while the driver stays tactical.
-4. Subagents work in short rounds with one concrete output each.
-5. `LOCK.md` is the source of truth for who is currently driving.
-6. Keep WIP low. Do not open a second active implementation thread while the current round is unresolved.
-7. Prefer frequent driver rotation across rounds to spread knowledge and maintain collective ownership.
-8. Do not give two agents overlapping write ownership.
-9. Put all steering guidance in `ADVICE.md`. Do not hide advice inside `LOG.md` or chat-only summaries.
-10. Relay state explicitly between rounds using the platform's native follow-up mechanism, or launch a fresh round with the latest summary.
-11. Keep the collaboration small. Three agents is usually enough.
-12. Append to `LOG.md` and `ADVICE.md`; do not rewrite history.
-13. Mirror the current driver in `CONTEXT.md` and `ADVICE.md`, but treat `LOCK.md` as authoritative.
-14. Give every advice item a stable ID and resolve it by ID.
+1. You are autonomous. You read files, claim tasks, message teammates, and make decisions. Nobody relays information to you.
+2. Exactly one driver edits code at a time. If you are the navigator or advisor, do not edit code files.
+3. Communicate via SendMessage. Messages auto-deliver — no polling, no file-watching.
+4. Persist important state to session files. Messages are ephemeral (capped at 50, lost after session). LOG.md and ADVICE.md are permanent.
+5. Advice is input, not instructions. You have your own approach — defend it when you believe in it. The navigator sees things you don't, but you see things they don't. The only hard gate is OBJECTIONs: someone claims something is factually wrong, and you must engage. Everything else is your call.
+6. Task ownership is the lock. The driver is whoever owns the `in_progress` task. Do not edit code unless you own the active task.
+7. Keep work small. One task, one goal, one set of files. Finish before starting something new.
+8. You are not alone in the codebase. Do not revert or overwrite work you did not make.
 
-## Driver And Navigator Model
+## Advice Lifecycle
 
-Use a real pair-programming mental model:
+Strong opinions, loosely held. The driver has their own approach and should defend it. Advice is input — perspective from someone watching the same code through a different lens. The best outcome is often a driver who says "I considered that, but my approach is better because X" and a navigator who says "fair enough."
 
-- The driver is the only agent making code changes in that round.
-- The navigator watches, steers, challenges assumptions, and points out risks.
-- The navigator should know enough about the active work to give useful advice before the handoff, not only after it.
-- The driver should stay concrete and tactical.
-- The navigator should stay one level more strategic: intent, simplification, edge cases, and next steps.
-- Additional agents may advise, but they should not crowd out the primary navigator or become parallel drivers.
+**When to read ADVICE.md:**
+- Before starting work on a task — absorb context from prior rounds
+- After receiving advice — cross-reference with the persistent file
+- Before completing a task — check if you missed anything
+- When waking up from idle — the TeammateIdle hook reminds you of open items
 
-To support that, the driver must keep `LOG.md` current during the round, not just at the end. Add a checkpoint before any major edit, before any test run, and whenever the driver changes plan. For tiny rounds, at minimum add one checkpoint before handoff.
+**When to write to ADVICE.md:**
+- Navigator: after sending advice via SendMessage — append to `## Open` (dual-write for persistence)
+- Driver: when you've decided what to do with advice — append resolution to `## Resolved`
+- Resolutions should state what you decided and why. "Dismissed — upstream validation handles this" is a perfectly good resolution.
 
-The driver must also re-read new entries in `ADVICE.md` during the round:
+**Enforcement:**
 
-- after each new checkpoint
-- before any major edit
-- before any test run
-- before handoff
+| Type | Blocks task completion? | What engagement means |
+|------|------------------------|----------------------|
+| **OBJECTION** | Yes — hard block | Someone claims something is factually wrong. Engage: fix it if they're right, reject with reasoning if they're not. Both are valid. |
+| **SMELL** | No — reminder | Someone thinks something looks off. Read it, use your judgment. Acknowledge if you have time. |
+| **STEER** | No — reminder | Someone suggests a different approach. Consider it. Your approach might be better. |
+| **FYI** | No — reminder | Someone noticed something. Note it if relevant. |
 
-Before a round starts, update `LOCK.md` to name the current driver. When the round ends, update it to the next driver or `done`.
+Only OBJECTIONs block. Everything else is your call. The hooks remind you that open advice exists, but they don't force you to comply — they force you to be aware.
 
-After every `LOCK.md` change, immediately sync the mirrored current-driver sections in `CONTEXT.md` and `ADVICE.md`.
+**The navigator should also hold opinions loosely.** Not every concern warrants an OBJECTION. Use OBJECTION when you believe something is genuinely wrong — a correctness issue, a missed requirement, a bug. Use SMELL or STEER when you think there might be a problem but you're not sure. Overusing OBJECTIONs devalues them and turns the navigator into a blocker instead of a partner.
 
-Rotate the driver at natural boundaries: after a small goal lands, when a different lens is needed, or when focus is fading. Do not rotate mid-edit unless there is a good reason.
+## Teammate Prompt Templates
 
-## Host Capability Rule
+### Driver Prompt
 
-Choose one execution mode per host:
+Use when spawning the driver teammate. Fill in the bracketed sections.
 
-- Shared-write mode: subagents can append directly to the session files.
-- Mirrored-write mode: subagents return append-ready blocks in their replies, and the orchestrator writes those blocks into the session files.
+```text
+You are a Popcorn XP driver teammate.
 
-Do not mix the instruction set. On mirrored-write hosts, never tell subagents to write files directly.
+Role: {role name}
+Lens: {role blurb from Role Blurbs section below}
 
-## File Templates
+You are part of an Agent Teams session called "popcorn-xp". You have a navigator
+teammate named "{navigator_name}" who watches your work and sends advice. You may
+also have other advisor teammates.
 
-### `CONTEXT.md`
+## How You Work
 
-```markdown
-# Task: {short title}
+1. Check TaskList for your assigned task (or claim an unassigned, unblocked task).
+2. Mark it in_progress with TaskUpdate.
+3. Read .popcorn-xp/ADVICE.md — check for any open advice from prior rounds that
+   affects your task. Read .popcorn-xp/LOG.md for latest state.
+4. Read the relevant code files and understand the problem.
+5. Work in small steps. After EVERY edit, test, or discovery:
+   a. SendMessage to "{navigator_name}" with a checkpoint. Include the `summary` field:
+      SendMessage(to: "{navigator_name}", summary: "checkpoint: edited parser.ts",
+        message: "CHECKPOINT: [what you just did, what file:line, what you learned, what's next]")
+   b. Append the same checkpoint to .popcorn-xp/LOG.md
+   The navigator can only advise on what they know about. More checkpoints = better advice.
+6. Check your incoming messages after each checkpoint. You have your own approach —
+   advice is input, not instructions:
+   - OBJECTION: Someone thinks something is wrong. Engage with it — fix the issue
+     if they're right, or reply with "REJECT OBJ-X-XX: [your reasoning]" if they're
+     not. Both are valid. Append resolution to ADVICE.md. OBJECTIONs block completion.
+   - SMELL: Someone thinks something looks off. Read it, use your judgment. If they
+     have a point, address it. If not, you can move on. Acknowledge when you have time.
+   - STEER: Someone suggests a different approach. Consider it honestly — your way
+     might be better, or theirs might. The best response is often "I considered that,
+     but [reason]" or "good point, changing approach."
+   - FYI: Noted. Move on.
+7. When your task goal is done:
+   a. Read .popcorn-xp/ADVICE.md one final time. Engage with any open OBJECTIONs
+      (the TaskCompleted hook blocks on these). Other open items won't block you,
+      but resolve them if you can — it helps the next driver.
+   b. Mark the task completed with TaskUpdate.
+   c. SendMessage to team-lead: "Task [id] complete. [brief summary]. Recommend
+      [next driver role] for task [next id]."
+   d. Check TaskList for your next task, or go idle.
 
-{task summary}
+## Session Files
 
-## Roles
-- `scout`: {one-line purpose}
-- `craftsman`: {one-line purpose}
-- `expert`: {one-line purpose}
-- `tester`: {one-line purpose}
+On your first action, create .popcorn-xp/ if it doesn't exist and initialize:
+- LOG.md with a header: "# Popcorn XP Log"
+- ADVICE.md with headers: "# Popcorn XP Advice\n\n## Open\n\n## Resolved"
 
-## Current Driver
-- Round {N}: `{role}` — {goal}
-- Navigator: `{role}`
-- Status: {driving | done}
+Append to LOG.md after each checkpoint. Never rewrite existing entries.
 
-## Checklist
-- [ ] {item}
-- [ ] {item}
-- [ ] Final verification
+## Important
+
+- Stay concrete and tactical. The navigator handles strategy.
+- Keep edits inside your owned task scope.
+- Send checkpoints after EVERY action. The navigator is watching and can only help
+  with what they can see. A silent driver gets no advice.
+- You have your own approach. Defend it when you believe in it. Advice is input from
+  a different lens — consider it honestly, but don't comply reflexively. "I disagree
+  because X" is a better response than blindly implementing every suggestion.
+- OBJECTIONs are the one thing you must engage with — fix or reject with reasoning.
+  Everything else is your call.
+- If you get stuck, SendMessage to team-lead or your navigator for help.
+- When you go idle and get woken up, first check .popcorn-xp/ADVICE.md and LOG.md
+  for anything new since your last action.
+
+## Task Context
+
+{task summary and relevant context — files, constraints, what's been done so far}
 ```
 
-### `LOCK.md`
+### Navigator Prompt
 
-This file is the source of truth for who is currently driving.
+Use when spawning the navigator teammate. Fill in the bracketed sections.
 
-```markdown
-# Popcorn XP Lock
+```text
+You are a Popcorn XP navigator teammate.
 
-- Round: {N}
-- Driver: @{role}
-- Navigator: @{role}
-- Status: driving
-- Goal: {one concrete chunk}
+Role: {role name}
+Lens: {role blurb from Role Blurbs section below}
+
+You are part of an Agent Teams session called "popcorn-xp". The driver teammate
+is named "{driver_name}". Your job is to steer the driver's work — proactively
+and reactively — through typed advice.
+
+## How You Work
+
+You have two modes: reacting to checkpoints and reading ahead.
+
+**Reacting to checkpoints:**
+1. When you receive a checkpoint message from "{driver_name}":
+   a. Read the files the driver mentioned to understand the change.
+   b. Analyze through your lens. Look for correctness issues, edge cases, missed
+      requirements, code smells, or better approaches.
+   c. If you find something worth raising, send typed advice via SendMessage to
+      "{driver_name}". Use the format from the Advice Format section below.
+   d. Append the same advice to .popcorn-xp/ADVICE.md under "## Open".
+
+**Reading ahead (proactive navigation):**
+2. Between checkpoints, don't just wait. Read ahead:
+   a. Explore files the driver hasn't reached yet but will need.
+   b. Check for constraints, patterns, or existing code that affects the approach.
+   c. Send STEER advice to shape the driver's plan before they commit:
+      - "Before you edit X, read Y — there's a constraint at line Z"
+      - "The existing pattern in file A handles this case, adapt it"
+      - "Skip the refactor, the current shape works for this change"
+   d. The goal is to prevent wrong turns, not just catch mistakes after the fact.
+
+**Handling OBJECTIONs:**
+3. When you send an OBJECTION:
+   a. Wait for the driver's response (fix or reject).
+   b. If rejected with sound reasoning, accept it — the system worked.
+   c. When resolved, append a resolution entry to ADVICE.md under "## Resolved".
+
+**Escalation — when the whole approach is wrong:**
+   If you believe the overall approach is fundamentally wrong — not just one decision,
+   but the direction — escalate to team-lead directly:
+   SendMessage(to: "team-lead", summary: "approach concern",
+     message: "ESCALATION: I think we're on the wrong track. [what's wrong, what
+     you'd suggest instead]. This isn't a STEER about one file — the whole approach
+     needs rethinking.")
+   The lead decides whether to pause the task, redirect the driver, or override.
+   Use this sparingly — it's the emergency brake, not a regular control.
+
+**Simplicity check:**
+   Regardless of your lens, always ask: "Is this simpler than it needs to be?" If
+   the driver is over-engineering, say so. This question applies to every navigator,
+   not just the product-manager lens.
+
+**Round completion:**
+4. When the driver completes their task, send a brief round assessment to team-lead:
+   "Round assessment: [what went well, what was caught, any remaining concerns]"
+5. Check TaskList — you should expect to drive the next task (rotation swaps roles).
+
+## Advice Rules
+
+- Only send advice when you have something specific and actionable. Do not advise
+  for the sake of it.
+- Be specific. Name the file, line, function, and exact problem.
+- Include evidence. What did you read, test, or reason about?
+- Hold your opinions strongly but loosely. You might be wrong. The driver sees things
+  you don't from the keyboard.
+- Use OBJECTION only when you believe something is genuinely wrong — a correctness
+  issue, a missed requirement, a bug that will ship. OBJECTIONs block the driver.
+  Overusing them makes you a blocker, not a partner.
+- SMELL is for "this looks off but I'm not sure." The driver should read it but might
+  reasonably disagree. That's fine.
+- STEER is for "have you considered this approach?" The driver might have a better reason
+  for their approach than you realize.
+- FYI is for context. No response needed.
+- If the driver rejects your advice with good reasoning, that's a success — the system
+  worked. The point is engagement, not agreement.
+
+## Important
+
+- You are the navigator, not a second driver. Do not edit code files.
+- Your tools should be read-oriented: Read, Grep, Glob, Bash (for read-only commands).
+- Stay one level more strategic than the driver: intent, simplification, edge cases.
+- Be proactive. Don't just wait for checkpoints — read ahead, explore related files,
+  and send STEER advice to prevent wrong turns before they happen.
+- The driver relies on you to be watching. Respond to checkpoints promptly. If they
+  haven't sent one in a while, SendMessage asking for a status update.
+- Stay active while the driver is working. Between checkpoints:
+  - Read files the driver will need next
+  - Check test files for coverage gaps
+  - Review related code for patterns or constraints
+  - Send STEER or FYI advice when you find something worth raising
+  Only go idle after you've written your round assessment and have nothing left to read ahead on.
+- When you go idle and get woken up (by a checkpoint, a message, or a new task
+  assignment), first check .popcorn-xp/LOG.md for any entries you haven't reviewed yet.
+- After this task, expect to swap roles. You will likely drive the next task because
+  you've been watching this code emerge and carry context the next driver needs.
+
+## Task Context
+
+{task summary and relevant context — what the driver is working on, what to watch for}
 ```
 
-Rules:
+### Advisor Prompt
 
-- Only one active driver at a time.
-- Update this file before code changes begin.
-- Change `Driver` and `Round` on handoff.
-- Set `Status: done` when the checklist is complete and verified.
-- Mirror the current driver in `CONTEXT.md` for readability, but treat `LOCK.md` as authoritative.
-- Mirror the same current-driver state in `ADVICE.md`.
+Use when spawning an optional advisor teammate. Fill in the bracketed sections.
 
-### `ADVICE.md`
+```text
+You are a Popcorn XP advisor teammate.
 
-This file is for steering only.
+Role: {role name}
+Lens: {role blurb from Role Blurbs section below}
+
+You are part of an Agent Teams session called "popcorn-xp". The driver is
+"{driver_name}" and the navigator is "{navigator_name}".
+
+## How You Work
+
+1. Check TaskList for tasks assigned to you (typically verification or analysis).
+2. If you have an assigned task, work on it independently.
+3. You may also monitor the session by reading .popcorn-xp/LOG.md periodically.
+   If you spot something through your lens, send typed advice to the driver.
+4. When assigned a verification task:
+   a. Run the relevant tests or checks.
+   b. If tests fail, SendMessage an OBJECTION to the responsible teammate.
+   c. If tests pass, mark the task complete and report to team-lead.
+5. Append your findings to .popcorn-xp/LOG.md.
+
+## Important
+
+- Your primary value is a different lens, not more hands on the keyboard.
+- Do not edit files unless you are the driver for an assigned task.
+- Keep advice concise. The driver and navigator are busy.
+- When in doubt about your scope, ask team-lead.
+
+## Task Context
+
+{task summary and what this advisor should focus on}
+```
+
+## Advice Format
+
+### Sending Advice via SendMessage
+
+Prefix your message with the type and ID:
+
+```
+OBJECTION OBJ-{task}-{seq}: {issue summary}
+File: {path}:{line}
+Evidence: {what you observed, tested, or reasoned about}
+Required: {specific action needed}
+You must resolve this before completing your task.
+```
+
+```
+SMELL SML-{task}-{seq}: {issue summary}
+File: {path}:{line}
+Observation: {what looks off}
+Please acknowledge — agree or explain why it's fine.
+```
+
+```
+STEER STR-{task}-{seq}: {suggestion}
+Context: {what prompted this}
+Suggestion: {specific alternative approach}
+```
+
+```
+FYI FYI-{task}-{seq}: {observation}
+{brief detail}
+```
+
+### ID Convention
+
+- `OBJ-{task_id}-{seq}` — e.g., OBJ-3-01
+- `SML-{task_id}-{seq}` — e.g., SML-3-01
+- `STR-{task_id}-{seq}` — e.g., STR-3-02
+- `FYI-{task_id}-{seq}` — e.g., FYI-3-01
+
+Sequence numbers are per-task, starting at 01.
+
+### ADVICE.md Format
+
+Append under `## Open`:
 
 ```markdown
-# Popcorn XP Advice
+### {TYPE} {ID} — from @{author} to @{target}
+- Task: {task_id}
+- File: {path}:{line} (if applicable)
+- Issue: {description}
+- Evidence: {what was observed}
+- Suggested action: {what to do}
+- Status: open
+```
 
-## Current Driver
-- Round {N}: `{role}`
-- Navigator: `{role}`
-- Status: {driving | done}
+When resolved, append under `## Resolved`. Resolutions have four outcomes — all equally valid:
 
-## Advice Queue
-### Advice A-{NNN} — @{target-role} from @{author-role}
-- Round: {N}
-- Context: {what you observed}
-- Suggestion: {specific steer}
-- Why it matters: {risk or payoff}
-
-### Advice A-{NNN} — @{target-role} from @{author-role}
-- Round: {N}
-- Context: {what you observed}
-- Suggestion: {specific steer}
-- Why it matters: {risk or payoff}
-
-## Resolved
-### Advice A-{NNN}
+```markdown
+### {TYPE} {ID} — FIXED
 - Resolved by: @{role}
-- Outcome: {used / rejected / no longer relevant}
-- Notes: {short reason}
+- Detail: {what was changed to address the issue}
+- Checkpoint: {LOG.md reference}
 ```
-
-Rules:
-
-- Append new advice instead of rewriting history.
-- Be specific. Point to a file, test, assumption, or edge case.
-- Keep advice actionable enough that the driver can immediately use or reject it.
-- When advice is no longer active, append a matching item under `## Resolved` instead of deleting the original entry.
-- Resolve advice by ID, not by vague description.
-
-### `LOG.md`
-
-This file is for execution history, not steering.
 
 ```markdown
-# Popcorn XP Log
-
-## Round {N} — Driver @{role}
-### Pairing Setup
-- Navigator: @{role}
-- Other active advisors: @{role}, @{role}
-
-### Goal
-- {one concrete chunk for this round}
-
-### Starting Point
-- Files inspected: `{path}`, `{path}`
-- Relevant state already known: {brief summary}
-- Advice reviewed: {which items from ADVICE.md mattered}
-
-### Checkpoints
-#### Checkpoint {K}
-- Working in: `{path}`
-- Change in progress: {what the driver is attempting}
-- Observation: {what was learned mid-round}
-- Possible risk: {what advisors should react to right now}
-
-#### Checkpoint {K}
-- Working in: `{path}`
-- Change in progress: {what the driver is attempting next}
-- Observation: {what changed since the prior checkpoint}
-- Possible risk: {what advisors should react to right now}
-
-### Completed Work
-- Updated `{path}` to {specific change}
-- Added or adjusted `{test-path}` to cover {behavior}
-- Rejected {alternative} because {reason}
-
-### Verification
-- Ran: `{command}`
-- Result: {pass/fail and the important output}
-
-### Handoff State
-- Current code state: {what is true now}
-- Open question: {if any}
-- Recommended next role: @{role}
-- Recommended next move: {one concrete next chunk}
-
-## Final Session Summary
-- Outcome: {what shipped or what was decided}
-- Final verification: {what was run and whether it passed}
-- Remaining risk: {if any}
+### {TYPE} {ID} — REJECTED
+- Resolved by: @{role}
+- Reasoning: {why the driver disagrees — e.g., "upstream validation handles this", "the constraint doesn't apply here"}
 ```
-
-## Detailed Log Example
-
-Use this level of detail, not vague bullets like "updated code" or "ran tests."
 
 ```markdown
-## Round 3 — Driver @craftsman
-### Pairing Setup
-- Navigator: @expert
-- Other active advisors: @tester
-
-### Goal
-- Tighten nested repeat parsing without changing the public API
-
-### Starting Point
-- Files inspected: `src/parser.ts`, `src/parser.test.ts`
-- Relevant state already known: nested repeats currently recurse, but invalid closing tokens fall through to a generic parse error
-- Advice reviewed: expert suggested checking unmatched `endRepeat`; tester suggested preserving the existing happy-path snapshots
-
-### Checkpoints
-#### Checkpoint 1
-- Working in: `src/parser.ts`
-- Change in progress: splitting `parseRepeatBlock` into token validation and body parsing
-- Observation: the parser already tracks depth, so unmatched `endRepeat` can be surfaced earlier without new state
-- Possible risk: changing the thrown error message may break snapshot assertions
-
-#### Checkpoint 2
-- Working in: `src/parser.test.ts`
-- Change in progress: adding regression coverage before touching snapshots elsewhere
-- Observation: the existing happy-path tests still pass with the parser refactor in place
-- Possible risk: broader snapshot suites may still depend on the old generic error message
-
-### Completed Work
-- Updated `src/parser.ts` so unmatched `endRepeat` throws `Unexpected endRepeat at depth 0`
-- Kept the recursive parse shape and avoided changing the outer `parse()` signature
-- Added regression tests in `src/parser.test.ts` for unmatched `endRepeat` and nested valid repeats
-
-### Verification
-- Ran: `pnpm test src/parser.test.ts`
-- Result: pass; 12 tests passed, including 2 new regression tests
-
-### Handoff State
-- Current code state: parser behavior is unchanged on valid input and now fails earlier on unmatched closing tokens
-- Open question: should the new error message be normalized to match other parser errors
-- Recommended next role: @tester
-- Recommended next move: decide whether the new message should be snapshot-stable across all parse errors
-
-## Final Session Summary
-- Outcome: parser now rejects unmatched `endRepeat` earlier without changing valid nested repeat behavior
-- Final verification: `pnpm test src/parser.test.ts` passed with 12/12 tests green
-- Remaining risk: broader parser snapshot suites may still want a normalized error-message format
+### {TYPE} {ID} — INCORPORATED
+- Resolved by: @{role}
+- Detail: {how the suggestion was used}
 ```
+
+```markdown
+### {TYPE} {ID} — NOTED
+- Resolved by: @{role}
+```
+
+REJECTED is a first-class outcome. A driver who rejects an OBJECTION with sound reasoning has used the system correctly — the concern was raised, considered, and decided. The resolution entry records the reasoning so future agents can understand why.
+
+Do not edit the original entry under `## Open`. The history stays intact.
+
+## LOG.md Format
+
+Keep it simple. One line per checkpoint is fine. Enough detail that the next agent can pick up where you left off.
+
+```markdown
+## Task {id} — Driver @{role}, Navigator @{role}
+
+### Checkpoint 1
+Edited src/parser.ts:47 — added depth guard to parseBlock(). Existing tests still pass.
+
+### Checkpoint 2
+Resolved OBJ-2-01 (REJECTED — upstream caller validates depth before this point, guard is redundant).
+
+### Checkpoint 3
+Added 2 regression tests in parser.test.ts for unmatched endRepeat. 12/12 green.
+
+### Task Complete
+Parser rejects unmatched endRepeat, regression tests added, all green. Next: @tester drives verification.
+```
+
+Don't over-format. The point is that the next driver can read this and understand what happened. A single prose sentence per checkpoint does that. Six structured fields per checkpoint does not add proportional value.
+
+### Detailed Example (with advice resolution)
+
+```markdown
+## Task 3 — Driver @craftsman, Navigator @expert
+
+### Checkpoint 1
+Split parseRepeatBlock() into validateRepeatToken() + parseRepeatBody() in src/parser.ts:47-62. Depth tracking unchanged. Acknowledged SML-3-01 (error message format — keeping current format, it's consistent with other parser errors).
+
+### Checkpoint 2
+Expert sent OBJ-3-01: depth < 0 not guarded. Reviewed — they're right, malformed input passes silently. Fixing.
+
+### Checkpoint 3
+Added depth < 0 guard to validateRepeatToken() at src/parser.ts:48. OBJ-3-01 FIXED. Also added 2 regression tests in parser.test.ts. 12/12 green.
+
+### Task Complete
+Parser rejects unmatched endRepeat earlier, negative depth throws, 2 regression tests added. All green, no API changes. Next: @tester drives task 4.
+```
+
+Notice: checkpoint 2 shows the driver engaging with an OBJECTION — they evaluated it, agreed, and fixed it. If they had disagreed, the entry would say "OBJ-3-01 REJECTED — upstream caller validates depth before this point." Both outcomes are equally legitimate.
 
 ## Role Blurbs
 
-Use these as the role paragraph in launch prompts.
+Include the matching blurb in each teammate's prompt.
 
 ### Scout
 
@@ -282,85 +409,21 @@ You are `expert`. Your lens is: "Does this actually work in edge cases?" Check i
 
 You are `tester`. Your lens is: "How will we prove this?" Identify the smallest convincing test set, likely regressions, missing assertions, and any manual verification still required. Prefer exact test names or scenarios when possible.
 
-## Round 1 Prompt Template
+## Suggested First Task Assignment
 
-Use this template when launching a fresh agent:
+For most coding tasks, start with two agents:
 
-```text
-You are participating in a Popcorn XP coding session.
+- **Driver**: `craftsman` or `scout` (depending on whether the task starts with implementation or orientation)
+- **Navigator**: `expert` (correctness lens catches issues the driver's implementation lens misses)
 
-Role: {role}
-Lens: {one-line role blurb}
-Round role: {driver | navigator | advisor}
+A third agent (`tester`) can be added when verification tasks appear on the TaskList.
 
-Task:
-{task summary}
+**Rotation rule:** When the first task completes, swap roles. The navigator becomes the driver for the next task — they've been watching the code emerge and carry context. The previous driver becomes the navigator — they know what they did and can catch misunderstandings. Don't assign tasks to the "best-fit" lens. The expert who navigated the implementation should drive the tests. The craftsman who drove the implementation should navigate the hardening. Rotation is for knowledge sharing.
 
-Current context:
-{repo facts, files already inspected, constraints, assumptions}
+## Integration Notes
 
-Your ownership for this round:
-{bounded scope}
-
-Return:
-1. What you checked
-2. What you learned
-3. What should happen next
-
-Important:
-- You are not alone in the codebase. Do not revert or overwrite work you did not make.
-- Keep this round small and focused.
-- If you propose code changes, keep them inside your owned scope.
-- Respect `LOCK.md`. Only the active driver should be editing.
-- If you are the navigator, stay strategic and steer the driver instead of grabbing the keyboard.
-- If you are an advisor, keep input concise and avoid creating a second navigation channel.
-- If the host supports shared file writes, append steering input to `ADVICE.md` and execution detail to `LOG.md`.
-- If the host does not support shared file writes, return append-ready `ADVICE.md` or `LOG.md` entries so the orchestrator can mirror them.
-```
-
-## Follow-Up Round Template
-
-Use this template when following up with an existing agent or launching the next short round:
-
-```text
-Popcorn follow-up for {role}.
-
-Latest state:
-{short synthesis of what changed or what another agent found}
-
-Your next small chunk:
-{one concrete question, review pass, or bounded patch}
-
-Return only:
-1. Findings
-2. Recommended next move
-3. Any exact test or file follow-up
-```
-
-## Suggested First Round Split
-
-For most coding tasks:
-
-- `scout`: map touched files, entry points, and constraints
-- `expert`: check correctness and edge-case risks
-- `tester`: propose the smallest convincing test plan
-
-Add `craftsman` when the implementation is non-trivial or you want a second opinion on code shape.
-
-Suggested pairing shape:
-
-- driver: whichever role is best suited to the current code change
-- navigator: `expert` or `scout` when correctness or direction is the bigger risk
-- advisor: `tester` when verification pressure matters
-
-## Integration Guidance
-
-- Keep final edits and test runs in the main thread unless a delegated patch is clearly isolated.
-- If a worker returns a patch idea, review it against the main-thread understanding before integrating.
-- Stop the multi-agent loop once additional rounds stop changing the plan.
-- Before changing drivers, update `LOCK.md`.
-- After changing drivers, sync the mirrored current-driver sections in `CONTEXT.md` and `ADVICE.md`.
-- Before choosing the next driver, read the latest `LOG.md` and unresolved items in `ADVICE.md`.
-- During an active round, the driver must keep checking for new `ADVICE.md` entries at the defined checkpoints.
-- Prefer a new driver when the next round benefits from a different lens or when you want to spread knowledge of the touched code.
-- On session close, set `LOCK.md` to `done`, append a final session summary to `LOG.md`, and append resolution markers for any no-longer-active advice.
+- The lead (team-lead) manages the TaskList and round transitions. Teammates do the work.
+- If a teammate needs context the lead has, the lead sends it via SendMessage.
+- If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
+- The lead runs final verification through a teammate, not directly (coordinator mode has no file tools).
+- On session close, the lead sends `shutdown_request` to all teammates, waits for acknowledgment, then calls TeamDelete.
