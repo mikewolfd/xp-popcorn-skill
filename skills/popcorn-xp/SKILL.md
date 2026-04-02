@@ -102,6 +102,7 @@ Use the native agent's `subagent_type` but include the popcorn-xp protocol in th
 Agent(
   name: "test-engineer",
   subagent_type: "test-engineer",
+  model: "sonnet",
   team_name: "{team-name}",
   prompt: "<driver/navigator/advisor template from protocol.md>
            Role: test-engineer (filling tester persona)
@@ -211,6 +212,8 @@ are better than 4 where the last one is "run tests again."
 
 Run the "Discover Native Agents" procedure from the Role Roster section. Then launch 2-3 teammates using the Agent tool with `team_name: "{team-name}"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
 
+**Always pass `model: "sonnet"` when spawning teammates**, including native agents. Native agent definitions may inherit a different model from their definition file — the explicit `model` parameter overrides that.
+
 For each persona slot, use the native agent if one was discovered, otherwise fall back to the popcorn-xp default. When using a native agent, pass its `subagent_type` so its domain-specific instructions load automatically.
 
 **Example: all defaults (no native agents found)**
@@ -218,6 +221,7 @@ For each persona slot, use the native agent if one was discovered, otherwise fal
 ```
 Agent(
   name: "craftsman",
+  model: "sonnet",
   team_name: "{team-name}",
   prompt: "<driver coordinator prompt from protocol.md>"
 )
@@ -229,6 +233,7 @@ Agent(
 Agent(
   name: "test-engineer",
   subagent_type: "test-engineer",
+  model: "sonnet",
   team_name: "{team-name}",
   prompt: "<driver coordinator prompt from protocol.md>
            Role: test-engineer (filling tester persona)
@@ -241,15 +246,15 @@ Agent(
 ```
 # Native flutter-architect fills craftsman for a Flutter project
 Agent(name: "flutter-architect", subagent_type: "flutter-architect",
-  team_name: "{team-name}", prompt: "<driver prompt, lens from native agent>")
+  model: "sonnet", team_name: "{team-name}", prompt: "<driver prompt, lens from native agent>")
 
 # No native expert found — use default
-Agent(name: "expert", team_name: "{team-name}",
+Agent(name: "expert", model: "sonnet", team_name: "{team-name}",
   prompt: "<navigator prompt from protocol.md>")
 
 # Native test-engineer fills tester
 Agent(name: "test-engineer", subagent_type: "test-engineer",
-  team_name: "{team-name}", prompt: "<advisor prompt, lens from native agent>")
+  model: "sonnet", team_name: "{team-name}", prompt: "<advisor prompt, lens from native agent>")
 ```
 
 Assign the first task to the driver via TaskUpdate.
