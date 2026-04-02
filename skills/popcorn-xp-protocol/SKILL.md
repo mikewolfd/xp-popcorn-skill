@@ -213,6 +213,11 @@ Before shutdown, the lead asks for retro feedback. When you receive a retro requ
 - Were checkpoints frequent enough for useful navigation?
 - What would you change about the rotation or task breakdown?
 
+Submit your observations using the session script:
+```
+.popcorn-xp/{team-name}/session retro {your-name} 'What worked? What didn't? What would you change about the process?'
+```
+
 Keep it brief (3-5 sentences). Focus on the process, not the code. "The OBJECTION on depth checking caught a real bug" is useful. "I completed task 3" is not — the lead already knows that from the TaskList.
 
 ## Integration Notes
@@ -222,4 +227,4 @@ Keep it brief (3-5 sentences). Focus on the process, not the code. "The OBJECTIO
 - If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
 - The lead runs final verification through a teammate, not directly (coordinator mode has no file tools).
 - Before shutdown, the lead asks for retro feedback. See the Retro section above — respond with process observations, not task summaries.
-- On session close, the lead sends `shutdown_request` to each teammate individually. If you receive a shutdown_request, approve it promptly — do not start new work or send additional advice after receiving one.
+- On session close, the lead signals shutdown mechanically. Submit your retro when asked — the session cannot close until you do.
