@@ -175,7 +175,24 @@ Task 4: "Run full test suite and verify no regressions" — blocked by 3
 
 Include enough context in each task description for a teammate to execute it independently. State what to do, why it matters, and what success looks like.
 
-**Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` so tasks auto-unblock as each dependency completes. Teammates self-claim the next unblocked task based on rotation convention (navigator becomes driver), so the chain should reflect the intended execution order. You assign the first task; after that, the normal path flows through built-in task dependencies without your intervention.
+**Research and analysis pipelines often run in parallel, not series.** When two agents can gather information independently (one reads the implementation, another reads the spec), model them as concurrent tasks that both feed a synthesis task — not a serial chain. Serial chains cause unnecessary idle time when agents could be working in parallel.
+
+Example parallel breakdown:
+```
+Task 1a: "Inventory implementation — components, APIs, constraints" (no dependencies)
+Task 1b: "Read spec — catalog what each section requires" (no dependencies)
+Task 2:  "Cross-reference: implementation vs. spec" — blocked by 1a and 1b
+Task 3:  "Synthesize findings into prioritized gap list" — blocked by 2
+```
+
+**For synthesis or authoring tasks, make expert review an explicit blocking sub-task.** Don't fold it into a note in the task description — review that isn't a hard dependency won't happen until after the synthesis is "done." Use a draft → review → finalize chain:
+```
+Task Xa: Draft synthesis
+Task Xb: Expert reviews draft — blocked by Xa (OBJECTION gate)
+Task Xc: Finalize — blocked by Xb
+```
+
+**Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` so tasks auto-unblock as each dependency completes. Teammates self-claim the next unblocked task based on rotation convention (navigator becomes driver), so the chain should reflect the intended execution order. You assign the first task; after that, the normal path flows through built-in task dependencies without your intervention. If you can anticipate auxiliary tasks — an API audit, a renderer compatibility check, a supplementary research pass — create them now. Tasks added mid-session arrive as addenda and feed synthesis less cleanly than tasks planned upfront.
 
 **When to include a separate verification task:**
 - A different agent runs verification than wrote the code (fresh eyes)
@@ -237,7 +254,7 @@ Agent(name: "test-engineer", subagent_type: "test-engineer",
 
 Assign the first task to the driver via TaskUpdate.
 
-**Reuse orientation agents.** If you spawn a scout or research-focused agent for an initial orientation task, plan a second assignment for them later in the session — test review, demo validation, or a verification task. An agent that goes idle after one task and never returns is wasted capacity. Either give them follow-up work or don't spawn them.
+**Reuse orientation agents.** If you spawn a scout or research-focused agent for an initial orientation task, create their follow-up task in Step 3 — not mid-session. A follow-up task added after synthesis has already started arrives as an addendum rather than feeding it. Either plan the second assignment upfront (test review, API audit, demo validation) or don't spawn the agent.
 
 ### 5. Monitor
 
@@ -336,6 +353,8 @@ Strong opinions, loosely held. The driver has their own approach and should defe
 | **FYI** | "Noticed this, might matter later." | Noted. | No |
 
 Only OBJECTIONs block task completion. Everything else is the driver's call. The navigator should use OBJECTION sparingly — overusing it makes them a blocker, not a partner.
+
+In research and analysis sessions (no code being written), expect fewer OBJECTIONs — correctness blockers are rare when the output is findings, not a diff. Peer DMs and SMELLs carry most of the coordination in these sessions. That's normal.
 
 Advice is sent via SendMessage (real-time) and appended to `.popcorn-xp/ADVICE.md` (persistent record).
 
