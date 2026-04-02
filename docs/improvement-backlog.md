@@ -473,6 +473,61 @@ No change needed to hook scripts themselves — this is a user environment issue
 
 ---
 
+### R1 — Batch checkpoint allowance for repetitive edits
+**Priority:** 🟡 Medium
+
+**Context:** The 2026-04-02 "improvement backlog" retro observed the craftsman batching many edits without checkpoints during Task 3 SKILL.md edits. The protocol says "Do NOT batch multiple file edits into one checkpoint." But for mechanical, repetitive changes — applying the same fix pattern across 4 files, renaming a variable in 6 locations — per-edit checkpoints add noise without value. The navigator doesn't gain new information from "applied the same H3 fix to file 4 of 4."
+
+**Recommended solution:** Add a batch checkpoint exception to driver prompt step 5 in `references/protocol.md` and `skills/popcorn-xp-protocol/SKILL.md`:
+
+> **Batch exception:** For mechanical, repetitive edits — the same pattern applied to multiple files (e.g., fixing the same grep pattern in 4 hook scripts) — you may batch them into one checkpoint. State what you did, how many files, and which ones. This exception does NOT apply when each edit requires judgment or when the files differ structurally.
+
+---
+
+### R2 — Retro instructions in protocol prompts
+**Priority:** 🟠 High
+
+**Context:** The 2026-04-02 retro noted "Retro feedback requests went unanswered — both agents kept responding about task status instead of process observations." The retro instructions live in SKILL.md (which agents don't read) and one weak line in `protocol.md` Integration Notes: "the lead *may* ask teammates for retro feedback." S10 auto-loads the protocol via skills, so agents DO read it — but the instruction is buried and optional-sounding.
+
+**Recommended solution:** Add a "Retro" section to the protocol skill (`skills/popcorn-xp-protocol/SKILL.md`) between Rotation and Integration Notes. Make it a named section agents will recognize when the lead asks:
+
+> ## Retro
+>
+> Before shutdown, the lead asks for retro feedback. When you receive a retro request, respond with **process observations**, not task status:
+> - What worked well about the pairing dynamic?
+> - What made collaboration harder?
+> - Did the advice system help or get in the way?
+> - Were checkpoints frequent enough for useful navigation?
+> - What would you change about the rotation or task breakdown?
+>
+> Keep it brief (3-5 sentences). Focus on the process, not the code. "The OBJECTION on depth checking caught a real bug" is useful. "I completed task 3" is not — the lead already knows that from the TaskList.
+
+Also update the Integration Notes line from "the lead *may* ask" to reference the new section.
+
+---
+
+### R3 — Soft checkpoint frequency enforcement via PreToolUse counter
+**Priority:** 🟡 Medium
+
+**Context:** The 2026-04-02 retro identified that `remind-checkpoint.sh` only fires on `TeammateIdle`. A driver who keeps editing without going idle (the exact Task 3 failure) never receives a checkpoint reminder. The retro recommends "mechanical enforcement for checkpoint frequency — perhaps a hook that counts edits since last `session log` call."
+
+The canonical hooks docs confirm PreToolUse on Edit/Write can inject `additionalContext` (exit 0 with JSON) without blocking the edit. The existing `mark-dirty.sh` already fires on PreToolUse Edit/Write and uses a flag file. It can be extended to maintain a counter.
+
+**Recommended solution:** Modify `mark-dirty.sh` to:
+1. Read stdin to extract `tool_input.file_path`
+2. Skip files under `.popcorn-xp/` (session bookkeeping shouldn't count)
+3. Increment a counter file (`.popcorn-xp/{team}/.edit-count`) instead of just touching `.dirty`
+4. When the counter reaches 3+, output `{"additionalContext": "Popcorn XP: You have N file edits since your last checkpoint. Send a checkpoint to your navigator and log it: .popcorn-xp/{team}/session log 'what you did'"}` to stdout
+5. Still exit 0 (soft — doesn't block the edit)
+
+The `session log` command already does `rm -f "$DIR/.dirty"`. Extend it to also `rm -f "$DIR/.edit-count"` to reset the counter.
+
+Update `remind-checkpoint.sh` to also read the counter for its message (so TeammateIdle reminders show the count too).
+
+**Files affected:** `hooks/scripts/mark-dirty.sh`, `hooks/scripts/remind-checkpoint.sh`, `skills/popcorn-xp/SKILL.md` (session script template — add counter reset to `log` subcommand)
+
+---
+
 ### AT4 — Canonical docs recommend 5-6 tasks per teammate; S7 recommends smaller tasks
 **Priority:** 🟡 Medium (tension to resolve)
 
@@ -686,6 +741,9 @@ The lead immediately has recent LOG context and retro recommendations without a 
 | ✅ S10 | Protocol via `skills` field | Done | Created `skills/popcorn-xp-protocol/SKILL.md` with `user-invocable: false`. Added `skills: [popcorn-xp-protocol]` to all 9 agent definitions. Protocol (core rules, advice, formats, rotation) auto-loads at startup. Prompt templates and role blurbs remain in `references/protocol.md` for the lead. |
 | ✅ AT2 | Plan approval mode | Done | Added to Step 4 as optional pattern. |
 | ✅ AT3 | Session resumption note | Done | Added to Session Files section. |
+| R1 | Batch checkpoint allowance | 🟡 Pending | protocol.md, protocol skill |
+| R2 | Retro instructions in protocol | 🟠 Pending | protocol skill |
+| R3 | Soft checkpoint frequency enforcement | 🟡 Pending | mark-dirty.sh, remind-checkpoint.sh, session script |
 | H8 | Shell profile echo issue | 🟢 Deferred | Docs-only item, no code change needed. |
 
 ---
