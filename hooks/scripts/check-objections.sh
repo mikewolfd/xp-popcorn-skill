@@ -2,21 +2,26 @@
 set -euo pipefail
 
 # check-objections.sh
-# SubagentStop hook (backup): blocks if open OBJECTIONs exist
+# SubagentStop hook (backup): blocks if unresolved OBJECTIONs exist
 # The primary enforcement is TaskCompleted — this catches the edge case
 # where a teammate tries to stop without completing the task
 # No-op when no active popcorn-xp session
 
-ADVICE="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp/ADVICE.md"
+POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
+TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
+[ -z "$TEAM" ] && exit 0
 
+ADVICE="$POPCORN_DIR/$TEAM/ADVICE.md"
 [ ! -f "$ADVICE" ] && exit 0
 
-open_section=$(sed -n '/^## Open$/,/^## Resolved$/p' "$ADVICE" 2>/dev/null || true)
+# Check for unresolved OBJECTIONs
+open_obj_ids=$(grep -oE '### OBJECTION (OBJ-[0-9]+-[0-9]+) — open' "$ADVICE" | grep -oE 'OBJ-[0-9]+-[0-9]+' || true)
 
-# Match both "### OBJECTION" (prescribed format) and bare "OBJECTION OBJ-" / "OBJ-" (actual usage)
-if echo "$open_section" | grep -qiE "^(###\s+)?OBJECTION|^(###\s+)?OBJ-"; then
-  echo '{"decision":"block","reason":"Open OBJECTIONs exist in .popcorn-xp/ADVICE.md. You must resolve all OBJECTIONs before stopping — either fix the issue or explicitly reject with a stated reason."}' >&2
-  exit 2
-fi
+for id in $open_obj_ids; do
+  if ! grep -qE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+    echo '{"decision":"block","reason":"Unresolved OBJECTIONs exist in ADVICE.md. You must resolve all OBJECTIONs before stopping — either fix the issue or explicitly reject with a stated reason."}' >&2
+    exit 2
+  fi
+done
 
 exit 0

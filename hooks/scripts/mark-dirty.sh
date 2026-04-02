@@ -8,7 +8,9 @@ set -euo pipefail
 # No-op when no active popcorn-xp session.
 
 POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
-[ ! -d "$POPCORN_DIR" ] && exit 0
+TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
+[ -z "$TEAM" ] && exit 0
+[ ! -d "$POPCORN_DIR/$TEAM" ] && exit 0
 
-touch "$POPCORN_DIR/.dirty"
+touch "$POPCORN_DIR/$TEAM/.dirty"
 exit 0

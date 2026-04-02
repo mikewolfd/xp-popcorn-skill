@@ -102,7 +102,7 @@ Use the native agent's `subagent_type` but include the popcorn-xp protocol in th
 Agent(
   name: "test-engineer",
   subagent_type: "test-engineer",
-  team_name: "popcorn-xp",
+  team_name: "{team-name}",
   prompt: "<driver/navigator/advisor template from protocol.md>
            Role: test-engineer (filling tester persona)
            Lens: <use the native agent's own description as the lens>"
@@ -119,7 +119,7 @@ The native agent's behavioral instructions (from its definition file) load autom
 
 Before creating the team, understand the problem yourself. If you have file access, read the relevant code. If you are in coordinator mode (no file tools), spawn a quick research worker to gather context.
 
-**Check for prior retros.** If `.popcorn-xp/RETRO.md` exists, read it. It contains process observations from previous sessions on this codebase — what worked, what didn't, what to change. Apply any relevant recommendations.
+**Check for prior retros.** If `.popcorn-xp/*/RETRO.md` exists for any prior team, read it. It contains process observations from previous sessions on this codebase — what worked, what didn't, what to change. Apply any relevant recommendations.
 
 Build a mental model of:
 - What files are involved
@@ -131,9 +131,35 @@ Break the work into 3-6 concrete tasks.
 
 ### 2. Create the Team
 
+Choose a short team name that reflects the task (e.g., `fix-parser`, `add-auth`, `refactor-api`).
+
 ```
-TeamCreate "popcorn-xp"
+TeamCreate "{team-name}"
 ```
+
+Set up the session directory (replace `{team-name}` with your chosen name):
+
+```bash
+TEAM="{team-name}"
+mkdir -p ".popcorn-xp/$TEAM"
+echo "# Popcorn XP Log" > ".popcorn-xp/$TEAM/LOG.md"
+printf "# Advice\n" > ".popcorn-xp/$TEAM/ADVICE.md"
+echo "$TEAM" > .popcorn-xp/.active-team
+cat > ".popcorn-xp/$TEAM/session" << 'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
+case "$cmd" in
+  log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; rm -f "$DIR/.dirty" ;;
+  advice) T="${1:?}"; ID="${2:?}"; shift 2; grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md" ;;
+  resolve) ID="${1:?}"; O="${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md" ;;
+esac
+SCRIPT
+chmod +x ".popcorn-xp/$TEAM/session"
+```
+
+This creates `.popcorn-xp/{team-name}/` with fresh LOG.md, ADVICE.md, and a `session` helper that teammates use to append entries. RETRO.md is preserved across sessions.
 
 ### 3. Create Tasks
 
@@ -166,7 +192,7 @@ are better than 4 where the last one is "run tests again."
 
 ### 4. Spawn Teammates
 
-Run the "Discover Native Agents" procedure from the Role Roster section. Then launch 2-3 teammates using the Agent tool with `team_name: "popcorn-xp"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
+Run the "Discover Native Agents" procedure from the Role Roster section. Then launch 2-3 teammates using the Agent tool with `team_name: "{team-name}"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
 
 For each persona slot, use the native agent if one was discovered, otherwise fall back to the popcorn-xp default. When using a native agent, pass its `subagent_type` so its domain-specific instructions load automatically.
 
@@ -175,7 +201,7 @@ For each persona slot, use the native agent if one was discovered, otherwise fal
 ```
 Agent(
   name: "craftsman",
-  team_name: "popcorn-xp",
+  team_name: "{team-name}",
   prompt: "<driver coordinator prompt from protocol.md>"
 )
 ```
@@ -186,7 +212,7 @@ Agent(
 Agent(
   name: "test-engineer",
   subagent_type: "test-engineer",
-  team_name: "popcorn-xp",
+  team_name: "{team-name}",
   prompt: "<driver coordinator prompt from protocol.md>
            Role: test-engineer (filling tester persona)
            Lens: <native agent's description>"
@@ -198,15 +224,15 @@ Agent(
 ```
 # Native flutter-architect fills craftsman for a Flutter project
 Agent(name: "flutter-architect", subagent_type: "flutter-architect",
-  team_name: "popcorn-xp", prompt: "<driver prompt, lens from native agent>")
+  team_name: "{team-name}", prompt: "<driver prompt, lens from native agent>")
 
 # No native expert found — use default
-Agent(name: "expert", team_name: "popcorn-xp",
+Agent(name: "expert", team_name: "{team-name}",
   prompt: "<navigator prompt from protocol.md>")
 
 # Native test-engineer fills tester
 Agent(name: "test-engineer", subagent_type: "test-engineer",
-  team_name: "popcorn-xp", prompt: "<advisor prompt, lens from native agent>")
+  team_name: "{team-name}", prompt: "<advisor prompt, lens from native agent>")
 ```
 
 Assign the first task to the driver via TaskUpdate.
@@ -223,9 +249,9 @@ You receive messages from teammates automatically. Your role during execution:
 - **Watch for rotation failures.** **At least one rotation is mandatory per session.** If the same agent has driven every task and you're approaching the final task, intervene and force a swap. A session with no rotation is a solo session with an expensive spectator.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
 - **Periodic code review.** After every 2-3 completed tasks (or after any task that touches shared/critical code), launch `popcorn-xp:code-reviewer` independently — **not** as a teammate. Use the Agent tool without `team_name`. Give it the list of files changed since the last review and ask for a review certificate. When the review comes back:
-  - **BLOCKER findings**: relay as OBJECTIONs to the current driver via SendMessage and append to ADVICE.md
+  - **BLOCKER findings**: relay as OBJECTIONs to the current driver via SendMessage, then run the session script to log it
   - **WARNING findings**: relay as SMELLs to the driver
-  - **NITs/OBSERVATIONs**: note in LOG.md, don't interrupt the driver
+  - **NITs/OBSERVATIONs**: log via session script, don't interrupt the driver
   - The code-reviewer never messages teammates directly — you are the relay.
   **Note:** The Agent tool may auto-inherit team_name from the lead's session. The
   code-reviewer functions correctly despite this — it does not use SendMessage,
@@ -252,11 +278,11 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
    ```
    TeamDelete
    ```
-7. **Write the retro file.** After TeamDelete, write `.popcorn-xp/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
+7. **Write the retro file.** After TeamDelete, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
 
 ### Retro File Format
 
-Write `.popcorn-xp/RETRO.md` after every session. This file accumulates across sessions — append a new entry, don't overwrite prior retros.
+Write `.popcorn-xp/{team-name}/RETRO.md` after every session. This file accumulates across sessions — append a new entry, don't overwrite prior retros.
 
 ```markdown
 # Popcorn XP Retro
@@ -320,13 +346,14 @@ Three hooks support the advice lifecycle:
 
 ## Session Files
 
-Three files in `.popcorn-xp/`:
+Session files live at `.popcorn-xp/{team-name}/`:
 
-- **LOG.md** — Append-only execution history. What was done, what was learned, what was decided. Written by teammates during the session.
-- **ADVICE.md** — Persistent record of all typed advice and resolutions. Written by teammates during the session.
-- **RETRO.md** — Accumulated retrospective entries. Written by the lead after each session. Read this before starting the next session — it's the team's process memory.
+- **LOG.md** — Append-only execution history. Teammates log checkpoints via the `session` script.
+- **ADVICE.md** — Append-only advice ledger. Advice and resolutions are both appended; enforcement hooks check for unresolved OBJECTIONs by scanning for IDs without a matching resolution.
+- **RETRO.md** — Accumulated retrospective entries. Written by the lead after each session.
+- **session** — Helper script teammates call via Bash to append to LOG.md and ADVICE.md.
 
-The first teammate to start work creates `.popcorn-xp/`, LOG.md, and ADVICE.md. The lead creates RETRO.md after TeamDelete.
+The lead creates the team directory and files during setup (Step 2). Teammates persist state by calling the `session` script — never by editing files directly. The lead creates RETRO.md after TeamDelete.
 
 ## Quality Bar
 
