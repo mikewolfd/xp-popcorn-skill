@@ -101,7 +101,9 @@ For each persona you need in the session:
 
 **How to spawn a native agent as a teammate:**
 
-Use the native agent's `subagent_type` but include the popcorn-xp protocol in the prompt. The native agent definition provides "how I think about this domain"; the protocol provides "how I collaborate in a pair session."
+Use the native agent's `subagent_type`. The native agent definition provides "how I think about this domain"; the popcorn-xp protocol provides "how I collaborate in a pair session."
+
+Native agents don't have the protocol pre-loaded (only popcorn-xp agents do via the `skills` field). Instruct them to load it as their first action:
 
 ```
 Agent(
@@ -109,13 +111,20 @@ Agent(
   subagent_type: "test-engineer",
   model: "sonnet",
   team_name: "{team-name}",
-  prompt: "<driver/navigator/advisor template from protocol.md>
+  prompt: "You are a Popcorn XP teammate in session '{team-name}'.
+
+           FIRST: Load the collaboration protocol by invoking:
+             Skill('popcorn-xp:popcorn-xp-protocol')
+
            Role: test-engineer (filling tester persona)
-           Lens: <use the native agent's own description as the lens>"
+           Lens: <use the native agent's own description as the lens>
+
+           <driver/navigator/advisor assignment from protocol.md templates>
+           <task context>"
 )
 ```
 
-The native agent's behavioral instructions (from its definition file) load automatically via `subagent_type`. Your prompt adds the session protocol on top — the agent gets both its domain expertise AND the collaboration structure.
+The native agent's behavioral instructions (from its definition file) load automatically via `subagent_type`. The `Skill` invocation loads the collaboration protocol. The prompt adds role assignment and task context.
 
 **What to record:** When writing the team composition in Step 4 of the Workflow, note which personas were filled by native agents and why. This helps the retro assess whether the native agents performed better than defaults would have.
 
@@ -272,26 +281,30 @@ Agent(
   subagent_type: "test-engineer",
   model: "sonnet",
   team_name: "{team-name}",
-  prompt: "<driver coordinator prompt from protocol.md>
+  prompt: "You are a Popcorn XP teammate in session '{team-name}'.
+           FIRST: Load the protocol: Skill('popcorn-xp:popcorn-xp-protocol')
            Role: test-engineer (filling tester persona)
-           Lens: <native agent's description>"
+           Lens: <native agent's description>
+           <driver/navigator assignment + task context>"
 )
 ```
 
 **Example: mixed team (native + defaults)**
 
 ```
-# Native flutter-architect fills craftsman for a Flutter project
+# Native flutter-architect fills craftsman — loads protocol via Skill tool
 Agent(name: "flutter-architect", subagent_type: "flutter-architect",
-  model: "sonnet", team_name: "{team-name}", prompt: "<driver prompt, lens from native agent>")
+  model: "sonnet", team_name: "{team-name}",
+  prompt: "FIRST: Skill('popcorn-xp:popcorn-xp-protocol')\n<driver prompt, lens from native agent>")
 
-# No native expert found — use default
+# Default expert — protocol auto-loaded via skills field
 Agent(name: "expert", model: "sonnet", team_name: "{team-name}",
   prompt: "<navigator prompt from protocol.md>")
 
-# Native test-engineer fills tester
+# Native test-engineer — loads protocol via Skill tool
 Agent(name: "test-engineer", subagent_type: "test-engineer",
-  model: "sonnet", team_name: "{team-name}", prompt: "<advisor prompt, lens from native agent>")
+  model: "sonnet", team_name: "{team-name}",
+  prompt: "FIRST: Skill('popcorn-xp:popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
 ```
 
 Assign the first task to the driver via TaskUpdate.
