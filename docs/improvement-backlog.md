@@ -528,6 +528,33 @@ Update `remind-checkpoint.sh` to also read the counter for its message (so Teamm
 
 ---
 
+### R4 — Mechanical shutdown lifecycle enforcement via signal files and TeammateIdle phases
+**Priority:** 🟠 High
+
+**Context:** The 2026-04-02 retro identified two enforcement failures: (1) teammates ignored retro requests, responding with task status instead of process observations even after R2 added retro instructions to the protocol; (2) teammates ignored `shutdown_request` messages, idle-looping indefinitely and requiring `TeamDelete` to force cleanup. R2 addressed the informational gap but cannot enforce compliance — a mechanical backstop is needed.
+
+**Recommended solution:** Extend `enforce-no-idle.sh` with phase-aware logic driven by signal files in `.popcorn-xp/{team}/`:
+
+| Phase | Signal files | Hook behavior | Exit |
+|-------|-------------|---------------|------|
+| Working | neither `.retro-requested` nor `.shutdown` | Nudge: "Go find work" | `exit 2` (stderr) |
+| Retro pending | `.retro-requested`, no `.retro-{agent}.md` | Nudge: "Submit your retro via session script" | `exit 2` (stderr) |
+| Retro submitted | `.retro-requested` + `.retro-{agent}.md` | Allow idle (waiting for shutdown) | `exit 0` |
+| Shutdown | `.shutdown` | Force-stop: `{"continue": false}` to stdout | `exit 0` |
+
+Add three new subcommands to the session script template:
+- `retro-request` — lead signals retro phase has begun (touches `.retro-requested`)
+- `retro {agent} 'feedback'` — teammate submits observations (writes `.retro-{agent}.md`)
+- `shutdown` — lead signals force-stop on next idle (touches `.shutdown`)
+
+Update the lead SKILL.md Verify and Close steps 4-5 to use the mechanical flow instead of manual `SendMessage`/`shutdown_request` patterns.
+
+Update the protocol SKILL.md Integration Notes to remove "approve shutdown_request promptly" and replace with the retro-gate framing.
+
+**Files affected:** `hooks/scripts/enforce-no-idle.sh`, `skills/popcorn-xp/SKILL.md` (session script template + Verify and Close), `skills/popcorn-xp-protocol/SKILL.md` (Retro section + Integration Notes), `tests/test-hooks.sh`
+
+---
+
 ### AT4 — Canonical docs recommend 5-6 tasks per teammate; S7 recommends smaller tasks
 **Priority:** 🟡 Medium (tension to resolve)
 
@@ -744,6 +771,7 @@ The lead immediately has recent LOG context and retro recommendations without a 
 | ✅ R1 | Batch checkpoint allowance | Done | protocol.md, protocol skill |
 | ✅ R2 | Retro instructions in protocol | Done | protocol skill, driver/navigator prompts |
 | ✅ R3 | Soft checkpoint frequency enforcement | Done | mark-dirty.sh, remind-checkpoint.sh, session script |
+| ✅ R4 | Mechanical shutdown lifecycle enforcement | Done | enforce-no-idle.sh (phase-aware), session script (retro-request/retro/shutdown subcommands), lead SKILL.md (Verify and Close), protocol SKILL.md (Integration Notes), test-hooks.sh |
 | H8 | Shell profile echo issue | 🟢 Deferred | Docs-only item, no code change needed. |
 
 ---
