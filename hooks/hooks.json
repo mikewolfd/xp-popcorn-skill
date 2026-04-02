@@ -3,7 +3,6 @@
   "hooks": {
     "TaskCompleted": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
@@ -22,7 +21,6 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
@@ -34,7 +32,6 @@
     ],
     "TeammateIdle": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",

@@ -756,7 +756,7 @@ All hook scripts validated against canonical documentation in `research/offical/
 
 - **check-retro-before-delete.sh**: Had same H5 bug (JSON to stderr with exit 2). Fixed — now uses plain text stderr.
 - **`additionalContext` for TaskCompleted**: Not explicitly documented for this event in per-event tables, but mentioned as a context injection field alongside `systemMessage` and plain stdout. Likely works; not confirmed per-event. Monitoring.
-- **Dead `matcher: "*"`**: TaskCompleted and TeammateIdle hooks have `matcher` fields that the docs say are silently ignored. Harmless, left in place.
+- **Dead `matcher: "*"`**: Removed from TeammateIdle, TaskCompleted, and SubagentStop in hooks.json (Task 1 of shutdown-lifecycle session).
 - **Dead `PREFIX` variables**: Removed from remind-unread-advice.sh and check-advice-on-complete.sh after H3 made them unused.
 - **Stale comments**: Fixed in remind-unread-advice.sh and remind-checkpoint.sh (said "Non-blocking" and "systemMessage" — now say "Blocking" and reference stderr).
 
