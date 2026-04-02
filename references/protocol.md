@@ -169,6 +169,9 @@ Handoff format:
   becomes the next driver. Don't self-claim the next driving task.
 - If you receive a shutdown_request message, approve it immediately. Do not send
   more task content. The session is over.
+- When the lead asks for retro feedback, respond with process observations (pairing
+  dynamic, advice quality, checkpoint frequency, rotation). Not task status — the lead
+  already has that from the TaskList. See the Retro section in the protocol skill.
 
 ## Context Limit
 
@@ -315,6 +318,9 @@ You have two modes: reacting to checkpoints and reading ahead.
   current files — reviewing test coverage while you work."
 - If you receive a shutdown_request message, approve it immediately. The session
   is over.
+- When the lead asks for retro feedback, respond with process observations (pairing
+  dynamic, advice quality, checkpoint frequency, rotation). Not task status — the lead
+  already has that from the TaskList. See the Retro section in the protocol skill.
 
 ## Context Limit
 
@@ -557,5 +563,5 @@ A third agent (`tester`) can be added when verification tasks appear on the Task
 - If a teammate needs context the lead has, the lead sends it via SendMessage.
 - If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
 - The lead runs final verification through a teammate, not directly (coordinator mode has no file tools).
-- Before shutdown, the lead may ask teammates for retro feedback: "What worked well? What would you change about the process?" Respond briefly — your observations about the pairing dynamic, the advice system, and the task breakdown help improve future sessions.
+- Before shutdown, the lead asks for retro feedback. Respond with **process observations** — what worked about the pairing dynamic, what made collaboration harder, whether checkpoints and advice helped. Focus on the process, not the code. See the protocol skill's Retro section for the full prompt. Keep it to 3-5 sentences.
 - On session close, the lead sends `shutdown_request` to each teammate individually (broadcast does not support structured messages). If you receive a shutdown_request, approve it promptly — do not start new work or send additional advice after receiving one. If you have in-progress work, finish the immediate step, mark the task complete or hand it off, then approve the shutdown. The lead will escalate with a plain-text message if the request is not acknowledged after 2 attempts, and will proceed with TeamDelete after 3 failed attempts.

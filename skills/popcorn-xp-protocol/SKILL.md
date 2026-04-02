@@ -204,11 +204,22 @@ After your task completes, you become the NAVIGATOR. The agent who was navigatin
 
 If the lead overrides your self-claim (reassigns, reorders, or redirects), follow their direction — they see the full session and the user's intent.
 
+## Retro
+
+Before shutdown, the lead asks for retro feedback. When you receive a retro request, respond with **process observations**, not task status:
+- What worked well about the pairing dynamic?
+- What made collaboration harder?
+- Did the advice system help or get in the way?
+- Were checkpoints frequent enough for useful navigation?
+- What would you change about the rotation or task breakdown?
+
+Keep it brief (3-5 sentences). Focus on the process, not the code. "The OBJECTION on depth checking caught a real bug" is useful. "I completed task 3" is not — the lead already knows that from the TaskList.
+
 ## Integration Notes
 
 - The lead sets up the dependency chain and session lifecycle. Teammates self-progress through the task chain based on rotation convention (navigator claims the next unblocked task). The lead intervenes on exceptions — reordering, reassignment, scope changes — not on every transition.
 - If a teammate needs context the lead has, the lead sends it via SendMessage.
 - If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
 - The lead runs final verification through a teammate, not directly (coordinator mode has no file tools).
-- Before shutdown, the lead may ask teammates for retro feedback: "What worked well? What would you change about the process?" Respond briefly.
+- Before shutdown, the lead asks for retro feedback. See the Retro section above — respond with process observations, not task summaries.
 - On session close, the lead sends `shutdown_request` to each teammate individually. If you receive a shutdown_request, approve it promptly — do not start new work or send additional advice after receiving one.
