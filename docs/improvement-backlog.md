@@ -741,9 +741,9 @@ The lead immediately has recent LOG context and retro recommendations without a 
 | ✅ S10 | Protocol via `skills` field | Done | Created `skills/popcorn-xp-protocol/SKILL.md` with `user-invocable: false`. Added `skills: [popcorn-xp-protocol]` to all 9 agent definitions. Protocol (core rules, advice, formats, rotation) auto-loads at startup. Prompt templates and role blurbs remain in `references/protocol.md` for the lead. |
 | ✅ AT2 | Plan approval mode | Done | Added to Step 4 as optional pattern. |
 | ✅ AT3 | Session resumption note | Done | Added to Session Files section. |
-| R1 | Batch checkpoint allowance | 🟡 Pending | protocol.md, protocol skill |
-| R2 | Retro instructions in protocol | 🟠 Pending | protocol skill |
-| R3 | Soft checkpoint frequency enforcement | 🟡 Pending | mark-dirty.sh, remind-checkpoint.sh, session script |
+| ✅ R1 | Batch checkpoint allowance | Done | protocol.md, protocol skill |
+| ✅ R2 | Retro instructions in protocol | Done | protocol skill, driver/navigator prompts |
+| ✅ R3 | Soft checkpoint frequency enforcement | Done | mark-dirty.sh, remind-checkpoint.sh, session script |
 | H8 | Shell profile echo issue | 🟢 Deferred | Docs-only item, no code change needed. |
 
 ---
