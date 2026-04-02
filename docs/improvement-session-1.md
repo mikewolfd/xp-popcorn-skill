@@ -726,53 +726,9 @@ The lead immediately has recent LOG context and retro recommendations without a 
 
 ---
 
-## Summary Table
+## Summary
 
-| ID | Title | Status | Notes |
-|----|-------|--------|-------|
-| ✅ | No idle hands | Done | protocol.md, SKILL.md, README.md |
-| ✅ H6 | `systemMessage` → `additionalContext` | Done | All 4 scripts updated. Stale comments fixed in remind-unread-advice.sh:6 and remind-checkpoint.sh:8. |
-| ✅ H1 | TeammateIdle must exit 2 | Done | remind-unread-advice.sh and remind-checkpoint.sh now exit 2 when they have content. |
-| ✅ H2 | Unconditional no-idle hook | Done | enforce-no-idle.sh created, registered in hooks.json. Message is generic ("pick something productive") rather than listing specific file paths from the backlog spec. |
-| ✅ H3 | Fix ID pattern in enforcement | Done | Applied to check-advice-on-complete.sh, remind-unread-advice.sh, AND check-objections.sh (broader than spec — navigator caught the missing file). Uses `sed` extraction instead of the simpler `([^ ]+)` capture group suggested in backlog. Dead `PREFIX` variables removed during cleanup. |
-| ✅ H4 | Case-insensitive resolution matching | Done | `-i` flag added to all resolution greps. Backlog's alternative (normalize to uppercase in `session resolve` command) was NOT applied — only reader-side fix. |
-| ✅ H5 | Fix block output channel | Done | Applied to check-advice-on-complete.sh, check-objections.sh, enforce-no-idle.sh, remind-checkpoint.sh, AND check-retro-before-delete.sh (found during doc validation — same JSON-to-stderr bug). All exit-2 paths use plain text stderr. |
-| ✅ S8 | `disable-model-invocation: true` | Done | As specified. |
-| ✅ P1 | Context limit + handoff | Done | Added "Context Limit" section to both driver and navigator prompts. Handoff file path and format included inline in Session Files section rather than as a separate top-level section. |
-| ✅ P2 | Handoff format definition | Done | Placed in driver prompt Session Files section. Format matches spec (5 sections). |
-| ✅ P4 | Verification before complete | Done | Driver step 7a updated. SKILL.md Step 2 setup adds verification command identification. Quality Bar updated. |
-| ✅ P6 | Advice dual-write mandatory | Done | Navigator step 1c strengthened. "Do not send advice without logging it." |
-| ✅ P7 | Per-edit logging as numbered step | Done | Step 5 split into 5a (SendMessage) and 5b (session log). |
-| ✅ P8 | Task headers mandatory | Done | Driver step 2 updated. `task` subcommand added to session script template. |
-| ✅ S1 | Lead handles handoff requests | Done | Added to Monitor section as specified. |
-| ✅ S3 | ID convention for reviewer relays | Done | Added to Monitor periodic code review bullet with example. |
-| ✅ N1 | Permission pre-approval | Done | Added to Step 2 setup. |
-| ✅ N2 | Team cleanup sequencing | Done | Step 6 reordered: retro (step 4) → shutdown (step 5) → write RETRO.md (step 6) → summary (step 7) → TeamDelete (step 8). |
-| ✅ P3 | `session handoff` command | Done | Added to session script template in SKILL.md Step 2. |
-| ✅ S2 | Fresh agent for QA | Done | Added to Step 3 task breakdown. |
-| ✅ S4 | Open SMELL audit at close | Done | Added as Step 6 item 3 (before retro). |
-| ✅ S7 | Task sizing for rotation | Done | Replaced "don't create thin tasks" with user-value test. Includes AT4 tradeoff note inline. |
-| ✅ A1 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70` | Done | Added to Step 2 setup with code block. |
-| ✅ A2 | `maxTurns` as context budget | Done | Added to Step 4 as prose guidance ("80-120 turns") rather than a hardcoded default. Described as backstop for P1. |
-| ✅ A3 | SendMessage resume | Done | Added to Monitor section as specified. |
-| ✅ AT1 | Task status lag check | Done | Added to Monitor section as specified. |
-| ✅ AT4 | Throughput vs rotation tension | Done | Folded into S7 task sizing paragraph rather than standalone. |
-| ✅ P5 | Check messages before claiming | Done | Driver step 1 updated. |
-| ✅ P9 | Log advice in LOG.md | Done | Added to driver step 6 (OBJECTION resolution flow). |
-| ✅ S5 | Parallel scout as default | Done | Added to Step 3. |
-| ✅ S6 | Two-phase review as task | Done | Added to Step 3 with example task dependencies. |
-| ✅ N3 | Orchestrator trap guard | Done | Added to Monitor section as specified. |
-| ✅ A4 | `memory: project` on expert | Done (prior) | Already in agents/expert.md before this session. |
-| ✅ A5 | Navigator no-edit: prompt-only | Done — kept as-is | No change needed. |
-| ✅ S9 | Dynamic context injection | Done | Backtick syntax in SKILL.md preamble for active team LOG.md + prior retros. |
-| ✅ S10 | Protocol via `skills` field | Done | Created `skills/popcorn-xp-protocol/SKILL.md` with `user-invocable: false`. Added `skills: [popcorn-xp-protocol]` to all 9 agent definitions. Protocol (core rules, advice, formats, rotation) auto-loads at startup. Prompt templates and role blurbs remain in `references/protocol.md` for the lead. |
-| ✅ AT2 | Plan approval mode | Done | Added to Step 4 as optional pattern. |
-| ✅ AT3 | Session resumption note | Done | Added to Session Files section. |
-| ✅ R1 | Batch checkpoint allowance | Done | protocol.md, protocol skill |
-| ✅ R2 | Retro instructions in protocol | Done | protocol skill, driver/navigator prompts |
-| ✅ R3 | Soft checkpoint frequency enforcement | Done | mark-dirty.sh, remind-checkpoint.sh, session script |
-| ✅ R4 | Mechanical shutdown lifecycle enforcement | Done | enforce-no-idle.sh (phase-aware), session script (retro-request/retro/shutdown subcommands), lead SKILL.md (Verify and Close), protocol SKILL.md (Integration Notes), test-hooks.sh |
-| H8 | Shell profile echo issue | 🟢 Deferred | Docs-only item, no code change needed. |
+All items from this session have been applied. See [backlog.md](backlog.md) for the living tracker.
 
 ---
 

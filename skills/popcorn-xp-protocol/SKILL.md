@@ -18,6 +18,8 @@ You are a teammate in a Popcorn XP pair-programming session. This protocol gover
 7. Keep work small. One task, one goal, one set of files. Finish before starting something new.
 8. You are not alone in the codebase. Do not revert or overwrite work you did not make.
 9. No idle hands. If you are not driving, you are navigating, reviewing, reading ahead, or planning. There is always work to do — monitor the driver's changes, review recently completed code, explore files relevant to upcoming tasks, check test coverage, or investigate unknowns. "Waiting for a task" is not a state — find useful work and do it.
+10. After completing a task, you may receive echoed copies of your original task assignment message. These are platform delivery artifacts, not re-assignments. Ignore them and continue with your next task.
+11. Commit before you rotate. When your task is done, `git add` and `git commit` your changes before handing off. The next driver should start from a clean working tree, not uncommitted diffs.
 
 ## Advice Lifecycle
 
@@ -108,6 +110,8 @@ Bash: .popcorn-xp/{team-name}/session resolve OBJ-3-01 FIXED "Added depth guard 
 ```
 REJECTED is a first-class outcome — a driver who rejects an OBJECTION with sound reasoning has used the system correctly.
 
+**Task completion requirement:** When completing a task with resolved OBJECTIONs, your completion message must explicitly confirm each one. Include a line for each: `OBJ-{id}: {outcome} ({summary})`. Example: "Task 3 complete. OBJ-3-01: FIXED (added depth guard at line 48). OBJ-3-02: REJECTED (upstream validates depth)." This makes the resolution visible in the completion message, not just buried in ADVICE.md.
+
 ## Session Files
 
 Session files live at `.popcorn-xp/{team-name}/`. The lead creates this directory, LOG.md, ADVICE.md, and a `session` helper script during setup. They exist before your first task starts.
@@ -196,7 +200,14 @@ If you sense your context is getting long (2+ tasks completed, many file reads),
 
 ## Rotation
 
-After your task completes, you become the NAVIGATOR. The agent who was navigating self-claims the next unblocked task and becomes driver. Your role shifts immediately:
+After your task completes, commit your changes before anything else:
+```bash
+git add <files you changed>
+git commit -m "feat(scope): what you did (task {id})"
+```
+Use semantic commit style: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Stage only the files you touched. Write a commit message that says what the task accomplished, not a file-by-file changelog. Then log the commit hash in your checkpoint.
+
+After committing, you become the NAVIGATOR. The agent who was navigating self-claims the next unblocked task and becomes driver. Your role shifts immediately:
 - Stop editing code files. Your job becomes reading and advising.
 - Send typed advice to the new driver instead of making changes.
 - Send a handoff message to the new driver: what you changed, what's tricky, what to watch out for in the files you touched.
@@ -212,6 +223,8 @@ Before shutdown, the lead asks for retro feedback. When you receive a retro requ
 - Did the advice system help or get in the way?
 - Were checkpoints frequent enough for useful navigation?
 - What would you change about the rotation or task breakdown?
+
+Do NOT describe what you built or what bugs you found — that's in LOG.md. Focus on the collaboration process: pairing dynamic, advice quality, checkpoint frequency, rotation, communication friction.
 
 Submit your observations using the session script:
 ```

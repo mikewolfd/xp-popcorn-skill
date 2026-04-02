@@ -66,9 +66,9 @@ All agents in `agents/` share the same structure: YAML frontmatter with `name`, 
 ### Shutdown Lifecycle (R4)
 
 Four-phase lifecycle enforced by `enforce-no-idle.sh` reading signal files:
-1. **Shutdown** (`.shutdown` exists) — force-stop via `{"continue": false}`
-2. **Retro pending** (`.retro-requested`, no `.retro-{agent}.md`) — nudge retro submission
-3. **Retro done** (both exist) — allow idle, wait for shutdown
+1. **Retro pending** (`.retro-requested`, no `.retro-{agent}.md`) — nudge retro submission (takes priority over shutdown so agents can write retros before being stopped)
+2. **Shutdown** (`.shutdown` exists, retro done or never requested) — force-stop via `{"continue": false}`
+3. **Retro done** (both exist, no `.shutdown`) — allow idle, wait for shutdown
 4. **Working** (default) — nudge agent to find work
 
 ## Key Conventions

@@ -5,9 +5,10 @@ set -euo pipefail
 # TeammateIdle hook: phase-aware idle enforcement.
 #
 # Phases (checked in priority order):
-# 1. Shutdown: .shutdown exists → force-stop teammate
-# 2. Retro pending: .retro-requested exists, .retro-{agent}.md missing → nudge retro
-# 3. Retro done: .retro-requested + .retro-{agent}.md exist → allow idle
+# 1. Retro pending: .retro-requested exists, .retro-{agent}.md missing → nudge retro
+#    (takes priority over shutdown so agents can write retros before being stopped)
+# 2. Shutdown: .shutdown exists → force-stop teammate
+# 3. Retro done: .retro-requested + .retro-{agent}.md exist, no .shutdown → allow idle
 # 4. Working: default → nudge "go find work"
 #
 # No-op when no active popcorn-xp session.
@@ -23,20 +24,20 @@ TEAM_DIR="$POPCORN_DIR/$TEAM"
 INPUT=$(cat)
 AGENT=$(echo "$INPUT" | jq -r '.teammate_name // empty' 2>/dev/null || true)
 
-# Phase 1: Shutdown — force-stop
+# Phase 1: Retro pending — nudge retro before shutdown can take effect
+if [ -f "$TEAM_DIR/.retro-requested" ] && [ -n "$AGENT" ] && [ ! -f "$TEAM_DIR/.retro-$AGENT.md" ]; then
+  echo "Popcorn XP: Retro time. Submit your process observations now: .popcorn-xp/$TEAM/session retro $AGENT 'What worked? What didn't? What would you change about the process?'" >&2
+  exit 2
+fi
+
+# Phase 2: Shutdown — force-stop (retro either done or never requested)
 if [ -f "$TEAM_DIR/.shutdown" ]; then
   echo '{"continue": false, "stopReason": "Session complete — lead initiated shutdown"}'
   exit 0
 fi
 
-# Phase 2/3: Retro
+# Phase 3: Retro submitted, no shutdown yet — allow idle
 if [ -f "$TEAM_DIR/.retro-requested" ]; then
-  if [ -n "$AGENT" ] && [ ! -f "$TEAM_DIR/.retro-$AGENT.md" ]; then
-    # Phase 2: Retro pending — nudge
-    echo "Popcorn XP: Retro time. Submit your process observations now: .popcorn-xp/$TEAM/session retro $AGENT 'What worked? What didn't? What would you change about the process?'" >&2
-    exit 2
-  fi
-  # Phase 3: Retro submitted — allow idle, waiting for shutdown
   exit 0
 fi
 

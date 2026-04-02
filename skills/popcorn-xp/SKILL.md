@@ -30,53 +30,35 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 
 **Core roles (coding tasks):**
 
-| Agent | Lens | Model |
-|-------|------|-------|
-| `popcorn-xp:scout` | "Are we solving the right problem?" | sonnet |
-| `popcorn-xp:craftsman` | "Is this clean and readable?" | sonnet |
-| `popcorn-xp:expert` | "Does this actually work in edge cases?" | sonnet |
-| `popcorn-xp:tester` | "How will we prove this?" | sonnet |
+| Agent | Lens |
+|-------|------|
+| `popcorn-xp:scout` | "Are we solving the right problem?" |
+| `popcorn-xp:craftsman` | "Is this clean and readable?" |
+| `popcorn-xp:expert` | "Does this actually work in edge cases?" |
+| `popcorn-xp:tester` | "How will we prove this?" |
 
 **Specialist roles (when needed):**
 
-| Agent | Lens | Model |
-|-------|------|-------|
-| `popcorn-xp:service-designer` | "Does the interface serve the experience — API to UI?" | sonnet |
-| `popcorn-xp:visual-designer` | "Does this look right and feel right?" | sonnet |
-| `popcorn-xp:qa` | "Does this work from the user's perspective?" | sonnet |
-| `popcorn-xp:product-manager` | "What problem are we solving, and is this the right way?" | sonnet |
+| Agent | Lens |
+|-------|------|
+| `popcorn-xp:service-designer` | "Does the interface serve the experience — API to UI?" |
+| `popcorn-xp:visual-designer` | "Does this look right and feel right?" |
+| `popcorn-xp:qa` | "Does this work from the user's perspective?" |
+| `popcorn-xp:product-manager` | "What problem are we solving, and is this the right way?" |
 
 **Independent auditor (not a teammate):**
 
-| Agent | Lens | Model |
-|-------|------|-------|
-| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" | sonnet |
+| Agent | Lens |
+|-------|------|
+| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" |
 
 The code-reviewer is **not** part of the team. Do not spawn it with `team_name`. The lead launches it independently via the Agent tool at review checkpoints (see Monitor section) and relays its findings to the team.
 
 The lens shapes how an agent thinks, not what it's allowed to do. Any teammate can drive, navigate, write tests, or review code. When rotating, prefer giving the driver role to whoever was just navigating — they carry context from watching the code emerge.
 
-### Discover Native Agents
+### Native Agent Mapping Reference
 
-Before selecting from the popcorn-xp roster, scan the operating repo and installed plugins for agents that align with the personas you need. Native agents carry project-specific context, conventions, and tool configurations that popcorn-xp defaults lack — prefer them when the fit is clear.
-
-**Step 1 — Scan the repo for local agent definitions:**
-
-```
-Glob("{project}/.claude/agents/*.md")
-Glob("{project}/agents/*.md")
-Glob("{project}/.claude-plugin/agents/*.md")
-```
-
-Read the frontmatter (`name`, `description`) of each discovered file. These are custom agents the project has defined.
-
-**Step 2 — Check installed plugin agents:**
-
-Review the available `subagent_type` values from the system (these appear in the Agent tool's agent type list). Installed plugins register agents like `test-engineer`, `code-scout`, `flutter-architect`, `elixir-phoenix-social`, etc. These are already loaded and ready to use.
-
-**Step 3 — Map to popcorn-xp personas:**
-
-For each discovered agent, match it to the popcorn-xp persona whose lens it best serves:
+Native agents carry project-specific context, conventions, and tool configurations that popcorn-xp defaults lack — prefer them when the fit is clear. Use this table when mapping discovered agents to popcorn-xp personas during initialization (Step 2):
 
 | If the agent's purpose is... | It aligns with... |
 |---|---|
@@ -92,13 +74,6 @@ For each discovered agent, match it to the popcorn-xp persona whose lens it best
 
 A native agent doesn't need to match perfectly — it needs to serve the same lens. A `flutter-architect` can fill the craftsman role for a Flutter project. An `elixir-phoenix-social` can fill the expert role for an Elixir service. A `test-engineer` is a direct replacement for tester.
 
-**Step 4 — Select the roster:**
-
-For each persona you need in the session:
-1. If a native agent clearly aligns → use it (pass its `subagent_type`)
-2. If multiple native agents compete for the same persona → pick the one whose description most closely matches the task at hand
-3. If no native agent aligns → fall back to the popcorn-xp default
-
 **How to spawn a native agent as a teammate:**
 
 Use the native agent's `subagent_type`. The native agent definition provides "how I think about this domain"; the popcorn-xp protocol provides "how I collaborate in a pair session."
@@ -109,7 +84,7 @@ Native agents don't have the protocol pre-loaded (only popcorn-xp agents do via 
 Agent(
   name: "test-engineer",
   subagent_type: "test-engineer",
-  model: "sonnet",
+  model: "{model}",
   team_name: "{team-name}",
   prompt: "You are a Popcorn XP teammate in session '{team-name}'.
 
@@ -125,8 +100,6 @@ Agent(
 ```
 
 The native agent's behavioral instructions (from its definition file) load automatically via `subagent_type`. The `Skill` invocation loads the collaboration protocol. The prompt adds role assignment and task context.
-
-**What to record:** When writing the team composition in Step 4 of the Workflow, note which personas were filled by native agents and why. This helps the retro assess whether the native agents performed better than defaults would have.
 
 ## Workflow
 
@@ -145,6 +118,52 @@ Build a mental model of:
 Break the work into 3-6 concrete tasks.
 
 ### 2. Create the Team
+
+**Choose the teammate model.** Ask the user which model to use for teammates:
+
+> What model should I use for the teammates? Options:
+> - **sonnet** — fast, cost-effective, good default for most tasks
+> - **opus** — most capable, better for complex reasoning, slower
+> - **haiku** — fastest and cheapest, good for straightforward tasks
+>
+> (Default: sonnet)
+
+Store their choice as `{model}` and pass it to every `Agent(model: ...)` call when spawning teammates. If the user doesn't have a preference, default to `sonnet`.
+
+**Pick the team.** Scan for available agents, map them to personas, and let the user draft the roster.
+
+**Scan for agents:**
+
+```
+Glob("{project}/.claude/agents/*.md")
+Glob("{project}/agents/*.md")
+Glob("{project}/.claude-plugin/agents/*.md")
+```
+
+Read the frontmatter (`name`, `description`) of each discovered file. Also review the available `subagent_type` values from the system (these appear in the Agent tool's agent type list). Installed plugins register agents like `test-engineer`, `code-scout`, `flutter-architect`, etc.
+
+**Present what's available.** Show the user all discovered agents alongside the popcorn-xp defaults, mapped to personas using the Native Agent Mapping Reference table. Let the user pick who's on the team:
+
+> Here are the agents available for this session:
+>
+> | Persona | Available agents |
+> |---------|-----------------|
+> | scout | `popcorn-xp:scout`, `code-scout` (native) |
+> | craftsman | `popcorn-xp:craftsman`, `flutter-architect` (native) |
+> | expert | `popcorn-xp:expert` |
+> | tester | `popcorn-xp:tester`, `test-engineer` (native) |
+> | code-reviewer | `popcorn-xp:code-reviewer`, `code-reviewer` (native) |
+>
+> Which roles do you want on the team, and which agent for each? You don't need all of them — I'll spawn the first pair to start and bring others in as the work demands.
+
+Wait for the user to confirm before proceeding. The user picks:
+- Which personas to include (typically 2-3 to start)
+- Which agent fills each slot (native or default)
+- They can also request agents not in the list by name
+
+Not every selected agent is spawned immediately. The lead spawns the initial driver/navigator pair for the first task and brings additional teammates in as tasks require them. The full roster is the **bench** — agents the session may use — not a list of agents to launch all at once.
+
+Store the confirmed roster. Note which personas are filled by native agents — this feeds the retro.
 
 Choose a short team name that reflects the task (e.g., `fix-parser`, `add-auth`, `refactor-api`).
 
@@ -259,18 +278,18 @@ The reviewer agent is launched independently (no `team_name`) and its findings a
 
 ### 4. Spawn Teammates
 
-Run the "Discover Native Agents" procedure from the Role Roster section. Then launch 2-3 teammates using the Agent tool with `team_name: "{team-name}"`. Give each teammate the protocol from `references/protocol.md` and their role assignment.
+Spawn the initial driver/navigator pair from the roster confirmed in Step 2. You don't need to launch the entire bench — bring additional teammates in as tasks demand them. The first pair should cover the first task; pull from the bench when subsequent tasks need a different lens or when rotation calls for a fresh agent.
 
-**Always pass `model: "sonnet"` when spawning teammates**, including native agents. Native agent definitions may inherit a different model from their definition file — the explicit `model` parameter overrides that.
+**Always pass `model: "{model}"` when spawning teammates** (using the model chosen in Step 2), including native agents. Native agent definitions may inherit a different model from their definition file — the explicit `model` parameter overrides that.
 
-For each persona slot, use the native agent if one was discovered, otherwise fall back to the popcorn-xp default. When using a native agent, pass its `subagent_type` so its domain-specific instructions load automatically.
+For each persona slot, use the agent the user selected in Step 2. When using a native agent, pass its `subagent_type` so its domain-specific instructions load automatically.
 
 **Example: all defaults (no native agents found)**
 
 ```
 Agent(
   name: "craftsman",
-  model: "sonnet",
+  model: "{model}",
   team_name: "{team-name}",
   prompt: "<driver coordinator prompt from protocol.md>"
 )
@@ -282,7 +301,7 @@ Agent(
 Agent(
   name: "test-engineer",
   subagent_type: "test-engineer",
-  model: "sonnet",
+  model: "{model}",
   team_name: "{team-name}",
   prompt: "You are a Popcorn XP teammate in session '{team-name}'.
            FIRST: Load the protocol: Skill('popcorn-xp:popcorn-xp-protocol')
@@ -297,16 +316,16 @@ Agent(
 ```
 # Native flutter-architect fills craftsman — loads protocol via Skill tool
 Agent(name: "flutter-architect", subagent_type: "flutter-architect",
-  model: "sonnet", team_name: "{team-name}",
+  model: "{model}", team_name: "{team-name}",
   prompt: "FIRST: Skill('popcorn-xp:popcorn-xp-protocol')\n<driver prompt, lens from native agent>")
 
 # Default expert — protocol auto-loaded via skills field
-Agent(name: "expert", model: "sonnet", team_name: "{team-name}",
+Agent(name: "expert", model: "{model}", team_name: "{team-name}",
   prompt: "<navigator prompt from protocol.md>")
 
 # Native test-engineer — loads protocol via Skill tool
 Agent(name: "test-engineer", subagent_type: "test-engineer",
-  model: "sonnet", team_name: "{team-name}",
+  model: "{model}", team_name: "{team-name}",
   prompt: "FIRST: Skill('popcorn-xp:popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
 ```
 
@@ -338,6 +357,7 @@ You receive messages from teammates automatically. Your role during execution:
   - **NITs/OBSERVATIONs**: log via session script, don't interrupt the driver
   - The code-reviewer never messages teammates directly — you are the relay.
   - **When relaying findings to ADVICE.md**, assign standard IDs using the current task number: `OBJ-{task}-{seq}` for blockers, `SML-{task}-{seq}` for warnings. Do not relay the reviewer's internal IDs (e.g. `REV-W1`) — translate them. Example: `session advice OBJECTION OBJ-6-01 "LayoutContainer has no useDroppable"`.
+  - **Schema violations:** If the project defines schemas (JSON Schema, TypeScript types, Zod, etc.), recommend the team add programmatic validation tests rather than relying on code reviewers to catch structural violations.
   **Note:** The Agent tool may auto-inherit team_name from the lead's session. The
   code-reviewer functions correctly despite this — it does not use SendMessage,
   TaskUpdate, or team coordination tools. Its independence is behavioral (enforced
@@ -362,8 +382,11 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
    ```
    SendMessage(to: "craftsman", summary: "retro time", message: "Retro time. Submit your process observations: .popcorn-xp/{team-name}/session retro craftsman 'What worked? What didn't? What would you change about the process?'")
    ```
-   The `enforce-no-idle.sh` hook will nudge any idle teammate automatically. Wait until `.retro-{agent}.md` files appear for each teammate, then read them.
+   The `enforce-no-idle.sh` hook will nudge any idle teammate automatically. After retro-request, wait for all `.retro-*.md` files before writing RETRO.md. The FileChanged hook will notify you as each one arrives.
 5. **Shut down all teammates — mechanically.** Run the shutdown subcommand, then let the hook do the work:
+
+   **Important:** Send a retro request to each agent BEFORE issuing shutdown. The retro-pending phase in `enforce-no-idle.sh` takes priority over shutdown, ensuring agents can write their retro even after `.shutdown` is set. But sending the retro request first gives agents a turn to write while still fully active.
+
    ```bash
    .popcorn-xp/{team-name}/session shutdown
    ```

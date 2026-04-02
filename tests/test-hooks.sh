@@ -415,13 +415,22 @@ run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H2 shutdown allows idle" 0 "$LAST_RC"
 assert_stdout_contains "H2 shutdown force-stop JSON" '"continue"' "$LAST_STDOUT"
 
-# Phase 1 overrides Phase 2: both .shutdown and .retro-requested — shutdown wins
+# Retro pending overrides shutdown: agent must write retro before being stopped
 setup_session
 touch "$POPCORN/$TEAM/.shutdown"
 touch "$POPCORN/$TEAM/.retro-requested"
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
-assert_exit "H2 shutdown overrides retro-pending" 0 "$LAST_RC"
-assert_stdout_contains "H2 shutdown override JSON" '"continue"' "$LAST_STDOUT"
+assert_exit "H2 retro-pending overrides shutdown" 2 "$LAST_RC"
+assert_stderr_contains "H2 retro-pending nudge despite shutdown" "Retro time" "$LAST_STDERR"
+
+# Shutdown proceeds after retro is written
+setup_session
+touch "$POPCORN/$TEAM/.shutdown"
+touch "$POPCORN/$TEAM/.retro-requested"
+touch "$POPCORN/$TEAM/.retro-craftsman.md"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 shutdown after retro done" 0 "$LAST_RC"
+assert_stdout_contains "H2 shutdown after retro JSON" '"continue"' "$LAST_STDOUT"
 
 # ============================================================
 # 8. Multiple open items — correct counting

@@ -42,6 +42,52 @@ Only OBJECTIONs block. Everything else is your call. The hooks remind you that o
 
 **The navigator should also hold opinions loosely.** Not every concern warrants an OBJECTION. Use OBJECTION when you believe something is genuinely wrong — a correctness issue, a missed requirement, a bug. Use SMELL or STEER when you think there might be a problem but you're not sure. Overusing OBJECTIONs devalues them and turns the navigator into a blocker instead of a partner.
 
+## TDD Cycle
+
+Tests drive the design. You don't write tests to verify code you already wrote — you write a test to decide what the code *should do*, then write the smallest thing that makes the test true. The test is the first client of your code. It forces you to think about the interface before the implementation, the behavior before the mechanism.
+
+### Red — Green — Refactor
+
+1. **Red** — Write a test for a behavior that doesn't exist yet. Run it. It must fail. If it passes, either the test is wrong or the behavior already exists — either way, stop and understand why before continuing. The failing test is a *design decision*: you're choosing the API, the inputs, the expected output. This is where design happens.
+2. **Green** — Write the dumbest, simplest code that makes the test pass. Hardcode a return value if that's enough. Resist the urge to generalize — let the next failing test force you to write real logic. You only build what the tests demand.
+3. **Refactor** — Now clean up. The tests are green, so you have a safety net. Remove duplication, improve names, extract helpers, simplify. If a refactor breaks a test, you went too far — back up. The design *emerges* here, from the patterns you notice in working code, not from upfront planning.
+4. **Repeat** — Next behavior. Next failing test. Each cycle should take minutes, not half an hour. If it's taking longer, your test covers too much — split it.
+
+Each red-green-refactor iteration is a checkpoint. The navigator sees the intent (red), the solution (green), and the cleanup (refactor) as separate, reviewable steps. This rhythm creates natural advice points — the navigator can STEER after red ("wrong behavior to target next"), OBJECT after green ("that doesn't actually satisfy the requirement"), or SMELL after refactor ("that extraction made it harder to read, not easier").
+
+### Popcorn TDD
+
+In a popcorn-xp session, the driver can **pop the keyboard** to the navigator mid-cycle. The classic pattern:
+
+- **Driver writes red** (failing test) → pops to navigator
+- **Navigator writes green** (makes it pass) → pops back
+- **Either refactors**
+
+This is powerful because the test author and the implementer are different minds. The test expresses intent without prescribing the solution. The implementer satisfies the behavior without the bias of having written the test. Each side keeps the other honest.
+
+Popcorn TDD is optional — not every cycle needs a mid-cycle rotation. Use it when:
+- The behavior is subtle and benefits from one person defining "what" while another decides "how"
+- The pair wants tighter collaboration than checkpoint-and-advise
+- The driver is deep in implementation and the navigator has a clearer view of what the next test should be
+
+A popcorn rotation mid-cycle counts as a rotation for checkpoint purposes. Both agents log their half.
+
+### When to use TDD
+
+- **New features** — always. The test defines the behavior before the code exists.
+- **Bug fixes** — reproduce the bug as a failing test first. The test proves the bug is real, the fix proves it's gone, and the test stays as a regression guard.
+- **Refactors** — verify existing tests cover the behavior, then change the implementation. If no tests cover it, write them first (that's a red-green cycle before the refactor begins).
+
+### When TDD doesn't apply
+
+- Exploration (reading files, mapping the codebase, scouting)
+- Configuration or documentation-only changes
+- Prototyping that will be thrown away (but say so in the checkpoint)
+
+### The discipline
+
+Never write production code without a failing test that demands it. If you're tempted to skip the test, that's usually a sign you don't fully understand the behavior yet — and the test is how you figure it out.
+
 ## Teammate Prompt Templates
 
 ### Driver Prompt
@@ -66,7 +112,9 @@ also have other advisor teammates.
 3. Read .popcorn-xp/{team-name}/ADVICE.md — check for any open advice from prior rounds that
    affects your task. Read .popcorn-xp/{team-name}/LOG.md for latest state.
 4. Read the relevant code files and understand the problem.
-5. Work in small steps. After EACH file edit, test run, or discovery:
+5. Work in small steps, following the TDD cycle (see TDD Cycle section above):
+   write a failing test (red), make it pass (green), clean up (refactor), repeat.
+   After EACH file edit, test run, or discovery:
    **5a.** Send a checkpoint to your navigator:
       SendMessage(to: "{navigator_name}", summary: "checkpoint: edited parser.ts",
         message: "[what you just did, what file:line, what you learned, what's next]")
@@ -99,6 +147,8 @@ also have other advisor teammates.
       specified). Fix errors before proceeding. Then read .popcorn-xp/{team-name}/ADVICE.md
       one final time. Engage with any open OBJECTIONs (the TaskCompleted hook blocks on these).
       Other open items won't block you, but resolve them if you can — it helps the next driver.
+      Include explicit confirmation of each resolved OBJECTION in your completion message:
+      "OBJ-{id}: {outcome} ({summary})".
    b. Mark the task completed with TaskUpdate.
    c. SendMessage to team-lead: "Task [id] complete. [brief summary]."
    d. Transition to navigator. Send a handoff message to your navigator (the next
@@ -167,11 +217,14 @@ Handoff format:
   tasks.
 - Rotation is mandatory. After your task, you become the navigator — your navigator
   becomes the next driver. Don't self-claim the next driving task.
+- After completing a task, you may receive echoed copies of your original task
+  assignment. These are platform delivery artifacts, not re-assignments. Ignore
+  them and continue with your next task.
 - If you receive a shutdown_request message, approve it immediately. Do not send
   more task content. The session is over.
 - When the lead asks for retro feedback, respond with process observations (pairing
-  dynamic, advice quality, checkpoint frequency, rotation). Not task status — the lead
-  already has that from the TaskList. See the Retro section in the protocol skill.
+  dynamic, advice quality, checkpoint frequency, rotation). Do NOT describe what you
+  built or what bugs you found — that's in LOG.md. Focus on the collaboration process.
 
 ## Context Limit
 
@@ -316,11 +369,14 @@ You have two modes: reacting to checkpoints and reading ahead.
   the team has noted. There is always something to read, verify, or plan. Tell the
   driver what you're doing so they know you're active: "I've read ahead on your
   current files — reviewing test coverage while you work."
+- After completing a task, you may receive echoed copies of your original task
+  assignment. These are platform delivery artifacts, not re-assignments. Ignore
+  them and continue with your next task.
 - If you receive a shutdown_request message, approve it immediately. The session
   is over.
 - When the lead asks for retro feedback, respond with process observations (pairing
-  dynamic, advice quality, checkpoint frequency, rotation). Not task status — the lead
-  already has that from the TaskList. See the Retro section in the protocol skill.
+  dynamic, advice quality, checkpoint frequency, rotation). Do NOT describe what you
+  built or what bugs you found — that's in LOG.md. Focus on the collaboration process.
 
 ## Context Limit
 
