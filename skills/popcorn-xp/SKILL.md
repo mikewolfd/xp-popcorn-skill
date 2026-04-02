@@ -173,6 +173,9 @@ case "$cmd" in
   handoff) AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
     printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "$AGENT" > "$FILE"
     echo "Handoff template written to $FILE — fill it out now." ;;
+  retro-request) touch "$DIR/.retro-requested" ;;
+  retro) AGENT="${1:?}"; shift; printf '%s\n' "$*" > "$DIR/.retro-$AGENT.md" ;;
+  shutdown) touch "$DIR/.shutdown" ;;
 esac
 SCRIPT
 chmod +x ".popcorn-xp/$TEAM/session"
@@ -352,13 +355,19 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
 1. Ask a teammate (typically the tester) to run final verification.
 2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
 3. **Check ADVICE.md for open SMELLs, STEERs, and FYIs.** For each: (a) resolve it now if trivial, (b) create a follow-up task if it warrants future work, or (c) note it in the retro. Do not let the session end with unacknowledged open items.
-4. **Retrospective (mandatory).** Before shutting down, conduct the retro with active teammates. Ask each: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses. Teammates must still be alive for this step — do not shut down before asking.
-5. **Shut down all teammates** — send each a message confirming session end and wait for them to stop before calling TeamDelete. For each teammate, send a plain-text heads-up followed by the structured request — the plain text primes them to accept:
+4. **Retrospective (mandatory — mechanical).** Run the session retro-request subcommand, then notify each teammate:
+   ```bash
+   .popcorn-xp/{team-name}/session retro-request
    ```
-   SendMessage(to: "craftsman", summary: "session over", message: "Session is over. Approve the shutdown request that follows.")
-   SendMessage(to: "craftsman", message: {type: "shutdown_request"})
    ```
-   If a teammate doesn't acknowledge after 2 attempts, move on — TeamDelete cleans up.
+   SendMessage(to: "craftsman", summary: "retro time", message: "Retro time. Submit your process observations: .popcorn-xp/{team-name}/session retro craftsman 'What worked? What didn't? What would you change about the process?'")
+   ```
+   The `enforce-no-idle.sh` hook will nudge any idle teammate automatically. Wait until `.retro-{agent}.md` files appear for each teammate, then read them.
+5. **Shut down all teammates — mechanically.** Run the shutdown subcommand, then let the hook do the work:
+   ```bash
+   .popcorn-xp/{team-name}/session shutdown
+   ```
+   On each teammate's next idle, `enforce-no-idle.sh` will force-stop them with `{"continue": false}`. You do not need to send shutdown_request messages. Proceed to TeamDelete once idle notifications stop appearing.
 6. **Write the retro file.** After teammates shut down, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
 7. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
 8. After teammates have shut down (or after 3 failed shutdown attempts):
