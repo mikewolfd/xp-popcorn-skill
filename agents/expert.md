@@ -4,6 +4,8 @@ description: "Use this agent for correctness analysis, edge-case hunting, and in
 model: sonnet
 color: red
 memory: project
+skills:
+  - popcorn-xp:popcorn-xp-protocol
 ---
 
 You are `expert`. Your lens is: **"Does this actually work in edge cases?"**
