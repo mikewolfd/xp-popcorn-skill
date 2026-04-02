@@ -1,7 +1,12 @@
 ---
 name: popcorn-xp
 description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Launches an Agent Teams pair-programming session where autonomous teammates coordinate through direct messaging, typed advice with blocking objections, and role rotation.
+disable-model-invocation: true
 ---
+
+## Prior session context
+!`[ -f .popcorn-xp/.active-team ] && TEAM=$(cat .popcorn-xp/.active-team) && echo "Active team: $TEAM" && tail -20 .popcorn-xp/$TEAM/LOG.md 2>/dev/null || echo "No active session."`
+!`ls .popcorn-xp/*/RETRO.md 2>/dev/null | head -3 | xargs -I{} sh -c 'echo "=== {} ===" && tail -10 {}' || echo "No prior retros."`
 
 # Popcorn XP
 
@@ -155,12 +160,26 @@ case "$cmd" in
   log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; rm -f "$DIR/.dirty" ;;
   advice) T="${1:?}"; ID="${2:?}"; shift 2; grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md" ;;
   resolve) ID="${1:?}"; O="${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md" ;;
+  task) ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md" ;;
+  handoff) AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
+    printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "$AGENT" > "$FILE"
+    echo "Handoff template written to $FILE — fill it out now." ;;
 esac
 SCRIPT
 chmod +x ".popcorn-xp/$TEAM/session"
 ```
 
 This creates `.popcorn-xp/{team-name}/` with fresh LOG.md, ADVICE.md, and a `session` helper that teammates use to append entries. RETRO.md is preserved across sessions.
+
+**Identify verification commands.** Before spawning teammates, identify the project's verification commands (e.g., `tsc --noEmit`, `cargo check`, `ruff check .`, `make lint`) and include them in each teammate's task context. Agents must run these before marking any task complete.
+
+**Set autocompact threshold.** Before spawning teammates, lower the auto-compaction threshold so agents compact before quality degrades:
+
+```bash
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70
+```
+
+**Pre-approve common operations.** Before spawning teammates, ensure your permission settings allow Read, Write, Edit, Bash, and Grep for the project directory without prompting. Teammates inherit the lead's permission settings — pre-approving reduces interruptions during pair work. Check `~/.claude/settings.json` or approve interactively during the first task.
 
 ### 3. Create Tasks
 
@@ -205,8 +224,26 @@ Task Xc: Finalize — blocked by Xb
 - The test-writing task already runs all tests
 - The project is small enough that "run tests" takes seconds
 
-Don't create thin verification tasks just to have 4 tasks. 3 well-scoped tasks
-are better than 4 where the last one is "run tests again."
+**Task sizing:** Each task is the smallest coherent unit that delivers user-observable value. The test: "Could you point to this completed task and say 'the user now has X that they didn't have before'?" If yes, it's a valid task scope. If the deliverable only makes sense as part of something larger, fold it in.
+
+Err toward smaller. More tasks = more rotations = more knowledge distribution. The platform recommends 5-6 tasks per teammate for throughput — in popcorn-xp, accept a small throughput cost in exchange for more rotations. A 3-task session where both agents drove is better than a 6-task session where one agent drove all of them. A verification task forces a rotation and brings fresh eyes — that's a feature.
+
+Examples:
+- "Implement drag-and-drop" → too large; split by observable behavior
+- "Add regression tests for invalid input" → valid, user has proof the case is covered
+- "Read the parser module" → not valid, no deliverable, fold into the first implementation task
+- "Run `tsc --noEmit`" → not valid alone, fold into task exit criteria
+
+**QA and late-session verification tasks** should be assigned to fresh agents — not agents that drove implementation. Note this in the task description: "Assign to a fresh agent. Do not reuse an agent that has completed 3+ tasks in this session." Plan the fresh spawn in the task breakdown, not as a reactive decision when an agent degrades.
+
+**If task scope is unclear or spans multiple files/areas,** create a parallel scout research task with no dependencies alongside the first implementation task. Do not serialize orientation before implementation — plan the full dependency chain upfront and let scout research feed into it concurrently. A scout task that finishes before the implementation task starts is still valuable; a scout task created after implementation has started is largely wasted.
+
+**For sessions with 4+ implementation tasks,** schedule independent code review as explicit tasks with blocking dependencies:
+```
+Task N:   Code review phases 1-2 — blocked by tasks 1, 2
+Task N+1: Code review phases 3-5 — blocked by tasks 3, 4, 5
+```
+The reviewer agent is launched independently (no `team_name`) and its findings are relayed by the lead. Planning these as tasks ensures they happen at the right checkpoint, not whenever the lead remembers.
 
 ### 4. Spawn Teammates
 
@@ -261,6 +298,14 @@ Assign the first task to the driver via TaskUpdate.
 
 **Reuse orientation agents.** If you spawn a scout or research-focused agent for an initial orientation task, create their follow-up task in Step 3 — not mid-session. A follow-up task added after synthesis has already started arrives as an addendum rather than feeding it. Either plan the second assignment upfront (test review, API audit, demo validation) or don't spawn the agent.
 
+**For high-risk tasks** (schema changes, auth rewrites, public API surface changes), instruct the lead to require plan approval before any edits:
+
+> Spawn a craftsman teammate for task 5. Require plan approval before they make any changes — review their approach before they edit anything.
+
+The teammate explores and proposes an approach. You review and approve or reject with feedback. Use when a wrong implementation direction would be expensive to undo.
+
+**Consider spawning teammates with a `maxTurns` cap** (e.g., 80-120 turns) as a mechanical context budget. When an agent hits the limit it stops cleanly — the lead sees the idle notification, reads LOG.md, and spawns a fresh agent seeded with that context. This is a backstop for the P1 handoff pattern: P1 is agent-initiated when the agent notices context growth; `maxTurns` catches the cases where the agent doesn't self-report.
+
 ### 5. Monitor
 
 You receive messages from teammates automatically. Your role during execution:
@@ -269,38 +314,44 @@ You receive messages from teammates automatically. Your role during execution:
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
 - **Watch for rotation failures.** **At least one rotation is mandatory per session.** If the same agent has driven every task and you're approaching the final task, intervene and force a swap. A session with no rotation is a solo session with an expensive spectator.
+- **No idle agents.** If a teammate is not driving, they should be navigating, reviewing, reading ahead, or planning. If you notice a teammate going quiet (no messages, no advice, no file reads), SendMessage them with a specific direction: "Review the files craftsman just changed," "Read ahead into the test files for task 4," "Check test coverage for the module we just touched." An agent that isn't actively contributing is wasting a context window.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
 - **Periodic code review.** After every 2-3 completed tasks (or after any task that touches shared/critical code), launch `popcorn-xp:code-reviewer` independently — **not** as a teammate. Use the Agent tool without `team_name`. Give it the list of files changed since the last review and ask for a review certificate. When the review comes back:
   - **BLOCKER findings**: relay as OBJECTIONs to the current driver via SendMessage, then run the session script to log it
   - **WARNING findings**: relay as SMELLs to the driver
   - **NITs/OBSERVATIONs**: log via session script, don't interrupt the driver
   - The code-reviewer never messages teammates directly — you are the relay.
+  - **When relaying findings to ADVICE.md**, assign standard IDs using the current task number: `OBJ-{task}-{seq}` for blockers, `SML-{task}-{seq}` for warnings. Do not relay the reviewer's internal IDs (e.g. `REV-W1`) — translate them. Example: `session advice OBJECTION OBJ-6-01 "LayoutContainer has no useDroppable"`.
   **Note:** The Agent tool may auto-inherit team_name from the lead's session. The
   code-reviewer functions correctly despite this — it does not use SendMessage,
   TaskUpdate, or team coordination tools. Its independence is behavioral (enforced
   by its prompt), not structural.
+- **Handle handoff requests.** When a teammate sends a context-limit handoff message, read `.popcorn-xp/{team-name}/handoff-{agent-name}.md` immediately. Decide: (a) spawn a fresh agent seeded with the handoff as context, (b) reassign the task to an existing teammate with less context usage, or (c) fold the task if it's close to done. Do not wait for the agent to degrade further — the handoff is most useful when written while the agent is still coherent.
+- **Watch for stuck tasks.** If a task appears stuck after a teammate reports it complete, the `TaskUpdate` call may have silently failed (known platform limitation). Check task status directly and update manually if the work is done. Don't wait for the agent to retry — prompt them or update it yourself.
+- **Recovering unresponsive agents.** Before giving up on a teammate, try sending them a direct message via `SendMessage`. A stopped agent auto-resumes on receipt of a message. If two resume attempts fail, spawn a fresh replacement seeded with LOG.md context. Do not do the work yourself.
+- **Don't fall into the orchestrator trap.** Coordinator mode stops you from editing files, but you can still centralize too much by over-crafting instructions, pre-reading every file for the team, or synthesizing every result before passing it on. If you're spending more time crafting instructions than teammates spend executing them, you're doing their thinking for them. Write the task, assign it, step back. Trust the pair to figure out the approach — that's what the navigator is for.
 - **Do not do the work yourself.** You are the lead, not a driver. If you find yourself wanting to read a file or write code, delegate it to a teammate instead.
 
 ### 6. Verify and Close
 
-When all tasks are complete, follow this sequence exactly. Do not skip steps or reorder — the retro happens **before** the user-facing summary, not after.
+When all tasks are complete, follow this sequence exactly. Do not skip steps or reorder — the retro conversation happens **before** shutdown, shutdown happens **before** TeamDelete, and the retro file is written **after** shutdown.
 
 1. Ask a teammate (typically the tester) to run final verification.
 2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
-3. **Retrospective (mandatory).** Before presenting results to the user, conduct the retro. Ask each active teammate: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses. If teammates have already shut down or are unresponsive, conduct the retro yourself from your observations as lead — you saw every message and every idle notification.
-4. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
-5. Shut down teammates. For each teammate, send a plain-text heads-up followed by
-   the structured request — the plain text primes them to accept:
+3. **Check ADVICE.md for open SMELLs, STEERs, and FYIs.** For each: (a) resolve it now if trivial, (b) create a follow-up task if it warrants future work, or (c) note it in the retro. Do not let the session end with unacknowledged open items.
+4. **Retrospective (mandatory).** Before shutting down, conduct the retro with active teammates. Ask each: "What worked well? What would you change about the process? Any observations about the pairing dynamic, the advice system, the rotation, or the task breakdown?" Collect their responses. Teammates must still be alive for this step — do not shut down before asking.
+5. **Shut down all teammates** — send each a message confirming session end and wait for them to stop before calling TeamDelete. For each teammate, send a plain-text heads-up followed by the structured request — the plain text primes them to accept:
    ```
    SendMessage(to: "craftsman", summary: "session over", message: "Session is over. Approve the shutdown request that follows.")
    SendMessage(to: "craftsman", message: {type: "shutdown_request"})
    ```
    If a teammate doesn't acknowledge after 2 attempts, move on — TeamDelete cleans up.
-6. After teammates shut down (or after 3 failed shutdown attempts):
+6. **Write the retro file.** After teammates shut down, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
+7. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
+8. After teammates have shut down (or after 3 failed shutdown attempts):
    ```
    TeamDelete
    ```
-7. **Write the retro file.** After TeamDelete, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
 
 ### Retro File Format
 
@@ -379,6 +430,8 @@ Session files live at `.popcorn-xp/{team-name}/`:
 
 The lead creates the team directory and files during setup (Step 2). Teammates persist state by calling the `session` script — never by editing files directly. The lead creates RETRO.md after TeamDelete.
 
+**Session files survive teammate loss.** If the session is resumed after a crash or interruption, teammates no longer exist — spawn fresh agents seeded with LOG.md and ADVICE.md to reconstruct state. `/resume` and `/rewind` do not restore in-process teammates.
+
 ## Quality Bar
 
 - Only one driver edits at a time. The navigator reads and advises. No concurrent edits.
@@ -387,8 +440,12 @@ The lead creates the team directory and files during setup (Step 2). Teammates p
 - Task descriptions carry enough context for independent execution.
 - LOG.md is detailed enough that the next agent can reconstruct what happened.
 - The lead manages the team but does not do the work.
+- No idle agents. Every teammate is either driving, navigating, reviewing, reading ahead, or investigating. An agent with nothing to do should find something — there is always code to review, tests to check, or files to read ahead on.
+- Project verification commands pass before any task is marked complete.
 - Stop spawning rounds when additional tasks stop changing the plan.
 
 ## Reference
 
-Read `references/protocol.md` for teammate prompt templates, advice format, and session file templates. Include the relevant protocol sections in teammate prompts when spawning them.
+Read `references/protocol.md` for teammate prompt templates and role blurbs. Include the relevant template sections in teammate prompts when spawning them.
+
+**Protocol auto-loading:** All popcorn-xp agent definitions include `skills: [popcorn-xp-protocol]`. The full protocol (core rules, advice lifecycle, advice format, session file conventions, rotation rules) is injected into each teammate's context at startup. The lead's spawn prompt only needs role assignment, teammate names, and task context — not protocol copy-paste.
