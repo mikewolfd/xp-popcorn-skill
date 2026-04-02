@@ -89,7 +89,7 @@ Agent(
   prompt: "You are a Popcorn XP teammate in session '{team-name}'.
 
            FIRST: Load the collaboration protocol by invoking:
-             Skill('popcorn-xp:popcorn-xp-protocol')
+             Skill('popcorn-xp-protocol')
 
            Role: test-engineer (filling tester persona)
            Lens: <use the native agent's own description as the lens>
@@ -115,20 +115,20 @@ Build a mental model of:
 - What could go wrong
 - How to verify success
 
-Break the work into 3-6 concrete tasks.
+Break the work into 5-8 concrete tasks (run the decomposition checklist in Step 3 on each one).
 
 ### 2. Create the Team
 
 **Choose the teammate model.** Ask the user which model to use for teammates:
 
 > What model should I use for the teammates? Options:
-> - **sonnet** — fast, cost-effective, good default for most tasks
-> - **opus** — most capable, better for complex reasoning, slower
-> - **haiku** — fastest and cheapest, good for straightforward tasks
+> - **haiku** — fastest and cheapest, good default for most tasks
+> - **sonnet** — more capable, better for complex reasoning
+> - **opus** — most capable, slower and more expensive
 >
-> (Default: sonnet)
+> (Default: haiku)
 
-Store their choice as `{model}` and pass it to every `Agent(model: ...)` call when spawning teammates. If the user doesn't have a preference, default to `sonnet`.
+Store their choice as `{model}` and pass it to every `Agent(model: ...)` call when spawning teammates. If the user doesn't have a preference, default to `haiku`.
 
 **Pick the team.** Scan for available agents, map them to personas, and let the user draft the roster.
 
@@ -216,13 +216,36 @@ export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70
 
 Use TaskCreate for each work item. Set dependencies with TaskUpdate so tasks unblock in order.
 
-Example task breakdown:
+**Decompose aggressively.** The most common lead failure is tasks that are too large. A task that takes an agent 30+ turns is almost certainly too big. Target 5-8 tasks minimum for any non-trivial session. More tasks = more rotations = more knowledge distribution = better results.
+
+**Decomposition checklist — run this on every task before creating it:**
+
+1. **The "and" test.** If the task description contains "and" connecting two distinct actions, split it. "Add validation and write tests" → two tasks.
+2. **The file test.** If the task requires meaningful changes to 3+ files, split by file or layer. "Update the parser, transformer, and renderer" → three tasks.
+3. **The verb test.** Each task should have one primary verb: implement, test, refactor, validate, review. Multiple verbs = multiple tasks.
+4. **The 15-minute test.** If you imagine a human pair spending more than 15 minutes on it, it's too big. Split by sub-behavior or sub-component.
+5. **The description length test.** If the task description needs more than 3-4 sentences to explain what to do, the scope is too broad. A well-scoped task is obvious from a short description.
+
+**Example: too coarse (3 tasks)**
 ```
 Task 1: "Map affected files, entry points, and constraints"
 Task 2: "Implement depth validation in parseBlock()" — blocked by 1
-Task 3: "Add regression tests for invalid input" — blocked by 2
-Task 4: "Run full test suite and verify no regressions" — blocked by 3
+Task 3: "Add regression tests and run full suite" — blocked by 2
 ```
+
+**Example: properly decomposed (6 tasks)**
+```
+Task 1: "Inventory affected files and entry points for depth validation"
+Task 2: "Add maxDepth parameter to parseBlock() signature and threading" — blocked by 1
+Task 3: "Implement depth-exceeded error path in parseBlock()" — blocked by 2
+Task 4: "Add unit tests for valid depths (0, 1, max-1, max)" — blocked by 3
+Task 5: "Add unit tests for invalid depths (max+1, negative, nested overflow)" — blocked by 3
+Task 6: "Run full test suite, verify no regressions in existing parse tests" — blocked by 4, 5
+```
+
+Notice: task 2 was split from task 3 (signature change vs. error path — different concerns). Tasks 4 and 5 are parallel (valid vs. invalid cases — different agents can drive them simultaneously). Task 6 is a separate verification task with fresh eyes.
+
+**Split by observable behavior, not by implementation step.** "Implement the happy path" and "implement error handling" are better splits than "write the function" and "wire it up" — the first pair each deliver testable behavior, the second pair don't.
 
 Include enough context in each task description for a teammate to execute it independently. State what to do, why it matters, and what success looks like.
 
@@ -255,15 +278,22 @@ Task Xc: Finalize — blocked by Xb
 - The test-writing task already runs all tests
 - The project is small enough that "run tests" takes seconds
 
-**Task sizing:** Each task is the smallest coherent unit that delivers user-observable value. The test: "Could you point to this completed task and say 'the user now has X that they didn't have before'?" If yes, it's a valid task scope. If the deliverable only makes sense as part of something larger, fold it in.
+**Task sizing:** Each task is the smallest coherent unit that delivers testable or observable value. Run the decomposition checklist above on every task — if any check fires, split before creating.
 
-Err toward smaller. More tasks = more rotations = more knowledge distribution. The platform recommends 5-6 tasks per teammate for throughput — in popcorn-xp, accept a small throughput cost in exchange for more rotations. A 3-task session where both agents drove is better than a 6-task session where one agent drove all of them. A verification task forces a rotation and brings fresh eyes — that's a feature.
+A 3-task session means almost no rotation. Target 5-8 tasks. A session with 7 small tasks where both agents drove multiple times beats a session with 3 large tasks where one agent did all the work. Verification tasks force rotations and bring fresh eyes — that's a feature, not overhead.
 
-Examples:
-- "Implement drag-and-drop" → too large; split by observable behavior
-- "Add regression tests for invalid input" → valid, user has proof the case is covered
-- "Read the parser module" → not valid, no deliverable, fold into the first implementation task
-- "Run `tsc --noEmit`" → not valid alone, fold into task exit criteria
+Examples of splitting:
+- "Implement drag-and-drop" → split: "add drop zone markup", "implement drag start/move handlers", "implement drop handler and state update", "add visual feedback during drag", "test drag-and-drop with keyboard"
+- "Add auth middleware" → split: "add middleware skeleton and route registration", "implement token validation logic", "implement error responses (401, 403)", "add tests for valid tokens", "add tests for expired/invalid/missing tokens"
+- "Refactor config loading" → split: "extract config schema type", "implement schema validation", "migrate callers to validated config", "add tests for invalid config shapes"
+
+Examples of valid single tasks:
+- "Add regression test for invalid input" → one verb, one deliverable
+- "Implement depth-exceeded error path in parseBlock()" → one behavior, one file
+
+Examples of tasks to fold (not standalone):
+- "Read the parser module" → fold into first implementation task
+- "Run `tsc --noEmit`" → fold into task exit criteria
 
 **QA and late-session verification tasks** should be assigned to fresh agents — not agents that drove implementation. Note this in the task description: "Assign to a fresh agent. Do not reuse an agent that has completed 3+ tasks in this session." Plan the fresh spawn in the task breakdown, not as a reactive decision when an agent degrades.
 
@@ -304,7 +334,7 @@ Agent(
   model: "{model}",
   team_name: "{team-name}",
   prompt: "You are a Popcorn XP teammate in session '{team-name}'.
-           FIRST: Load the protocol: Skill('popcorn-xp:popcorn-xp-protocol')
+           FIRST: Load the protocol: Skill('popcorn-xp-protocol')
            Role: test-engineer (filling tester persona)
            Lens: <native agent's description>
            <driver/navigator assignment + task context>"
@@ -317,7 +347,7 @@ Agent(
 # Native flutter-architect fills craftsman — loads protocol via Skill tool
 Agent(name: "flutter-architect", subagent_type: "flutter-architect",
   model: "{model}", team_name: "{team-name}",
-  prompt: "FIRST: Skill('popcorn-xp:popcorn-xp-protocol')\n<driver prompt, lens from native agent>")
+  prompt: "FIRST: Skill('popcorn-xp-protocol')\n<driver prompt, lens from native agent>")
 
 # Default expert — protocol auto-loaded via skills field
 Agent(name: "expert", model: "{model}", team_name: "{team-name}",
@@ -326,7 +356,7 @@ Agent(name: "expert", model: "{model}", team_name: "{team-name}",
 # Native test-engineer — loads protocol via Skill tool
 Agent(name: "test-engineer", subagent_type: "test-engineer",
   model: "{model}", team_name: "{team-name}",
-  prompt: "FIRST: Skill('popcorn-xp:popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
+  prompt: "FIRST: Skill('popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
 ```
 
 Assign the first task to the driver via TaskUpdate.

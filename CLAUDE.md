@@ -27,7 +27,7 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 ### Two Skills, Different Audiences
 
 - **`skills/popcorn-xp/SKILL.md`** — The lead's playbook. Loaded when a user triggers a session ("popcorn this task"). Contains full workflow: team creation, task breakdown, teammate spawning, monitoring, shutdown lifecycle. The lead follows this.
-- **`skills/popcorn-xp-protocol/SKILL.md`** — The teammate protocol. Auto-loaded into every popcorn-xp agent via the `skills` field in agent frontmatter. Contains core rules, advice lifecycle, advice format, session file conventions. Native agents from other plugins load this via `Skill('popcorn-xp:popcorn-xp-protocol')`.
+- **`skills/popcorn-xp-protocol/SKILL.md`** — The teammate protocol. Auto-loaded into every popcorn-xp agent via the `skills` field in agent frontmatter. Contains core rules, advice lifecycle, advice format, session file conventions. Native agents from other plugins load this via `Skill('popcorn-xp-protocol')`.
 
 ### Hook System
 
