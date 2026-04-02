@@ -117,6 +117,10 @@ After each checkpoint, log it:
 Bash: .popcorn-xp/{team-name}/session log "What I did, file:line, what's next"
 ```
 
+One edit = one checkpoint = one log entry. **Batch exception:** For mechanical,
+repetitive edits (same pattern across multiple files), batch into one checkpoint.
+State what you did, how many files, and list them.
+
 After sending advice, log it:
 ```
 Bash: .popcorn-xp/{team-name}/session advice SMELL SML-3-01 "Issue description"

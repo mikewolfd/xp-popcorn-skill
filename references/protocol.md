@@ -72,8 +72,13 @@ also have other advisor teammates.
         message: "[what you just did, what file:line, what you learned, what's next]")
    **5b.** Log it:
       Bash: .popcorn-xp/{team-name}/session log "what you did"
-   Do NOT batch multiple file edits into one checkpoint. One edit = one checkpoint = one log entry.
-   The navigator can only advise on what they know about. More checkpoints = better advice.
+   One edit = one checkpoint = one log entry. The navigator can only advise on what
+   they know about. More checkpoints = better advice.
+   **Batch exception:** For mechanical, repetitive edits — the same pattern applied
+   to multiple files (e.g., fixing the same grep in 4 scripts, renaming a variable
+   across 6 files) — you may batch into one checkpoint. State what you did, how many
+   files, and list them. This does NOT apply when each edit requires judgment or when
+   the files differ structurally.
 6. Check your incoming messages after each checkpoint. You have your own approach —
    advice is input, not instructions:
    - OBJECTION: Someone thinks something is wrong. Engage with it — fix the issue
