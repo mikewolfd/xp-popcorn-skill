@@ -18,30 +18,28 @@ ADVICE="$POPCORN_DIR/$TEAM/ADVICE.md"
 # An item is unresolved if its ID appears in an "— open" line but NOT in an "— OUTCOME" line.
 
 # Extract all open OBJECTION IDs
-open_obj_ids=$(grep -oE '### OBJECTION (OBJ-[0-9]+-[0-9]+) — open' "$ADVICE" | grep -oE 'OBJ-[0-9]+-[0-9]+' || true)
+open_obj_ids=$(grep -oE '### OBJECTION ([^ ]+) — open' "$ADVICE" | sed 's/### OBJECTION \([^ ]*\) — open/\1/' || true)
 
 unresolved=0
 for id in $open_obj_ids; do
-  if ! grep -qE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+  if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
     unresolved=$((unresolved + 1))
   fi
 done
 
 if [ "$unresolved" -gt 0 ]; then
-  echo "{\"decision\":\"block\",\"reason\":\"${unresolved} unresolved OBJECTION(s) in .popcorn-xp/$TEAM/ADVICE.md. Someone thinks something is wrong — engage with it before completing. Fix the issue if they're right, or reject with your reasoning if they're not. Both are valid outcomes. Use: .popcorn-xp/$TEAM/session resolve OBJ-X-XX FIXED|REJECTED 'detail'\"}" >&2
+  echo "${unresolved} unresolved OBJECTION(s) in .popcorn-xp/$TEAM/ADVICE.md. Engage before completing. Fix the issue if they're right, or reject with your reasoning if they're not. Use: .popcorn-xp/$TEAM/session resolve OBJ-X-XX FIXED|REJECTED 'detail'" >&2
   exit 2
 fi
 
 # Count unresolved non-blocking items
 pending=0
 parts=""
-for type_prefix in "SMELL:SML" "STEER:STR" "FYI:FYI"; do
-  TYPE="${type_prefix%%:*}"
-  PREFIX="${type_prefix##*:}"
-  open_ids=$(grep -oE "### $TYPE ($PREFIX-[0-9]+-[0-9]+) — open" "$ADVICE" | grep -oE "$PREFIX-[0-9]+-[0-9]+" || true)
+for TYPE in "SMELL" "STEER" "FYI"; do
+  open_ids=$(grep -oE "### $TYPE ([^ ]+) — open" "$ADVICE" | sed "s/### $TYPE \([^ ]*\) — open/\1/" || true)
   count=0
   for id in $open_ids; do
-    if ! grep -qE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+    if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
       count=$((count + 1))
     fi
   done
@@ -53,7 +51,7 @@ for type_prefix in "SMELL:SML" "STEER:STR" "FYI:FYI"; do
 done
 
 if [ "$pending" -gt 0 ]; then
-  echo "{\"systemMessage\":\"${parts} still unresolved in .popcorn-xp/$TEAM/ADVICE.md. These are input, not instructions — read them and use your judgment. Resolve via session script if you have time, but don't let them hold up good work.\"}"
+  echo "{\"additionalContext\":\"${parts} still unresolved in .popcorn-xp/$TEAM/ADVICE.md. These are input, not instructions — read them and use your judgment. Resolve via session script if you have time, but don't let them hold up good work.\"}"
 fi
 
 exit 0

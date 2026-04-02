@@ -15,11 +15,11 @@ ADVICE="$POPCORN_DIR/$TEAM/ADVICE.md"
 [ ! -f "$ADVICE" ] && exit 0
 
 # Check for unresolved OBJECTIONs
-open_obj_ids=$(grep -oE '### OBJECTION (OBJ-[0-9]+-[0-9]+) — open' "$ADVICE" | grep -oE 'OBJ-[0-9]+-[0-9]+' || true)
+open_obj_ids=$(grep -oE '### OBJECTION ([^ ]+) — open' "$ADVICE" | sed 's/### OBJECTION \([^ ]*\) — open/\1/' || true)
 
 for id in $open_obj_ids; do
-  if ! grep -qE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
-    echo '{"decision":"block","reason":"Unresolved OBJECTIONs exist in ADVICE.md. You must resolve all OBJECTIONs before stopping — either fix the issue or explicitly reject with a stated reason."}' >&2
+  if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+    echo "Unresolved OBJECTIONs exist in ADVICE.md. You must resolve all OBJECTIONs before stopping — either fix the issue or explicitly reject with a stated reason." >&2
     exit 2
   fi
 done

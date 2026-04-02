@@ -3,7 +3,7 @@ set -euo pipefail
 
 # remind-unread-advice.sh
 # TeammateIdle hook: reminds teammate of any unresolved advice when they go idle
-# Non-blocking — just a nudge via systemMessage
+# Blocking — exits 2 with plain text feedback to prevent idle transition
 # No-op when no active popcorn-xp session
 
 POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
@@ -16,13 +16,11 @@ ADVICE="$POPCORN_DIR/$TEAM/ADVICE.md"
 # Count unresolved items by type
 total=0
 summary=""
-for type_info in "OBJECTION:OBJ" "SMELL:SML" "STEER:STR" "FYI:FYI"; do
-  TYPE="${type_info%%:*}"
-  PREFIX="${type_info##*:}"
-  open_ids=$(grep -oE "### $TYPE ($PREFIX-[0-9]+-[0-9]+) — open" "$ADVICE" | grep -oE "$PREFIX-[0-9]+-[0-9]+" || true)
+for TYPE in "OBJECTION" "SMELL" "STEER" "FYI"; do
+  open_ids=$(grep -oE "### $TYPE ([^ ]+) — open" "$ADVICE" | sed 's/### [^ ]* \([^ ]*\) — open/\1/' || true)
   count=0
   for id in $open_ids; do
-    if ! grep -qE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+    if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
       count=$((count + 1))
     fi
   done
@@ -35,6 +33,6 @@ done
 
 [ "$total" -eq 0 ] && exit 0
 
-echo "{\"systemMessage\":\"Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work.\"}"
+echo "Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work." >&2
 
-exit 0
+exit 2

@@ -55,9 +55,9 @@ if [ "$unique_owners" -eq 1 ]; then
   done
 
   if [ "$remaining" -gt 0 ]; then
-    echo "{\"systemMessage\":\"Popcorn XP rotation warning: ${driver} has driven all ${completed} completed task(s) with ${remaining} task(s) remaining. At least one rotation is mandatory per session — assign the next task to a different driver. The navigator carries context from watching and should drive next.\"}"
+    echo "{\"additionalContext\":\"Popcorn XP rotation warning: ${driver} has driven all ${completed} completed task(s) with ${remaining} task(s) remaining. At least one rotation is mandatory per session — assign the next task to a different driver. The navigator carries context from watching and should drive next.\"}"
   else
-    echo "{\"systemMessage\":\"Popcorn XP rotation warning: ${driver} drove all ${completed} task(s) in this session with no rotation. Note this in the retro — a session with no rotation is a solo session with an expensive spectator.\"}"
+    echo "{\"additionalContext\":\"Popcorn XP rotation warning: ${driver} drove all ${completed} task(s) in this session with no rotation. Note this in the retro — a session with no rotation is a solo session with an expensive spectator.\"}"
   fi
 fi
 
