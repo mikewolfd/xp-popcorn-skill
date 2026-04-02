@@ -377,21 +377,51 @@ run_hook "check-advice-on-complete.sh"
 assert_exit "H4 unresolved still blocks" 2 "$LAST_RC"
 
 # ============================================================
-# 7. H2: enforce-no-idle.sh behavior
+# 7. H2: enforce-no-idle.sh phase behavior
 # ============================================================
 
-echo "--- H2: enforce-no-idle ---"
+echo "--- H2: enforce-no-idle phases ---"
 
-# Always blocks when session is active
+# Phase 4 (working): no signal files — blocks with guidance
 setup_session
-run_hook "enforce-no-idle.sh"
-assert_exit "H2 always blocks" 2 "$LAST_RC"
-assert_stderr_contains "H2 has guidance" "productive" "$LAST_STDERR"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 working phase blocks" 2 "$LAST_RC"
+assert_stderr_contains "H2 working phase guidance" "productive" "$LAST_STDERR"
 
 # No-op when no session
 rm -rf "$POPCORN"
-run_hook "enforce-no-idle.sh"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H2 no-op without session" 0 "$LAST_RC"
+
+# Phase 2 (retro pending): .retro-requested exists, no retro file — nudges
+setup_session
+touch "$POPCORN/$TEAM/.retro-requested"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 retro pending blocks" 2 "$LAST_RC"
+assert_stderr_contains "H2 retro pending mentions retro" "retro" "$LAST_STDERR"
+assert_stderr_contains "H2 retro pending mentions agent" "craftsman" "$LAST_STDERR"
+
+# Phase 3 (retro submitted): .retro-requested + .retro-{agent}.md exist — allows idle
+setup_session
+touch "$POPCORN/$TEAM/.retro-requested"
+printf 'It went well\n' > "$POPCORN/$TEAM/.retro-craftsman.md"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 retro done allows idle" 0 "$LAST_RC"
+
+# Phase 1 (shutdown): .shutdown exists — force-stops
+setup_session
+touch "$POPCORN/$TEAM/.shutdown"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 shutdown allows idle" 0 "$LAST_RC"
+assert_stdout_contains "H2 shutdown force-stop JSON" '"continue"' "$LAST_STDOUT"
+
+# Phase 1 overrides Phase 2: both .shutdown and .retro-requested — shutdown wins
+setup_session
+touch "$POPCORN/$TEAM/.shutdown"
+touch "$POPCORN/$TEAM/.retro-requested"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 shutdown overrides retro-pending" 0 "$LAST_RC"
+assert_stdout_contains "H2 shutdown override JSON" '"continue"' "$LAST_STDOUT"
 
 # ============================================================
 # 8. Multiple open items — correct counting
@@ -560,6 +590,70 @@ if [ "$(cat "$POPCORN/$TEAM/.edit-count")" = "1" ]; then
 else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: R3 counter should reset to 1 after cleanup"
+fi
+
+# ============================================================
+# 12. R4: session script subcommands (retro-request, retro, shutdown)
+# ============================================================
+
+echo "--- R4: session script subcommands ---"
+
+# Set up a temp session with the real session script
+setup_session
+cat > "$POPCORN/$TEAM/session" << 'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
+case "$cmd" in
+  log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; rm -f "$DIR/.dirty" "$DIR/.edit-count" ;;
+  advice) T="${1:?}"; ID="${2:?}"; shift 2; grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md" ;;
+  resolve) ID="${1:?}"; O="${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md" ;;
+  task) ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md" ;;
+  handoff) AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
+    printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "$AGENT" > "$FILE"
+    echo "Handoff template written to $FILE — fill it out now." ;;
+  retro-request) touch "$DIR/.retro-requested" ;;
+  retro) AGENT="${1:?}"; shift; printf '%s\n' "$*" > "$DIR/.retro-$AGENT.md" ;;
+  shutdown) touch "$DIR/.shutdown" ;;
+esac
+SCRIPT
+chmod +x "$POPCORN/$TEAM/session"
+
+SESSION="$POPCORN/$TEAM/session"
+
+# retro-request creates .retro-requested
+"$SESSION" retro-request
+if [ -f "$POPCORN/$TEAM/.retro-requested" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R4 retro-request should create .retro-requested"
+fi
+
+# retro creates .retro-{agent}.md with content
+"$SESSION" retro craftsman 'Rotation worked well. Advice caught the edge case.'
+if [ -f "$POPCORN/$TEAM/.retro-craftsman.md" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R4 retro should create .retro-craftsman.md"
+fi
+RETRO_CONTENT=$(cat "$POPCORN/$TEAM/.retro-craftsman.md")
+if echo "$RETRO_CONTENT" | grep -q "Rotation worked well"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R4 retro file should contain feedback text"
+fi
+
+# shutdown creates .shutdown
+"$SESSION" shutdown
+if [ -f "$POPCORN/$TEAM/.shutdown" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R4 shutdown should create .shutdown"
 fi
 
 # ============================================================
