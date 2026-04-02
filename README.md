@@ -51,6 +51,8 @@ Only one agent drives at a time. This is serial editing with parallel thinking.
 
 No worktrees. No merge conflicts. One driver at a time means one writer at a time.
 
+**No idle hands.** Serial editing does not mean serial thinking. While the driver edits, the navigator reads ahead, reviews the driver's changes, checks test coverage, and investigates unknowns. Between tasks, the transitioning agents immediately pick up navigator duties — reviewing their own changes from the outside, exploring files relevant to the next task, or checking for issues the pair missed. An agent that isn't driving should be actively contributing through a different channel, not waiting for assignment.
+
 **The medium constraint:** The navigator sees checkpoint messages and reads files, not live keystrokes. This is the same class of limitation as screen-share latency in remote pairing — a constraint of the medium, not a change in the dynamic. Both agents are focused on the same work at the same time. The navigator proactively reads ahead and steers. The driver receives advice between actions and must engage with OBJECTIONs before completing. It's pair programming with the latency of a remote session.
 
 ### Typed Advice With Teeth
@@ -352,7 +354,7 @@ Three hooks enforce this lifecycle at different moments:
 - Blocks on unacknowledged SMELLs (must engage — agree or explain why it's fine)
 - Warns on open STEERs and FYIs (reminds, doesn't block)
 
-**TeammateIdle** — fires when a teammate goes idle between turns. The hook reads ADVICE.md and reminds the agent of all open items. When the agent wakes up next, it knows to check the file before acting. This creates a natural "review your advice" checkpoint at every idle boundary.
+**TeammateIdle** — fires when a teammate goes idle between turns. The hook reads ADVICE.md and reminds the agent of all open items, prompting them to check the file and resume active work. Agents should not stay idle — the hook nudges them back into reviewing, reading ahead, or investigating.
 
 **SubagentStop** — backup enforcement. Blocks on open OBJECTIONs if the agent tries to stop entirely (not just go idle). Belt and suspenders for the TaskCompleted hook.
 
