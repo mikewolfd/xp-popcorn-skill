@@ -28,9 +28,9 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 | Agent | Lens | Model |
 |-------|------|-------|
 | `popcorn-xp:scout` | "Are we solving the right problem?" | sonnet |
-| `popcorn-xp:craftsman` | "Is this clean and readable?" | opus |
-| `popcorn-xp:expert` | "Does this actually work in edge cases?" | opus (has project memory) |
-| `popcorn-xp:tester` | "How will we prove this?" | opus |
+| `popcorn-xp:craftsman` | "Is this clean and readable?" | sonnet |
+| `popcorn-xp:expert` | "Does this actually work in edge cases?" | sonnet |
+| `popcorn-xp:tester` | "How will we prove this?" | sonnet |
 
 **Specialist roles (when needed):**
 
@@ -45,7 +45,7 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 
 | Agent | Lens | Model |
 |-------|------|-------|
-| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" | opus |
+| `popcorn-xp:code-reviewer` | "What does this code actually do, and can I prove it?" | sonnet |
 
 The code-reviewer is **not** part of the team. Do not spawn it with `team_name`. The lead launches it independently via the Agent tool at review checkpoints (see Monitor section) and relays its findings to the team.
 

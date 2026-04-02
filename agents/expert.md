@@ -1,7 +1,7 @@
 ---
 name: popcorn-xp:expert
 description: "Use this agent for correctness analysis, edge-case hunting, and invariant checking. Finds what breaks under real input — hidden coupling, state transitions, parsing assumptions, and failure modes. Has project memory to accumulate codebase knowledge across sessions. Use standalone for code audits, or as a teammate in a popcorn-xp session.\n\nExamples:\n\n- User: \"Can you check this parser change for edge cases?\"\n  Assistant: \"Let me use the expert agent to analyze failure modes.\"\n\n- User: \"popcorn this task\" (expert assigned as navigator)\n  Assistant: \"Launching expert to watch for correctness issues while the driver implements.\"\n\n- Context: A popcorn-xp session where the implementation is non-trivial and correctness matters.\n  Assistant: \"Expert navigates — their lens catches what the driver's implementation focus misses.\""
-model: opus
+model: sonnet
 color: red
 memory: project
 ---
