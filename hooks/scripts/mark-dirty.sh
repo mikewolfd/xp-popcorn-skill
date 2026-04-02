@@ -20,7 +20,7 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null |
 
 # Skip session bookkeeping files
 case "$FILE_PATH" in
-  */.popcorn-xp/*) exit 0 ;;
+  */.popcorn-xp/*|.popcorn-xp/*) exit 0 ;;
 esac
 
 COUNT_FILE="$POPCORN_DIR/$TEAM/.edit-count"

@@ -482,6 +482,87 @@ else
 fi
 
 # ============================================================
+# 11. R3: mark-dirty.sh edit counter and soft enforcement
+# ============================================================
+
+echo "--- R3: Edit counter and soft checkpoint enforcement ---"
+
+# No-op when no session
+rm -rf "$POPCORN"
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/foo.ts"}}'
+assert_exit "R3 no-op without session" 0 "$LAST_RC"
+assert_stdout_empty "R3 no-op stdout" "$LAST_STDOUT"
+
+# Skips .popcorn-xp/ paths
+setup_session
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":".popcorn-xp/test-team/LOG.md"}}'
+assert_exit "R3 skip session files" 0 "$LAST_RC"
+assert_stdout_empty "R3 skip session files stdout" "$LAST_STDOUT"
+if [ ! -f "$POPCORN/$TEAM/.edit-count" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R3 skip session files should not increment counter"
+fi
+
+# First edit: counter=1, no additionalContext
+setup_session
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/foo.ts"}}'
+assert_exit "R3 first edit exit 0" 0 "$LAST_RC"
+assert_stdout_empty "R3 first edit no context" "$LAST_STDOUT"
+if [ -f "$POPCORN/$TEAM/.dirty" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R3 first edit should set .dirty"
+fi
+if [ "$(cat "$POPCORN/$TEAM/.edit-count")" = "1" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R3 first edit counter should be 1"
+fi
+
+# Second edit: counter=2, still no context
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/bar.ts"}}'
+assert_exit "R3 second edit exit 0" 0 "$LAST_RC"
+assert_stdout_empty "R3 second edit no context" "$LAST_STDOUT"
+
+# Third edit: counter=3, injects additionalContext
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/baz.ts"}}'
+assert_exit "R3 third edit exit 0" 0 "$LAST_RC"
+assert_stdout_contains "R3 third edit has context" "additionalContext" "$LAST_STDOUT"
+assert_stdout_contains "R3 third edit shows count" "3 file edits" "$LAST_STDOUT"
+assert_stdout_not_contains "R3 third edit no systemMessage" "systemMessage" "$LAST_STDOUT"
+
+# Fourth edit: counter=4, still injects
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/qux.ts"}}'
+assert_stdout_contains "R3 fourth edit has context" "4 file edits" "$LAST_STDOUT"
+
+# remind-checkpoint.sh shows count when counter exists
+run_hook "remind-checkpoint.sh"
+assert_exit "R3 remind shows count" 2 "$LAST_RC"
+assert_stderr_contains "R3 remind has count" "4 file edit" "$LAST_STDERR"
+
+# remind-checkpoint.sh cleans up both files
+if [ ! -f "$POPCORN/$TEAM/.dirty" ] && [ ! -f "$POPCORN/$TEAM/.edit-count" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R3 remind should clean up .dirty and .edit-count"
+fi
+
+# After cleanup, mark-dirty starts fresh (counter=1 again)
+run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/fresh.ts"}}'
+assert_stdout_empty "R3 fresh after cleanup no context" "$LAST_STDOUT"
+if [ "$(cat "$POPCORN/$TEAM/.edit-count")" = "1" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R3 counter should reset to 1 after cleanup"
+fi
+
+# ============================================================
 # Results
 # ============================================================
 
