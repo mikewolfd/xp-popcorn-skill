@@ -1,6 +1,6 @@
 {
   "name": "popcorn-xp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "XP pair programming for Claude Code agents. One driver edits, one navigator steers, they rotate, advice has teeth.",
   "author": {
     "name": "mikewolfd"
