@@ -1,5 +1,5 @@
 {
-  "description": "Popcorn XP lifecycle hooks — advice enforcement, rotation checks, dirty-file tracking, and retro gating",
+  "description": "Popcorn XP lifecycle hooks — advice enforcement, rotation checks, dirty-file tracking, retro gating, and shared context store",
   "hooks": {
     "TaskCompleted": [
       {
@@ -64,11 +64,27 @@
         ]
       },
       {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-check.sh",
+            "timeout": 5,
+            "statusMessage": "Checking context store..."
+          }
+        ]
+      },
+      {
         "matcher": "Edit",
         "hooks": [
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/mark-dirty.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-mark-dirty.sh",
             "timeout": 5
           }
         ]
@@ -80,11 +96,27 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/mark-dirty.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-mark-dirty.sh",
+            "timeout": 5
           }
         ]
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-update-read.sh",
+            "timeout": 10,
+            "statusMessage": "Updating context store..."
+          }
+        ]
+      },
       {
         "matcher": "Write",
         "hooks": [
