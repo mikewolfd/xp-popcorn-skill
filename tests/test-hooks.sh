@@ -139,15 +139,24 @@ echo "--- No-op tests (no active session) ---"
 rm -rf "$POPCORN"  # ensure no session
 
 for script in check-advice-on-complete.sh remind-unread-advice.sh remind-checkpoint.sh \
-              enforce-no-idle.sh check-objections.sh check-rotation.sh check-retro-before-delete.sh; do
+              enforce-no-idle.sh check-objections.sh check-rotation.sh check-retro-before-delete.sh \
+              context-store-check.sh context-store-mark-dirty.sh; do
   if [ "$script" = "check-rotation.sh" ]; then
     run_hook_stdin "$script" '{}'
+  elif [ "$script" = "context-store-check.sh" ] || [ "$script" = "context-store-mark-dirty.sh" ]; then
+    run_hook_stdin "$script" '{"tool_input":{"file_path":"/tmp/test.txt"},"agent_type":"popcorn-xp:scout"}'
   else
     run_hook "$script"
   fi
   assert_exit "no-op: $script" 0 "$LAST_RC"
   assert_stdout_empty "no-op stdout: $script" "$LAST_STDOUT"
 done
+
+# context-store-update-read also no-op without session
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/test.txt"},"tool_response":"content","agent_type":"popcorn-xp:scout"}'
+assert_exit "no-op: context-store-update-read.sh" 0 "$LAST_RC"
+assert_stdout_empty "no-op stdout: context-store-update-read.sh" "$LAST_STDOUT"
 
 # ============================================================
 # 2. H6: Non-blocking output uses additionalContext, not systemMessage
@@ -664,6 +673,312 @@ else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: R4 shutdown should create .shutdown"
 fi
+
+# ============================================================
+# Context Store tests
+# ============================================================
+
+echo "--- Context Store tests ---"
+
+setup_session
+
+# CS1: check returns nothing when store doesn't exist
+run_hook_stdin "context-store-check.sh" \
+  '{"tool_input":{"file_path":"/tmp/foo.txt"},"agent_type":"popcorn-xp:scout"}'
+assert_exit "CS1: check no store" 0 "$LAST_RC"
+assert_stdout_empty "CS1: check no store stdout" "$LAST_STDOUT"
+
+# CS2: update-read creates store and records entry
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/foo.txt","offset":null,"limit":null},"tool_response":"line1\nline2\nline3","agent_type":"popcorn-xp:scout"}'
+assert_exit "CS2: update-read creates entry" 0 "$LAST_RC"
+
+# Verify store was created with correct fields
+CS_STORE="$POPCORN/context-store.json"
+if [ -f "$CS_STORE" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS2 — context-store.json not created"
+fi
+
+CS_READ_BY=$(jq -r '.["/tmp/foo.txt"].read_by' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_READ_BY" = "popcorn-xp:scout" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS2 — read_by should be popcorn-xp:scout, got $CS_READ_BY"
+fi
+
+CS_DIRTY=$(jq -r '.["/tmp/foo.txt"].dirty' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_DIRTY" = "false" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS2 — dirty should be false after read, got $CS_DIRTY"
+fi
+
+CS_PREVIEW=$(jq -r '.["/tmp/foo.txt"].preview' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if echo "$CS_PREVIEW" | grep -q "line1"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS2 — preview should contain file content"
+fi
+
+# CS3: check returns additionalContext for known clean file
+run_hook_stdin "context-store-check.sh" \
+  '{"tool_input":{"file_path":"/tmp/foo.txt"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "CS3: check clean file" 0 "$LAST_RC"
+assert_stdout_contains "CS3: has additionalContext" "additionalContext" "$LAST_STDOUT"
+assert_stdout_contains "CS3: mentions reader" "popcorn-xp:scout" "$LAST_STDOUT"
+assert_stdout_contains "CS3: says CLEAN" "CLEAN" "$LAST_STDOUT"
+
+# CS4: mark-dirty sets dirty flag and records editor
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/foo.txt"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "CS4: mark-dirty" 0 "$LAST_RC"
+
+CS_DIRTY=$(jq -r '.["/tmp/foo.txt"].dirty' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_DIRTY" = "true" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS4 — dirty should be true after edit, got $CS_DIRTY"
+fi
+
+CS_EDITED_BY=$(jq -r '.["/tmp/foo.txt"].edited_by' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_EDITED_BY" = "popcorn-xp:craftsman" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS4 — edited_by should be popcorn-xp:craftsman, got $CS_EDITED_BY"
+fi
+
+# CS5: check returns DIRTY status with editor name
+run_hook_stdin "context-store-check.sh" \
+  '{"tool_input":{"file_path":"/tmp/foo.txt"},"agent_type":"popcorn-xp:expert"}'
+assert_exit "CS5: check dirty file" 0 "$LAST_RC"
+assert_stdout_contains "CS5: says DIRTY" "DIRTY" "$LAST_STDOUT"
+assert_stdout_contains "CS5: mentions editor" "popcorn-xp:craftsman" "$LAST_STDOUT"
+
+# CS6: re-reading clears dirty flag
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/foo.txt","offset":null,"limit":null},"tool_response":"updated content","agent_type":"popcorn-xp:expert"}'
+assert_exit "CS6: re-read clears dirty" 0 "$LAST_RC"
+
+CS_DIRTY=$(jq -r '.["/tmp/foo.txt"].dirty' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_DIRTY" = "false" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS6 — dirty should be false after re-read, got $CS_DIRTY"
+fi
+
+CS_READ_BY=$(jq -r '.["/tmp/foo.txt"].read_by' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_READ_BY" = "popcorn-xp:expert" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS6 — read_by should update to popcorn-xp:expert, got $CS_READ_BY"
+fi
+
+# CS7: mark-dirty is no-op for unknown files
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/unknown.txt"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "CS7: mark-dirty unknown file" 0 "$LAST_RC"
+assert_stdout_empty "CS7: no output for unknown file" "$LAST_STDOUT"
+
+CS_HAS_UNKNOWN=$(jq -r 'has("/tmp/unknown.txt")' "$CS_STORE" 2>/dev/null || echo "false")
+if [ "$CS_HAS_UNKNOWN" = "false" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS7 — unknown file should not be added to store"
+fi
+
+# CS8: popcorn-xp paths are skipped
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"'"$POPCORN/$TEAM/ADVICE.md"'","offset":null,"limit":null},"tool_response":"advice content","agent_type":"popcorn-xp:scout"}'
+assert_exit "CS8: skip popcorn paths" 0 "$LAST_RC"
+
+CS_HAS_ADVICE=$(jq -r 'has("'"$POPCORN/$TEAM/ADVICE.md"'")' "$CS_STORE" 2>/dev/null || echo "false")
+if [ "$CS_HAS_ADVICE" = "false" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS8 — popcorn-xp session files should not be stored"
+fi
+
+# CS9: re-read preserves edited_by/edited_at from prior dirty state
+# First set up: read, mark dirty, then re-read
+echo '{}' > "$CS_STORE"
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/bar.txt","offset":null,"limit":null},"tool_response":"bar content","agent_type":"popcorn-xp:scout"}'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/bar.txt"},"agent_type":"popcorn-xp:craftsman"}'
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/bar.txt","offset":null,"limit":null},"tool_response":"bar updated","agent_type":"popcorn-xp:expert"}'
+
+CS_EDITED_BY=$(jq -r '.["/tmp/bar.txt"].edited_by' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_EDITED_BY" = "popcorn-xp:craftsman" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS9 — edited_by should be preserved after re-read, got $CS_EDITED_BY"
+fi
+
+# CS10: multiple files in store
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/baz.txt","offset":null,"limit":null},"tool_response":"baz content","agent_type":"popcorn-xp:tester"}'
+
+CS_COUNT=$(jq 'length' "$CS_STORE" 2>/dev/null || echo "0")
+if [ "$CS_COUNT" -ge 2 ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CS10 — store should have multiple entries, got $CS_COUNT"
+fi
+
+# CS11: soft lock — different agent editing a dirty file gets warning
+echo '{}' > "$CS_STORE"
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/lock.txt","offset":null,"limit":null},"tool_response":"lock content","agent_type":"popcorn-xp:scout"}'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/lock.txt"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "CS11a: first edit no lock" 0 "$LAST_RC"
+assert_stdout_empty "CS11a: no warning for first editor" "$LAST_STDOUT"
+
+# Now a different agent tries to edit the same file
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/lock.txt"},"agent_type":"popcorn-xp:expert"}'
+assert_exit "CS11b: soft lock allows edit" 0 "$LAST_RC"
+assert_stdout_contains "CS11b: soft lock warning" "SOFT LOCK" "$LAST_STDOUT"
+assert_stdout_contains "CS11b: mentions active editor" "popcorn-xp:craftsman" "$LAST_STDOUT"
+
+# CS12: soft lock — same agent re-editing gets no warning
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/lock.txt"},"agent_type":"popcorn-xp:expert"}'
+assert_exit "CS12: same agent no warning" 0 "$LAST_RC"
+assert_stdout_empty "CS12: no soft lock for same agent" "$LAST_STDOUT"
+
+# CS13: soft lock — clean file gets no warning even from different agent
+echo '{}' > "$CS_STORE"
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/clean.txt","offset":null,"limit":null},"tool_response":"clean content","agent_type":"popcorn-xp:scout"}'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/clean.txt"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "CS13: first edit on clean file" 0 "$LAST_RC"
+assert_stdout_empty "CS13: no warning on clean file" "$LAST_STDOUT"
+
+# Clean up context store artifacts
+rm -f "$CS_STORE" "$CS_STORE.lock"
+
+# ============================================================
+# Context Store Event Log tests
+# ============================================================
+
+echo "--- Context Store Event Log tests ---"
+
+setup_session
+CS_STORE="$POPCORN/context-store.json"
+CS_LOG="$POPCORN/context-store.log"
+rm -f "$CS_LOG"
+echo '{}' > "$CS_STORE"
+
+# CL1: update-read logs "new entry" for first read
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/logtest.txt","offset":null,"limit":null},"tool_response":"content","agent_type":"popcorn-xp:scout"}'
+assert_exit "CL1: update-read exits 0" 0 "$LAST_RC"
+
+if [ -f "$CS_LOG" ] && grep -q "new entry" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL1 — log should contain 'new entry'"
+fi
+
+if grep -q "popcorn-xp:scout" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL1 — log should contain agent name"
+fi
+
+# CL2: check logs "cache hit, CLEAN" for known clean file
+run_hook_stdin "context-store-check.sh" \
+  '{"tool_input":{"file_path":"/tmp/logtest.txt"},"agent_type":"popcorn-xp:craftsman"}'
+
+if grep -q "cache hit, CLEAN" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL2 — log should contain 'cache hit, CLEAN'"
+fi
+
+# CL3: mark-dirty logs "marked dirty"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/logtest.txt"},"agent_type":"popcorn-xp:craftsman"}'
+
+if grep -q "marked dirty" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL3 — log should contain 'marked dirty'"
+fi
+
+# CL4: check logs "cache hit, DIRTY" for dirty file
+run_hook_stdin "context-store-check.sh" \
+  '{"tool_input":{"file_path":"/tmp/logtest.txt"},"agent_type":"popcorn-xp:expert"}'
+
+if grep -q "cache hit, DIRTY" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL4 — log should contain 'cache hit, DIRTY'"
+fi
+
+# CL5: soft lock logs "SOFT LOCK"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"/tmp/logtest.txt"},"agent_type":"popcorn-xp:expert"}'
+
+if grep -q "SOFT LOCK" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL5 — log should contain 'SOFT LOCK'"
+fi
+
+# CL6: re-read logs "updated" (not "new entry")
+run_hook_stdin "context-store-update-read.sh" \
+  '{"tool_input":{"file_path":"/tmp/logtest.txt","offset":null,"limit":null},"tool_response":"updated content","agent_type":"popcorn-xp:expert"}'
+
+if grep -q "updated" "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL6 — log should contain 'updated' for re-read"
+fi
+
+# CL7: log entries have timestamps (HH:MM:SS format)
+if grep -qE '^[0-9]{2}:[0-9]{2}:[0-9]{2}' "$CS_LOG"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL7 — log entries should have HH:MM:SS timestamps"
+fi
+
+# CL8: log has correct number of entries (6 events triggered above)
+CL_COUNT=$(wc -l < "$CS_LOG" | tr -d ' ')
+if [ "$CL_COUNT" -eq 6 ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CL8 — expected 6 log entries, got $CL_COUNT"
+fi
+
+# Clean up
+rm -f "$CS_STORE" "$CS_STORE.lock" "$CS_LOG"
 
 # ============================================================
 # Results
