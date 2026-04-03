@@ -1,5 +1,6 @@
 > ## Documentation Index
-> Fetch the complete documentation index at: https://code.claude.com/docs/llms.txt
+>
+> Fetch the complete documentation index at: <https://code.claude.com/docs/llms.txt>
 > Use this file to discover all available pages before exploring further.
 
 # Orchestrate teams of Claude Code sessions
@@ -120,7 +121,7 @@ Split-pane mode requires either [tmux](https://github.com/tmux/tmux/wiki) or iTe
 * **tmux**: install through your system's package manager. See the [tmux wiki](https://github.com/tmux/tmux/wiki/Installing) for platform-specific instructions.
 * **iTerm2**: install the [`it2` CLI](https://github.com/mkusaka/it2), then enable the Python API in **iTerm2 → Settings → General → Magic → Enable Python API**.
 
-#fy teammates and models
+### Specify teammates and models
 
 Claude decides the number of teammates to spawn based on your task, or you can specify exactly what you want:
 
@@ -365,9 +366,11 @@ If teammates aren't appearing after you ask Claude to create a team:
 * In in-process mode, teammates may already be running but not visible. Press Shift+Down to cycle through active teammates.
 * Check that the task you gave Claude was complex enough to warrant a team. Claude decides whether to spawn teammates based on the task.
 * If you explicitly requested split panes, ensure tmux is installed and available in your PATH:
+
   ```bash  theme={null}
   which tmux
   ```
+
 * For iTerm2, verify the `it2` CLI is installed and the Python API is enabled in iTerm2 preferences.
 
 ### Too many permission prompts
