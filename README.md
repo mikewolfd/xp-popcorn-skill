@@ -53,6 +53,8 @@ No worktrees. No merge conflicts. One driver at a time means one writer at a tim
 
 **No idle hands.** Serial editing does not mean serial thinking. While the driver edits, the navigator reads ahead, reviews the driver's changes, checks test coverage, and investigates unknowns. Between tasks, the transitioning agents immediately pick up navigator duties — reviewing their own changes from the outside, exploring files relevant to the next task, or checking for issues the pair missed. An agent that isn't driving should be actively contributing through a different channel, not waiting for assignment.
 
+**Soft lock awareness.** The context store tracks which agent last edited each file and marks files dirty when edits are in progress. When the navigator reads a file the driver is editing, the store injects cache metadata ("expert is actively editing this — since 2:15pm"). This is awareness, not enforcement — the navigator reads anyway, but knows the file is hot. This is how pair programming survives the medium latency: the navigator's "watch the driver work" becomes "watch the shared store for activity," and STEER advice flows based on what the store shows is happening.
+
 **The medium constraint:** The navigator sees checkpoint messages and reads files, not live keystrokes. This is the same class of limitation as screen-share latency in remote pairing — a constraint of the medium, not a change in the dynamic. Both agents are focused on the same work at the same time. The navigator proactively reads ahead and steers. The driver receives advice between actions and must engage with OBJECTIONs before completing. It's pair programming with the latency of a remote session.
 
 ### Typed Advice With Teeth
@@ -347,18 +349,27 @@ Created → Delivered → Persisted → Read → Considered → Resolved
   (nav)    (SendMsg)  (ADVICE.md)  (driver)            (driver writes resolution)
 ```
 
-Three hooks enforce this lifecycle at different moments:
+Four types of hooks enforce coordination state:
 
-**TaskCompleted** — fires when a teammate marks a task done. This is the primary enforcement point. The hook reads ADVICE.md and:
-- Blocks on open OBJECTIONs (must fix or reject with reason)
-- Blocks on unacknowledged SMELLs (must engage — agree or explain why it's fine)
-- Warns on open STEERs and FYIs (reminds, doesn't block)
+**Advice Lifecycle** — Three hooks ensure advice is surfaced and engaged with:
 
-**TeammateIdle** — fires when a teammate goes idle between turns. The hook reads ADVICE.md and reminds the agent of all open items, prompting them to check the file and resume active work. Agents should not stay idle — the hook nudges them back into reviewing, reading ahead, or investigating.
+- **TaskCompleted** — fires when a teammate marks a task done. This is the primary enforcement point. The hook reads ADVICE.md and:
+  - Blocks on open OBJECTIONs (must fix or reject with reason)
+  - Blocks on unacknowledged SMELLs (must engage — agree or explain why it's fine)
+  - Warns on open STEERs and FYIs (reminds, doesn't block)
 
-**SubagentStop** — backup enforcement. Blocks on open OBJECTIONs if the agent tries to stop entirely (not just go idle). Belt and suspenders for the TaskCompleted hook.
+- **TeammateIdle** — fires when a teammate goes idle between turns. The hook reads ADVICE.md and reminds the agent of all open items, prompting them to check the file and resume active work. Agents should not stay idle — the hook nudges them back into reviewing, reading ahead, or investigating.
 
-All three hooks are no-ops when `.popcorn-xp/ADVICE.md` doesn't exist — no active session means no enforcement.
+- **SubagentStop** — backup enforcement. Blocks on open OBJECTIONs if the agent tries to stop entirely (not just go idle). Belt and suspenders for the TaskCompleted hook.
+
+All three are no-ops when `.popcorn-xp/ADVICE.md` doesn't exist — no active session means no enforcement.
+
+**Context Store (Soft Lock)** — Two hooks track file edits and warn of conflicts:
+
+- **PreToolUse(Read)** — On every file read, checks the shared context store. If the file was recently edited by another agent, injects metadata: "expert edited this 2 minutes ago." Allows the read but provides awareness.
+- **PreToolUse(Edit/Write)** — On every edit, marks the file dirty in the store and records the current editor. If another agent had it dirty, emits a soft lock warning: "craftsman is actively editing this." Allows the edit to proceed (no blocking), but prevents accidental clobbering through visibility.
+
+The context store creates a shared index of file activity — who read what, when, and whether it has unsaved edits. Hooks are no-ops when no active session; the store is populated only during team sessions.
 
 The enforcement gradient:
 

@@ -1,10 +1,11 @@
 ---
 name: popcorn-xp
 description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Launches an Agent Teams pair-programming session where autonomous teammates coordinate through direct messaging, typed advice with blocking objections, and role rotation.
-disable-model-invocation: true
+# disable-model-invocation: true
 ---
 
 ## Prior session context
+
 !`[ -f .popcorn-xp/.active-team ] && TEAM=$(cat .popcorn-xp/.active-team) && echo "Active team: $TEAM" && tail -20 .popcorn-xp/$TEAM/LOG.md 2>/dev/null || echo "No active session."`
 !`ls .popcorn-xp/*/RETRO.md 2>/dev/null | head -3 | xargs -I{} sh -c 'echo "=== {} ===" && tail -10 {}' || echo "No prior retros."`
 
@@ -110,6 +111,7 @@ Before creating the team, understand the problem yourself. If you have file acce
 **Check for prior retros.** If `.popcorn-xp/*/RETRO.md` exists for any prior team, read it. It contains process observations from previous sessions on this codebase — what worked, what didn't, what to change. Apply any relevant recommendations.
 
 Build a mental model of:
+
 - What files are involved
 - What the user wants changed
 - What could go wrong
@@ -122,6 +124,7 @@ Break the work into 5-8 concrete tasks (run the decomposition checklist in Step 
 **Choose the teammate model.** Ask the user which model to use for teammates:
 
 > What model should I use for the teammates? Options:
+>
 > - **haiku** — fastest and cheapest, good default for most tasks
 > - **sonnet** — more capable, better for complex reasoning
 > - **opus** — most capable, slower and more expensive
@@ -157,6 +160,7 @@ Read the frontmatter (`name`, `description`) of each discovered file. Also revie
 > Which roles do you want on the team, and which agent for each? You don't need all of them — I'll spawn the first pair to start and bring others in as the work demands.
 
 Wait for the user to confirm before proceeding. The user picks:
+
 - Which personas to include (typically 2-3 to start)
 - Which agent fills each slot (native or default)
 - They can also request agents not in the list by name
@@ -227,6 +231,7 @@ Use TaskCreate for each work item. Set dependencies with TaskUpdate so tasks unb
 5. **The description length test.** If the task description needs more than 3-4 sentences to explain what to do, the scope is too broad. A well-scoped task is obvious from a short description.
 
 **Example: too coarse (3 tasks)**
+
 ```
 Task 1: "Map affected files, entry points, and constraints"
 Task 2: "Implement depth validation in parseBlock()" — blocked by 1
@@ -234,6 +239,7 @@ Task 3: "Add regression tests and run full suite" — blocked by 2
 ```
 
 **Example: properly decomposed (6 tasks)**
+
 ```
 Task 1: "Inventory affected files and entry points for depth validation"
 Task 2: "Add maxDepth parameter to parseBlock() signature and threading" — blocked by 1
@@ -252,6 +258,7 @@ Include enough context in each task description for a teammate to execute it ind
 **Research and analysis pipelines often run in parallel, not series.** When two agents can gather information independently (one reads the implementation, another reads the spec), model them as concurrent tasks that both feed a synthesis task — not a serial chain. Serial chains cause unnecessary idle time when agents could be working in parallel.
 
 Example parallel breakdown:
+
 ```
 Task 1a: "Inventory implementation — components, APIs, constraints" (no dependencies)
 Task 1b: "Read spec — catalog what each section requires" (no dependencies)
@@ -260,6 +267,7 @@ Task 3:  "Synthesize findings into prioritized gap list" — blocked by 2
 ```
 
 **For synthesis or authoring tasks, make expert review an explicit blocking sub-task.** Don't fold it into a note in the task description — review that isn't a hard dependency won't happen until after the synthesis is "done." Use a draft → review → finalize chain:
+
 ```
 Task Xa: Draft synthesis
 Task Xb: Expert reviews draft — blocked by Xa (OBJECTION gate)
@@ -269,11 +277,13 @@ Task Xc: Finalize — blocked by Xb
 **Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` so tasks auto-unblock as each dependency completes. Teammates self-claim the next unblocked task based on rotation convention (navigator becomes driver), so the chain should reflect the intended execution order. You assign the first task; after that, the normal path flows through built-in task dependencies without your intervention. If you can anticipate auxiliary tasks — an API audit, a renderer compatibility check, a supplementary research pass — create them now. Tasks added mid-session arrive as addenda and feed synthesis less cleanly than tasks planned upfront.
 
 **When to include a separate verification task:**
+
 - A different agent runs verification than wrote the code (fresh eyes)
 - Integration or E2E tests that weren't part of the unit test task
 - Verification requires a different environment (staging, browser, device)
 
 **When to fold verification into the last task's exit criteria:**
+
 - Same agent would re-run the same tests
 - The test-writing task already runs all tests
 - The project is small enough that "run tests" takes seconds
@@ -283,15 +293,18 @@ Task Xc: Finalize — blocked by Xb
 A 3-task session means almost no rotation. Target 5-8 tasks. A session with 7 small tasks where both agents drove multiple times beats a session with 3 large tasks where one agent did all the work. Verification tasks force rotations and bring fresh eyes — that's a feature, not overhead.
 
 Examples of splitting:
+
 - "Implement drag-and-drop" → split: "add drop zone markup", "implement drag start/move handlers", "implement drop handler and state update", "add visual feedback during drag", "test drag-and-drop with keyboard"
 - "Add auth middleware" → split: "add middleware skeleton and route registration", "implement token validation logic", "implement error responses (401, 403)", "add tests for valid tokens", "add tests for expired/invalid/missing tokens"
 - "Refactor config loading" → split: "extract config schema type", "implement schema validation", "migrate callers to validated config", "add tests for invalid config shapes"
 
 Examples of valid single tasks:
+
 - "Add regression test for invalid input" → one verb, one deliverable
 - "Implement depth-exceeded error path in parseBlock()" → one behavior, one file
 
 Examples of tasks to fold (not standalone):
+
 - "Read the parser module" → fold into first implementation task
 - "Run `tsc --noEmit`" → fold into task exit criteria
 
@@ -300,10 +313,12 @@ Examples of tasks to fold (not standalone):
 **If task scope is unclear or spans multiple files/areas,** create a parallel scout research task with no dependencies alongside the first implementation task. Do not serialize orientation before implementation — plan the full dependency chain upfront and let scout research feed into it concurrently. A scout task that finishes before the implementation task starts is still valuable; a scout task created after implementation has started is largely wasted.
 
 **For sessions with 4+ implementation tasks,** schedule independent code review as explicit tasks with blocking dependencies:
+
 ```
 Task N:   Code review phases 1-2 — blocked by tasks 1, 2
 Task N+1: Code review phases 3-5 — blocked by tasks 3, 4, 5
 ```
+
 The reviewer agent is launched independently (no `team_name`) and its findings are relayed by the lead. Planning these as tasks ensures they happen at the right checkpoint, not whenever the lead remembers.
 
 ### 4. Spawn Teammates
@@ -406,12 +421,15 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
 2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
 3. **Check ADVICE.md for open SMELLs, STEERs, and FYIs.** For each: (a) resolve it now if trivial, (b) create a follow-up task if it warrants future work, or (c) note it in the retro. Do not let the session end with unacknowledged open items.
 4. **Retrospective (mandatory — mechanical).** Run the session retro-request subcommand, then notify each teammate:
+
    ```bash
    .popcorn-xp/{team-name}/session retro-request
    ```
+
    ```
    SendMessage(to: "craftsman", summary: "retro time", message: "Retro time. Submit your process observations: .popcorn-xp/{team-name}/session retro craftsman 'What worked? What didn't? What would you change about the process?'")
    ```
+
    The `enforce-no-idle.sh` hook will nudge any idle teammate automatically. After retro-request, wait for all `.retro-*.md` files before writing RETRO.md. The FileChanged hook will notify you as each one arrives.
 5. **Shut down all teammates — mechanically.** Run the shutdown subcommand, then let the hook do the work:
 
@@ -420,10 +438,12 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
    ```bash
    .popcorn-xp/{team-name}/session shutdown
    ```
+
    On each teammate's next idle, `enforce-no-idle.sh` will force-stop them with `{"continue": false}`. You do not need to send shutdown_request messages. Proceed to TeamDelete once idle notifications stop appearing.
 6. **Write the retro file.** After teammates shut down, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
 7. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
 8. After teammates have shut down (or after 3 failed shutdown attempts):
+
    ```
    TeamDelete
    ```
@@ -490,6 +510,7 @@ In research and analysis sessions (no code being written), expect fewer OBJECTIO
 Advice is sent via SendMessage (real-time) and appended to `.popcorn-xp/ADVICE.md` (persistent record).
 
 Three hooks support the advice lifecycle:
+
 - **TaskCompleted** — blocks on open OBJECTIONs, reminds of other open advice
 - **TeammateIdle** — reminds the agent of open advice items when they go idle
 - **SubagentStop** — backup block on open OBJECTIONs

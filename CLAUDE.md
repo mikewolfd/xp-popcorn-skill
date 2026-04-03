@@ -31,7 +31,7 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 
 ### Hook System
 
-`hooks/hooks.json` registers hooks on five events. All hooks are no-ops when no `.popcorn-xp/.active-team` exists.
+`hooks/hooks.json` registers hooks on lifecycle and tool use events. All hooks are no-ops when no `.popcorn-xp/.active-team` exists.
 
 | Event | Script | Purpose |
 |-------|--------|---------|
@@ -41,8 +41,32 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 | TeammateIdle | `remind-unread-advice.sh` | Reminds agent of open advice items |
 | TeammateIdle | `remind-checkpoint.sh` | Reminds driver to checkpoint after edits |
 | TeammateIdle | `enforce-no-idle.sh` | Phase-aware: working→nudge, retro-pending→nudge retro, retro-done→allow, shutdown→force-stop |
+| PreToolUse(Read) | `context-store-check.sh` | Checks if file was previously read/edited; injects cache hit metadata |
+| PreToolUse(Edit/Write) | `context-store-mark-dirty.sh` | Marks file dirty on edit; warns if another agent is actively editing (soft lock) |
+| PostToolUse(Read) | `context-store-update-read.sh` | Records file read event, agent, timestamp, and preview in shared context store |
 | PreToolUse(Edit/Write) | `mark-dirty.sh` | Counts uncheckpointed edits, soft reminder after 3+ |
 | PreToolUse(TeamDelete) | `check-retro-before-delete.sh` | Blocks TeamDelete until RETRO.md exists with >= 5 lines |
+
+### Context Store (Soft Lock)
+
+The context store enables cross-agent awareness of file edits during pair programming:
+
+**Store Location**: `.popcorn-xp/context-store.json` (shared across agents during session)
+
+**Tracking**: Each file entry records:
+- `read_by`: Agent name (popcorn-xp:*) who last read the file
+- `read_at`: Timestamp of last read
+- `dirty`: Boolean; `true` if the file has unsaved edits by any agent
+- `edited_by`: Agent name of the current editor
+- `edited_at`: Timestamp of most recent edit
+- `preview`: Cached file content (for reference)
+
+**Soft Lock Behavior**: When an agent reads a file marked dirty by another agent, the context store hooks inject metadata:
+- Cache hit message shows who edited it and when
+- Allows the read to proceed (not blocking)
+- Used for awareness, not enforcement — promotes async communication
+
+**Event Log**: `.popcorn-xp/context-store.log` records all read/edit events with agent names, file paths, and lock status.
 
 ### Session Files (Runtime)
 
@@ -76,5 +100,6 @@ Four-phase lifecycle enforced by `enforce-no-idle.sh` reading signal files:
 - Hook scripts use `$CLAUDE_PROJECT_DIR` (set by Claude Code) to find `.popcorn-xp/`.
 - The `session` script is the only interface teammates use to write to LOG.md and ADVICE.md.
 - `session log` resets `.dirty` and `.edit-count` (checkpoint clears the edit counter).
+- Context store agent names follow `popcorn-xp:<agent-name>` convention (prefixed by hooks).
 - `references/protocol.md` contains teammate prompt templates (driver, navigator, advisor) that the lead includes when spawning agents. This is the detailed version; the protocol skill is the condensed version auto-loaded into agents.
 - `research/` contains background research on Claude Code features. Not loaded at runtime.
