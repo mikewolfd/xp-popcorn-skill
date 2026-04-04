@@ -1,0 +1,118 @@
+#!/bin/bash
+set -euo pipefail
+
+# session — Popcorn XP session helper.
+# Teammates call this to append entries to LOG.md, ADVICE.md, and manage agent state.
+# Resolves the active team from .popcorn-xp/.active-team.
+
+POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
+TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
+[ -z "$TEAM" ] && { echo "No active popcorn-xp team" >&2; exit 1; }
+
+DIR="$POPCORN_DIR/$TEAM"
+STATE_DIR="$DIR/agent-state"
+mkdir -p "$STATE_DIR"
+
+state_file() { echo "$STATE_DIR/$1.json"; }
+checkpoint_cursor_file() { echo "$DIR/.checkpoint-cursor"; }
+
+ensure_state() {
+  local file
+  file="$(state_file "$1")"
+  [ -f "$file" ] || jq -n --arg agent "$1" --arg task_id "${2:-}" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '{
+    agent: $agent,
+    role: "",
+    phase: "",
+    task_id: $task_id,
+    blocked_on: "",
+    next_action: "",
+    navigator_ready: false,
+    navigator_artifact_kind: "",
+    navigator_artifact_status: "",
+    write_set: [],
+    updated_at: $updated_at
+  }' > "$file"
+  echo "$file"
+}
+
+merge_state() {
+  local file tmp
+  file="$(ensure_state "$1" "${2:-}")"
+  shift 2
+  tmp="$file.tmp"
+  jq "$@" "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
+
+case "$cmd" in
+  log)
+    printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"
+    if [ -f "$POPCORN_DIR/context-store.log" ]; then
+      wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$(checkpoint_cursor_file)"
+    else
+      echo 0 > "$(checkpoint_cursor_file)"
+    fi
+    ;;
+  advice)
+    T="${1:?}"; ID="${2:?}"; shift 2
+    grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0
+    printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md"
+    ;;
+  resolve)
+    ID="${1:?}"; O="${2:?}"; shift 2
+    printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md"
+    ;;
+  task)
+    ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"
+    printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md"
+    ;;
+  state)
+    AGENT="${1:?}"; ROLE="${2:?}"; PHASE="${3:?}"; TASK_ID="${4:?}"; BLOCKED_ON="${5:--}"; shift 5
+    NEXT_ACTION="${*:--}"
+    merge_state "$AGENT" "$TASK_ID" --arg agent "$AGENT" --arg role "$ROLE" --arg phase "$PHASE" --arg task_id "$TASK_ID" \
+      --arg blocked_on "$BLOCKED_ON" --arg next_action "$NEXT_ACTION" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      '.agent = $agent
+       | .role = $role
+       | .phase = $phase
+       | .task_id = $task_id
+       | .blocked_on = (if $blocked_on == "-" then "" else $blocked_on end)
+       | .next_action = (if $next_action == "-" then "" else $next_action end)
+       | .updated_at = $updated_at'
+    ;;
+  ready)
+    AGENT="${1:?}"; TASK_ID="${2:?}"; KIND="${3:?}"; shift 3
+    DETAIL="${*:?(detail required)}"
+    printf '## READY — %s\n\n### Task\n%s\n\n### Artifact Type\n%s\n\n### Notes\n%s\n' "$AGENT" "$TASK_ID" "$KIND" "$DETAIL" > "$DIR/navigator-ready-$AGENT.md"
+    merge_state "$AGENT" "$TASK_ID" --arg agent "$AGENT" --arg task_id "$TASK_ID" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      --arg kind "$KIND" --arg detail "$DETAIL" '.agent = $agent
+        | .role = "navigator"
+        | .phase = "waiting_on_driver"
+        | .task_id = $task_id
+        | .blocked_on = "driver checkpoint"
+        | .next_action = $detail
+        | .navigator_ready = true
+        | .navigator_artifact_kind = $kind
+        | .navigator_artifact_status = "published"
+        | .updated_at = $updated_at'
+    printf '\n### Navigator READY\n@%s task %s %s: %s\n' "$AGENT" "$TASK_ID" "$KIND" "$DETAIL" >> "$DIR/LOG.md"
+    ;;
+  writeset)
+    AGENT="${1:?}"; TASK_ID="${2:?}"; shift 2
+    WRITE_SET="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
+    merge_state "$AGENT" "$TASK_ID" --arg task_id "$TASK_ID" --argjson write_set "$WRITE_SET" '.task_id = $task_id | .write_set = $write_set'
+    ;;
+  handoff)
+    AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
+    printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "$AGENT" > "$FILE"
+    echo "Handoff template written to $FILE — fill it out now."
+    ;;
+  snapshot)
+    AGENT="${1:?}"; TASK_ID="${2:?}"; FILE="$DIR/snapshot-$AGENT.md"
+    printf '## Rotation Snapshot — %s\n\n### Task\n%s\n\n### Files Touched\n\n### Verification Run\n\n### Open Advice\n\n### Next Risk\n\n### Recommended Start\n' "$AGENT" "$TASK_ID" > "$FILE"
+    echo "Rotation snapshot template written to $FILE — fill it out before handoff."
+    ;;
+  retro-request) touch "$DIR/.retro-requested" ;;
+  retro) AGENT="${1:?}"; shift; printf '%s\n' "$*" > "$DIR/.retro-$AGENT.md" ;;
+  shutdown) touch "$DIR/.shutdown" ;;
+esac

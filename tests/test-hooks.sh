@@ -13,6 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HOOKS_DIR="$SCRIPT_DIR/hooks/scripts"
+BIN_DIR="$SCRIPT_DIR/bin"
 FIXTURES_DIR="$SCRIPT_DIR/tests/fixtures"
 
 # --- Test harness ---
@@ -794,95 +795,13 @@ assert_exit "H2 debounce nudge 3 allows" 0 "$LAST_RC"
 
 echo "--- R4: session script subcommands ---"
 
-# Set up a temp session with the real session script
+# Use bin/session via CLAUDE_PROJECT_DIR (same mechanism as production)
 setup_session
-cat > "$POPCORN/$TEAM/session" << 'SCRIPT'
-#!/bin/bash
-set -euo pipefail
-DIR="$(cd "$(dirname "$0")" && pwd)"
-STATE_DIR="$DIR/agent-state"
-POPCORN_DIR="$(dirname "$DIR")"
-mkdir -p "$STATE_DIR"
-state_file() { echo "$STATE_DIR/$1.json"; }
-checkpoint_cursor_file() { echo "$DIR/.checkpoint-cursor"; }
-ensure_state() {
-  local file
-  file="$(state_file "$1")"
-  [ -f "$file" ] || jq -n --arg agent "$1" --arg task_id "${2:-}" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '{
-    agent: $agent,
-    role: "",
-    phase: "",
-    task_id: $task_id,
-    blocked_on: "",
-    next_action: "",
-    navigator_ready: false,
-    navigator_artifact_kind: "",
-    navigator_artifact_status: "",
-    write_set: [],
-    updated_at: $updated_at
-  }' > "$file"
-  echo "$file"
-}
-merge_state() {
-  local file tmp
-  file="$(ensure_state "$1" "${2:-}")"
-  shift 2
-  tmp="$file.tmp"
-  jq "$@" "$file" > "$tmp" && mv "$tmp" "$file"
-}
-cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
-case "$cmd" in
-  log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; if [ -f "$POPCORN_DIR/context-store.log" ]; then wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$(checkpoint_cursor_file)"; else echo 0 > "$(checkpoint_cursor_file)"; fi ;;
-  advice) T="${1:?}"; ID="${2:?}"; shift 2; grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md" ;;
-  resolve) ID="${1:?}"; O="${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md" ;;
-  task) ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md" ;;
-  state) AGENT="${1:?}"; ROLE="${2:?}"; PHASE="${3:?}"; TASK_ID="${4:?}"; BLOCKED_ON="${5:--}"; shift 5
-    NEXT_ACTION="${*:--}"
-    merge_state "$AGENT" "$TASK_ID" --arg agent "$AGENT" --arg role "$ROLE" --arg phase "$PHASE" --arg task_id "$TASK_ID" \
-      --arg blocked_on "$BLOCKED_ON" --arg next_action "$NEXT_ACTION" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-      '.agent = $agent
-       | .role = $role
-       | .phase = $phase
-       | .task_id = $task_id
-       | .blocked_on = (if $blocked_on == "-" then "" else $blocked_on end)
-       | .next_action = (if $next_action == "-" then "" else $next_action end)
-       | .updated_at = $updated_at' ;;
-  ready) AGENT="${1:?}"; TASK_ID="${2:?}"; KIND="${3:?}"; shift 3
-    DETAIL="${*:?(detail required)}"
-    printf '## READY — %s\n\n### Task\n%s\n\n### Artifact Type\n%s\n\n### Notes\n%s\n' "$AGENT" "$TASK_ID" "$KIND" "$DETAIL" > "$DIR/navigator-ready-$AGENT.md"
-    merge_state "$AGENT" "$TASK_ID" --arg agent "$AGENT" --arg task_id "$TASK_ID" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-      --arg kind "$KIND" --arg detail "$DETAIL" '.agent = $agent
-        | .role = "navigator"
-        | .phase = "waiting_on_driver"
-        | .task_id = $task_id
-        | .blocked_on = "driver checkpoint"
-        | .next_action = $detail
-        | .navigator_ready = true
-        | .navigator_artifact_kind = $kind
-        | .navigator_artifact_status = "published"
-        | .updated_at = $updated_at'
-    printf '\n### Navigator READY\n@%s task %s %s: %s\n' "$AGENT" "$TASK_ID" "$KIND" "$DETAIL" >> "$DIR/LOG.md" ;;
-  writeset) AGENT="${1:?}"; TASK_ID="${2:?}"; shift 2
-    WRITE_SET="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
-    merge_state "$AGENT" "$TASK_ID" --arg task_id "$TASK_ID" --argjson write_set "$WRITE_SET" '.task_id = $task_id | .write_set = $write_set' ;;
-  handoff) AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
-    printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "$AGENT" > "$FILE"
-    echo "Handoff template written to $FILE — fill it out now." ;;
-  snapshot) AGENT="${1:?}"; TASK_ID="${2:?}"; FILE="$DIR/snapshot-$AGENT.md"
-    printf '## Rotation Snapshot — %s\n\n### Task\n%s\n\n### Files Touched\n\n### Verification Run\n\n### Open Advice\n\n### Next Risk\n\n### Recommended Start\n' "$AGENT" "$TASK_ID" > "$FILE"
-    echo "Rotation snapshot template written to $FILE — fill it out before handoff." ;;
-  retro-request) touch "$DIR/.retro-requested" ;;
-  retro) AGENT="${1:?}"; shift; printf '%s\n' "$*" > "$DIR/.retro-$AGENT.md" ;;
-  shutdown) touch "$DIR/.shutdown" ;;
-esac
-SCRIPT
-chmod +x "$POPCORN/$TEAM/session"
-
-SESSION="$POPCORN/$TEAM/session"
+run_session() { env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" "$BIN_DIR/session" "$@"; }
 
 # log records checkpoint and advances cursor to current context-store.log line
 printf '12:00:00  EDIT       popcorn-xp:craftsman         src/example.ts                           (marked dirty)\n' > "$POPCORN/context-store.log"
-"$SESSION" log 'Checkpoint after example edit'
+run_session log 'Checkpoint after example edit'
 if [ "$(cat "$POPCORN/$TEAM/.checkpoint-cursor" 2>/dev/null || echo missing)" = "1" ]; then
   PASS=$((PASS + 1))
 else
@@ -891,7 +810,7 @@ else
 fi
 
 # retro-request creates .retro-requested
-"$SESSION" retro-request
+run_session retro-request
 if [ -f "$POPCORN/$TEAM/.retro-requested" ]; then
   PASS=$((PASS + 1))
 else
@@ -900,7 +819,7 @@ else
 fi
 
 # retro creates .retro-{agent}.md with content
-"$SESSION" retro craftsman 'Rotation worked well. Advice caught the edge case.'
+run_session retro craftsman 'Rotation worked well. Advice caught the edge case.'
 if [ -f "$POPCORN/$TEAM/.retro-craftsman.md" ]; then
   PASS=$((PASS + 1))
 else
@@ -916,7 +835,7 @@ else
 fi
 
 # shutdown creates .shutdown
-"$SESSION" shutdown
+run_session shutdown
 if [ -f "$POPCORN/$TEAM/.shutdown" ]; then
   PASS=$((PASS + 1))
 else
@@ -925,7 +844,7 @@ else
 fi
 
 # state creates explicit agent state
-"$SESSION" state craftsman driver driving 7 - 'Implement hook helper'
+run_session state craftsman driver driving 7 - 'Implement hook helper'
 STATE_PHASE=$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo "missing")
 if [ "$STATE_PHASE" = "driving" ]; then
   PASS=$((PASS + 1))
@@ -935,7 +854,7 @@ else
 fi
 
 # ready creates navigator-ready artifact and waiting state
-"$SESSION" ready expert 7 risk_check 'Watch for missing verification on shutdown path.'
+run_session ready expert 7 risk_check 'Watch for missing verification on shutdown path.'
 if [ -f "$POPCORN/$TEAM/navigator-ready-expert.md" ] && \
    [ "$(jq -r '.navigator_ready' "$POPCORN/$TEAM/agent-state/expert.json" 2>/dev/null || echo false)" = "true" ]; then
   PASS=$((PASS + 1))
@@ -945,7 +864,7 @@ else
 fi
 
 # writeset records owned files
-"$SESSION" writeset craftsman 7 hooks/hooks.json tests/test-hooks.sh
+run_session writeset craftsman 7 hooks/hooks.json tests/test-hooks.sh
 WRITE_COUNT=$(jq -r '.write_set | length' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo 0)
 if [ "$WRITE_COUNT" = "2" ]; then
   PASS=$((PASS + 1))
@@ -955,7 +874,7 @@ else
 fi
 
 # state merge preserves writeset
-"$SESSION" state craftsman driver driving 7 - 'Keep implementing helper'
+run_session state craftsman driver driving 7 - 'Keep implementing helper'
 WRITE_COUNT_AFTER_STATE=$(jq -r '.write_set | length' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo 0)
 if [ "$WRITE_COUNT_AFTER_STATE" = "2" ]; then
   PASS=$((PASS + 1))
@@ -965,9 +884,9 @@ else
 fi
 
 # ready + later state merge preserves navigator READY metadata
-"$SESSION" writeset expert 7 docs/architecture.md
-"$SESSION" ready expert 7 risk_check 'Watch for shutdown path and native agent normalization.'
-"$SESSION" state expert navigator waiting_on_driver 7 craftsman 'Wait for the next driver checkpoint'
+run_session writeset expert 7 docs/architecture.md
+run_session ready expert 7 risk_check 'Watch for shutdown path and native agent normalization.'
+run_session state expert navigator waiting_on_driver 7 craftsman 'Wait for the next driver checkpoint'
 if [ "$(jq -r '.navigator_ready' "$POPCORN/$TEAM/agent-state/expert.json" 2>/dev/null || echo false)" = "true" ] && \
    [ "$(jq -r '.navigator_artifact_status' "$POPCORN/$TEAM/agent-state/expert.json" 2>/dev/null || echo missing)" = "published" ] && \
    [ "$(jq -r '.write_set | length' "$POPCORN/$TEAM/agent-state/expert.json" 2>/dev/null || echo 0)" = "1" ]; then
@@ -978,7 +897,7 @@ else
 fi
 
 # snapshot creates structured handoff template
-"$SESSION" snapshot craftsman 7
+run_session snapshot craftsman 7
 if [ -f "$POPCORN/$TEAM/snapshot-craftsman.md" ]; then
   PASS=$((PASS + 1))
 else
