@@ -3,8 +3,7 @@ set -euo pipefail
 
 # context-store-update-read.sh
 # PostToolUse hook on Read: updates the shared context store
-# with file metadata, agent name, timestamp, read range,
-# and the first 10 lines of file content as preview.
+# with file metadata, agent name, timestamp, and read range.
 # No-op when no active popcorn-xp session.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -44,11 +43,6 @@ if [ -f "$STORE" ]; then
   [ "$HAS" = "true" ] && IS_NEW="false"
 fi
 
-# Extract tool_response as preview (first 10 lines) — write to temp file to avoid quoting issues
-PREVIEW_FILE=$(mktemp)
-trap 'rm -f "$PREVIEW_FILE" "$PREVIEW_FILE.entry"' EXIT
-echo "$INPUT" | jq -r '.tool_response // ""' | head -10 > "$PREVIEW_FILE" 2>/dev/null || true
-
 # Initialize store if it doesn't exist
 [ ! -f "$STORE" ] && echo '{}' > "$STORE"
 
@@ -60,10 +54,9 @@ lockf "$STORE.lock" bash -c '
     --arg ts "$3" \
     --argjson offset "$4" \
     --argjson limit "$5" \
-    --rawfile preview "$6" \
-    '"'"'.[$path] = ((.[$path] // {}) + {read_by: $agent, read_at: $ts, offset: $offset, limit: $limit, dirty: false, preview: $preview})'"'"' \
-    "$7" > "$7.tmp" && mv "$7.tmp" "$7"
-' _ "$FILE_PATH" "$AGENT" "$TIMESTAMP" "$OFFSET" "$LIMIT" "$PREVIEW_FILE" "$STORE"
+    '"'"'.[$path] = ((.[$path] // {}) + {read_by: $agent, read_at: $ts, offset: $offset, limit: $limit, dirty: false}) | .[$path] |= del(.preview)'"'"' \
+    "$6" > "$6.tmp" && mv "$6.tmp" "$6"
+' _ "$FILE_PATH" "$AGENT" "$TIMESTAMP" "$OFFSET" "$LIMIT" "$STORE"
 
 # Log the event
 if [ "$IS_NEW" = "true" ]; then

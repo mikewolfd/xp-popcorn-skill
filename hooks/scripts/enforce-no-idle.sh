@@ -30,6 +30,8 @@ BLOCKED_ON=$(echo "$STATE" | jq -r '.blocked_on // empty' 2>/dev/null || true)
 NAV_READY=$(echo "$STATE" | jq -r '.navigator_ready // false' 2>/dev/null || echo false)
 NAV_KIND=$(echo "$STATE" | jq -r '.navigator_artifact_kind // empty' 2>/dev/null || true)
 NAV_STATUS=$(echo "$STATE" | jq -r '.navigator_artifact_status // empty' 2>/dev/null || true)
+COMPACT_STOP_FILE=$(px_compact_stop_file "$AGENT_SHORT")
+HANDOFF_FILE="$TEAM_DIR/handoff-$AGENT_SHORT.md"
 
 # Phase 1: Retro pending — nudge retro before shutdown can take effect
 if [ -f "$TEAM_DIR/.retro-requested" ] && [ -n "$AGENT" ] && [ ! -f "$TEAM_DIR/.retro-$AGENT.md" ]; then
@@ -58,7 +60,18 @@ if [ -f "$TEAM_DIR/.retro-requested" ]; then
   exit 0
 fi
 
-# Phase 4a: explicit waiting states are allowed
+# Phase 4: teammate compacted — require handoff, then retire on next idle
+if [ -f "$COMPACT_STOP_FILE" ]; then
+  if [ ! -f "$HANDOFF_FILE" ]; then
+    echo "Popcorn XP: Your context compacted. Before idling, write a handoff and message the lead or next driver so the session can continue with a fresh teammate: .popcorn-xp/$TEAM/session handoff ${AGENT_SHORT:-agent}" >&2
+    exit 2
+  fi
+  rm -f "$COMPACT_STOP_FILE"
+  echo '{"continue": false, "stopReason": "Context compacted — handoff captured; continue with a fresh teammate if more work is needed"}'
+  exit 0
+fi
+
+# Phase 5a: explicit waiting states are allowed
 if [ "$PHASE" = "waiting_on_driver" ] || [ "$PHASE" = "waiting_on_verification" ]; then
   if [ "$ROLE" = "navigator" ] && { [ "$NAV_READY" != "true" ] || [ "$NAV_STATUS" != "published" ]; }; then
     KIND_LABEL="${NAV_KIND:-risk_check}"
@@ -68,13 +81,13 @@ if [ "$PHASE" = "waiting_on_driver" ] || [ "$PHASE" = "waiting_on_verification" 
   exit 0
 fi
 
-# Phase 4b: navigator drift — require a concrete artifact
+# Phase 5b: navigator drift — require a concrete artifact
 if [ "$ROLE" = "navigator" ] && [ "$PHASE" = "navigating" ]; then
   echo "Popcorn XP: Navigators do not go idle. Publish a READY artifact first (risk check, test plan, spec check, or review note), then either switch to waiting_on_driver or send concrete advice. Next action: ${NEXT_ACTION:-review the current driver task and publish what they should watch.}" >&2
   exit 2
 fi
 
-# Phase 4c: generic working state
+# Phase 5c: generic working state
 DETAIL=""
 [ -n "$NEXT_ACTION" ] && DETAIL=" Next action: $NEXT_ACTION."
 [ -n "$BLOCKED_ON" ] && DETAIL="$DETAIL Blocked on: $BLOCKED_ON."

@@ -40,25 +40,29 @@ AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.agent_type // empty' 2>/de
 ENTRY=$(jq -r --arg path "$FILE_PATH" '.[$path] // empty' "$STORE" 2>/dev/null || true)
 [ -z "$ENTRY" ] && exit 0
 
-READ_BY=$(echo "$ENTRY" | jq -r '.read_by // "unknown"')
-READ_AT=$(echo "$ENTRY" | jq -r '.read_at // "unknown"')
+READ_BY=$(echo "$ENTRY" | jq -r '.read_by // empty')
+READ_AT=$(echo "$ENTRY" | jq -r '.read_at // empty')
 DIRTY=$(echo "$ENTRY" | jq -r '.dirty // false')
 EDITED_BY=$(echo "$ENTRY" | jq -r '.edited_by // empty')
 EDITED_AT=$(echo "$ENTRY" | jq -r '.edited_at // empty')
 
 # Build context message
-MSG="[context-store] File previously read by $READ_BY at $READ_AT."
+if [ -n "$READ_BY" ] && [ -n "$READ_AT" ]; then
+  MSG="[context-store] File previously read by $READ_BY at $READ_AT."
+else
+  MSG="[context-store] File has not been read through the context store yet."
+fi
 
 if [ "$DIRTY" = "true" ]; then
   if [ -n "$EDITED_BY" ]; then
-    MSG="$MSG Marked DIRTY — edited by $EDITED_BY at $EDITED_AT since last read."
+    MSG="$MSG Marked DIRTY — edited by $EDITED_BY at $EDITED_AT."
   else
-    MSG="$MSG Marked DIRTY since last read."
+    MSG="$MSG Marked DIRTY."
   fi
   cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, DIRTY by ${EDITED_BY:-unknown}"
 else
   MSG="$MSG File is CLEAN (unchanged since last read)."
-  cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, CLEAN, read by $READ_BY"
+  cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, CLEAN, read by ${READ_BY:-unknown}"
 fi
 
 jq -n --arg ctx "$MSG" '{additionalContext: $ctx}'

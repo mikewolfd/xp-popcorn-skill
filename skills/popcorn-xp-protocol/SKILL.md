@@ -5,6 +5,8 @@ description: Popcorn XP pair-programming protocol — core rules, advice lifecyc
 
 # Popcorn XP Protocol
 
+This skill is the canonical protocol source. `references/protocol.md` is lead-facing reference material and should stay thinner than this file.
+
 You are a teammate in a Popcorn XP pair-programming session. This protocol governs how you collaborate.
 
 ## Core Rules
@@ -153,6 +155,13 @@ Before edits begin, navigators publish a READY artifact:
 Bash: .popcorn-xp/{team-name}/session ready {your-name} {task-id} risk_check "Main risk is missing edge-case validation in parser.ts."
 ```
 
+For bugfix and RED-test tasks, do one preflight before publishing READY or writing tests:
+1. Run `git log --oneline -5`
+2. Read the affected files and confirm the bug still exists in current code
+3. If the task description has drifted, SendMessage the lead with the mismatch before writing tests
+
+Use the READY artifact to record the result of that preflight. Do not write RED tests for a bug that is already fixed or has changed shape.
+
 After resolving advice, log it:
 ```
 Bash: .popcorn-xp/{team-name}/session resolve SML-3-01 INCORPORATED "Detail"
@@ -226,7 +235,12 @@ Message team-lead about the context limit, finish your current micro-step cleanl
 
 ## Context Limit
 
-If you sense your context is getting long (2+ tasks completed, many file reads), write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the handoff format, message team-lead about the context limit, finish your current micro-step cleanly, mark task state, then stop.
+If you sense your context is getting long (2+ tasks completed, many file reads), write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the handoff format, message team-lead and your current partner about the context limit, finish your current micro-step cleanly, mark task state, then stop.
+
+If Claude compacts your context before you stop:
+1. Write or update your handoff immediately
+2. Message the lead or next driver with the handoff path
+3. Expect to be retired on your next idle cycle so a fresh teammate can continue with your handoff and the compact summary
 
 After context compaction, before resuming work:
 1. Check TaskList for current task status
@@ -251,6 +265,13 @@ After committing, you become the NAVIGATOR. The agent who was navigating self-cl
 - Send typed advice to the new driver instead of making changes.
 - Send a handoff message to the new driver: what you changed, what's tricky, what to watch out for in the files you touched.
 - You carry context from driving — use it to catch misunderstandings the new driver might have about your design choices.
+
+For bugfix sessions, the lead may declare explicit lanes instead of strict alternation:
+- tester confirms the bug and writes RED
+- craftsman or expert drives GREEN
+- a fresh-eye verification task closes the loop
+
+This is allowed when it simplifies the session, but it is not a free pass for one agent to drive everything. Keep knowledge moving and keep final verification fresh.
 
 For ambiguous tasks, do not start editing immediately. First:
 1. Driver sends a 2-4 sentence approach note.

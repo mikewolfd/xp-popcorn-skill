@@ -74,15 +74,12 @@ check "No unknown editors (got $UNKNOWN_EDITORS)" "[ '$UNKNOWN_EDITORS' -eq 0 ]"
 DIRTY_NO_EDITOR=$(jq '[.[] | select(.dirty == true and (.edited_by == null or .edited_by == ""))] | length' "$STORE")
 check "All dirty files have edited_by (missing: $DIRTY_NO_EDITOR)" "[ '$DIRTY_NO_EDITOR' -eq 0 ]"
 
-# --- Preview content ---
+# --- Store shape ---
 echo ""
-echo "--- Preview Content ---"
+echo "--- Store Shape ---"
 
-EMPTY_PREVIEWS=$(jq '[.[] | select(.preview == "" or .preview == null)] | length' "$STORE")
-check "No empty previews (got $EMPTY_PREVIEWS)" "[ '$EMPTY_PREVIEWS' -eq 0 ]"
-
-SHORT_PREVIEWS=$(jq '[.[] | select((.preview | length) < 10)] | length' "$STORE")
-check "No suspiciously short previews (got $SHORT_PREVIEWS)" "[ '$SHORT_PREVIEWS' -eq 0 ]"
+PREVIEW_FIELDS=$(jq '[.[] | select(has("preview"))] | length' "$STORE")
+check "No preview fields remain (got $PREVIEW_FIELDS)" "[ '$PREVIEW_FIELDS' -eq 0 ]"
 
 # --- Event log ---
 echo ""

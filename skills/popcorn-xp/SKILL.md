@@ -188,8 +188,10 @@ cat > ".popcorn-xp/$TEAM/session" << SCRIPT
 set -euo pipefail
 DIR="\${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp/$TEAM"
 STATE_DIR="\$DIR/agent-state"
+POPCORN_DIR="\$(dirname "\$DIR")"
 mkdir -p "\$STATE_DIR"
 state_file() { echo "\$STATE_DIR/\$1.json"; }
+checkpoint_cursor_file() { echo "\$DIR/.checkpoint-cursor"; }
 ensure_state() {
   local file
   file="\$(state_file "\$1")"
@@ -217,7 +219,7 @@ merge_state() {
 }
 cmd="\${1:-}"; [ -z "\$cmd" ] && exit 1; shift
 case "\$cmd" in
-  log) printf '\n### Checkpoint\n%s\n' "\$*" >> "\$DIR/LOG.md"; rm -f "\$DIR/.dirty" "\$DIR/.edit-count" ;;
+  log) printf '\n### Checkpoint\n%s\n' "\$*" >> "\$DIR/LOG.md"; if [ -f "\$POPCORN_DIR/context-store.log" ]; then wc -l < "\$POPCORN_DIR/context-store.log" | tr -d ' ' > "\$(checkpoint_cursor_file)"; else echo 0 > "\$(checkpoint_cursor_file)"; fi ;;
   advice) T="\${1:?}"; ID="\${2:?}"; shift 2; grep -q "^### \$T \$ID" "\$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "\$T" "\$ID" "\$*" >> "\$DIR/ADVICE.md" ;;
   resolve) ID="\${1:?}"; O="\${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "\$ID" "\$O" "\${*:-(no detail)}" >> "\$DIR/ADVICE.md" ;;
   task) ID="\${1:?}"; DRIVER="\${2:?}"; NAV="\${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "\$ID" "\$DRIVER" "\$NAV" >> "\$DIR/LOG.md" ;;
@@ -467,13 +469,14 @@ Assign the first task to the driver via TaskUpdate. Alongside the assignment, Se
 
 The teammate explores and proposes an approach. You review and approve or reject with feedback. Use when a wrong implementation direction would be expensive to undo.
 
-**Consider spawning teammates with a `maxTurns` cap** (e.g., 80-120 turns) as a mechanical context budget. When an agent hits the limit it stops cleanly — the lead sees the idle notification, reads LOG.md, and spawns a fresh agent seeded with that context. This is a backstop for the P1 handoff pattern: P1 is agent-initiated when the agent notices context growth; `maxTurns` catches the cases where the agent doesn't self-report.
+**Default to long-lived teammates.** The point of Popcorn XP is that agents retain session context across multiple tasks and rotations. Do not cap every teammate by default. Use `maxTurns` only as an optional backstop when you specifically want bounded lifespan, or for deliberately fresh-eye agents such as late-session verification/review roles. Replace a teammate when they signal context strain, produce a handoff, or you explicitly want a fresh perspective.
 
 ### 5. Monitor
 
 You receive messages from teammates automatically. Your role during execution:
 
 - **Let rotation self-progress.** Teammates self-claim the next unblocked task based on rotation convention: the navigator becomes the driver, the driver becomes the navigator. You set up the dependency chain in Step 3; the platform auto-unblocks tasks and teammates self-claim. Only intervene to override (wrong agent claimed, reorder needed, scope changed) or if self-claim stalls. The check-rotation hook blocks same-agent consecutive driving as a safety net.
+- **Use bugfix lanes when the work is naturally asymmetric.** For bug-driven sessions, prefer `confirm -> RED -> GREEN -> verify` over forcing strict alternation on every task. Typical split: tester confirms the bug and writes RED, craftsman drives GREEN, then a fresh-eye verification task closes the loop. This is the main exception to navigator-becomes-driver; use it when it simplifies the session rather than adding more role churn.
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
 - **Watch for rotation failures.** **At least one rotation is mandatory per session.** If the same agent has driven every task and you're approaching the final task, intervene and force a swap. A session with no rotation is a solo session with an expensive spectator.
@@ -490,8 +493,9 @@ You receive messages from teammates automatically. Your role during execution:
   code-reviewer functions correctly despite this — it does not use SendMessage,
   TaskUpdate, or team coordination tools. Its independence is behavioral (enforced
   by its prompt), not structural.
-- **Handle handoff requests.** When a teammate sends a context-limit handoff message, read `.popcorn-xp/{team-name}/handoff-{agent-name}.md` immediately. If they are rotating out after a completed task, also require `.popcorn-xp/{team-name}/snapshot-{agent-name}.md` so the next driver gets touched files, verification run, open advice, and the next risk in one place.
+- **Handle handoff requests.** When a teammate sends a context-limit handoff message, read `.popcorn-xp/{team-name}/handoff-{agent-name}.md` immediately. If they are rotating out after a completed task, also require `.popcorn-xp/{team-name}/snapshot-{agent-name}.md` so the next driver gets touched files, verification run, open advice, and the next risk in one place. If a teammate compacts before stopping, the compaction hooks will persist a summary and `TeammateIdle` will retire them on the next idle once the handoff exists; treat that as a forced handoff, not as normal continuity.
 - **Watch for stuck tasks.** If a task appears stuck after a teammate reports it complete, the `TaskUpdate` call may have silently failed (known platform limitation). Check task status directly and update manually if the work is done. Don't wait for the agent to retry — prompt them or update it yourself.
+- **Replace agents before they degrade, not after.** When a teammate signals context strain, writes a handoff, or is intentionally running under a `maxTurns` cap, spawn the replacement immediately and assign read-ahead, RED-test prep, or verification work while the current agent still has context. Do not wait for a dead stop before bringing in the next agent.
 - **Recovering unresponsive agents.** Before giving up on a teammate, try sending them a direct message via `SendMessage`. A stopped agent auto-resumes on receipt of a message. If two resume attempts fail, spawn a fresh replacement seeded with LOG.md context. Do not do the work yourself.
 - **Don't fall into the orchestrator trap.** Coordinator mode stops you from editing files, but you can still centralize too much by over-crafting instructions, pre-reading every file for the team, or synthesizing every result before passing it on. If you're spending more time crafting instructions than teammates spend executing them, you're doing their thinking for them. Write the task, assign it, step back. Trust the pair to figure out the approach — that's what the navigator is for.
 - **Do not do the work yourself.** You are the lead, not a driver. If you find yourself wanting to read a file or write code, delegate it to a teammate instead.

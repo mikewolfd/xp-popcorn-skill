@@ -1,5 +1,5 @@
 {
-  "description": "Popcorn XP lifecycle hooks — advice enforcement, rotation checks, dirty-file tracking, retro gating, and shared context store",
+  "description": "Popcorn XP lifecycle hooks — advice enforcement, rotation checks, checkpoint guidance, retro gating, and shared context state",
   "hooks": {
     "TaskCompleted": [
       {
@@ -51,6 +51,30 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/mark-compact-pending.sh",
+            "timeout": 5,
+            "statusMessage": "Recording context compaction..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/record-compact-summary.sh",
+            "timeout": 5,
+            "statusMessage": "Persisting compact summary..."
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "TeamDelete",
@@ -79,11 +103,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/mark-dirty.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-mark-dirty.sh",
             "timeout": 5
           }
@@ -92,11 +111,6 @@
       {
         "matcher": "Write",
         "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/mark-dirty.sh",
-            "timeout": 5
-          },
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-mark-dirty.sh",
@@ -117,6 +131,17 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "TeamDelete",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/cleanup-context-store.sh",
+            "timeout": 5,
+            "statusMessage": "Cleaning up context store..."
+          }
+        ]
+      },
       {
         "matcher": "Read",
         "hooks": [

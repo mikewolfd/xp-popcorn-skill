@@ -141,6 +141,15 @@ setup_session() {
   printf "# Advice\n" > "$POPCORN/$TEAM/ADVICE.md"
 }
 
+checkpoint_now() {
+  local logfile="$POPCORN/context-store.log"
+  if [ -f "$logfile" ]; then
+    wc -l < "$logfile" | tr -d ' ' > "$POPCORN/$TEAM/.checkpoint-cursor"
+  else
+    echo 0 > "$POPCORN/$TEAM/.checkpoint-cursor"
+  fi
+}
+
 write_state() {
   local agent="$1" role="$2" phase="$3" task_id="$4" blocked_on="$5" next_action="$6"
   local nav_ready="${7:-false}" nav_kind="${8:-}" nav_status="${9:-}" writes="${10:-[]}"
@@ -184,7 +193,7 @@ rm -rf "$POPCORN"  # ensure no session
 
 for script in check-advice-on-complete.sh remind-unread-advice.sh remind-checkpoint.sh \
               enforce-no-idle.sh check-objections.sh check-rotation.sh check-retro-before-delete.sh \
-              context-store-check.sh context-store-mark-dirty.sh; do
+              context-store-check.sh context-store-mark-dirty.sh cleanup-context-store.sh; do
   if [ "$script" = "check-rotation.sh" ]; then
     run_hook_stdin "$script" '{}'
   elif [ "$script" = "context-store-check.sh" ] || [ "$script" = "context-store-mark-dirty.sh" ]; then
@@ -201,6 +210,14 @@ run_hook_stdin "context-store-update-read.sh" \
   '{"tool_input":{"file_path":"/tmp/test.txt"},"tool_response":"content","agent_type":"popcorn-xp:scout"}'
 assert_exit "no-op: context-store-update-read.sh" 0 "$LAST_RC"
 assert_stdout_empty "no-op stdout: context-store-update-read.sh" "$LAST_STDOUT"
+
+run_hook_stdin "mark-compact-pending.sh" '{"hook_event_name":"PreCompact","trigger":"auto","agent_type":"popcorn-xp:craftsman"}'
+assert_exit "no-op: mark-compact-pending.sh" 0 "$LAST_RC"
+assert_stdout_empty "no-op stdout: mark-compact-pending.sh" "$LAST_STDOUT"
+
+run_hook_stdin "record-compact-summary.sh" '{"hook_event_name":"PostCompact","trigger":"auto","compact_summary":"summary","agent_type":"popcorn-xp:craftsman"}'
+assert_exit "no-op: record-compact-summary.sh" 0 "$LAST_RC"
+assert_stdout_empty "no-op stdout: record-compact-summary.sh" "$LAST_STDOUT"
 
 # ============================================================
 # 2. H6: Non-blocking output uses additionalContext, not systemMessage
@@ -267,6 +284,19 @@ printf "# Retro\nline1\nline2\nline3\nline4\nline5\n" > "$POPCORN/$TEAM/RETRO.md
 run_hook "check-retro-before-delete.sh"
 assert_exit "H5 retro real allows" 0 "$LAST_RC"
 
+# cleanup-context-store.sh removes store artifacts after team delete
+echo '{}' > "$POPCORN/context-store.json"
+echo '12:00:00 READ popcorn-xp:scout file.txt new entry' > "$POPCORN/context-store.log"
+touch "$POPCORN/context-store.json.lock"
+run_hook "cleanup-context-store.sh"
+assert_exit "H5 cleanup context store exits 0" 0 "$LAST_RC"
+if [ ! -f "$POPCORN/context-store.json" ] && [ ! -f "$POPCORN/context-store.log" ] && [ ! -f "$POPCORN/context-store.json.lock" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: H5 cleanup-context-store should remove context store artifacts"
+fi
+
 # ============================================================
 # 4. H1: TeammateIdle hooks exit 2 when they have content
 # ============================================================
@@ -289,23 +319,19 @@ setup_session
 run_hook "remind-unread-advice.sh"
 assert_exit "H1 remind-advice no-op" 0 "$LAST_RC"
 
-# remind-checkpoint.sh exits 2 when dirty flag exists
+# remind-checkpoint.sh exits 2 when edit events exist since last checkpoint
 setup_session
-touch "$POPCORN/$TEAM/.dirty"
 write_state "craftsman" "driver" "driving" "2" "" "checkpoint current progress"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/h1-edit.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
 run_hook_stdin "remind-checkpoint.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H1 remind-checkpoint blocks" 2 "$LAST_RC"
-# Verify dirty flag was cleaned up
-if [ ! -f "$POPCORN/$TEAM/.dirty" ]; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: H1 remind-checkpoint should remove .dirty"
-fi
+assert_stderr_contains "H1 remind-checkpoint mentions edit count" "1 file edit" "$LAST_STDERR"
 
-# remind-checkpoint.sh exits 0 when no dirty flag
+# remind-checkpoint.sh exits 0 when no edits exist since cursor
 setup_session
 write_state "craftsman" "driver" "driving" "2" "" "checkpoint current progress"
+echo 0 > "$POPCORN/$TEAM/.checkpoint-cursor"
 run_hook_stdin "remind-checkpoint.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H1 remind-checkpoint no-op" 0 "$LAST_RC"
 
@@ -539,6 +565,50 @@ run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H2 shutdown resolved OBJECTION proceeds" 0 "$LAST_RC"
 assert_stdout_contains "H2 shutdown resolved OBJECTION JSON" '"continue"' "$LAST_STDOUT"
 
+# Compaction path: pre/post hooks persist state, idle requires handoff, then retires teammate
+setup_session
+write_state "craftsman" "driver" "driving" "8" "" "Finish parser fix"
+run_hook_stdin "mark-compact-pending.sh" \
+  '{"hook_event_name":"PreCompact","trigger":"auto","agent_type":"popcorn-xp:craftsman","transcript_path":"/tmp/compact.jsonl"}'
+assert_exit "H2 precompact marker exits 0" 0 "$LAST_RC"
+if [ "$(jq -r '.state.phase' "$POPCORN/$TEAM/.compact-pending-craftsman.json" 2>/dev/null || echo missing)" = "driving" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: H2 precompact marker should capture agent state"
+fi
+
+run_hook_stdin "record-compact-summary.sh" \
+  '{"hook_event_name":"PostCompact","trigger":"auto","compact_summary":"Compacted parser-fix session summary.","agent_type":"popcorn-xp:craftsman"}'
+assert_exit "H2 postcompact summary exits 0" 0 "$LAST_RC"
+if [ -f "$POPCORN/$TEAM/.compact-stop-craftsman.json" ] && [ ! -f "$POPCORN/$TEAM/.compact-pending-craftsman.json" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: H2 postcompact should create stop marker and clear pending marker"
+fi
+if grep -q "Compacted parser-fix session summary." "$POPCORN/$TEAM/COMPACTIONS.md" 2>/dev/null; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: H2 postcompact should persist compact summary"
+fi
+
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 compacted teammate without handoff blocks" 2 "$LAST_RC"
+assert_stderr_contains "H2 compacted teammate needs handoff" "context compacted" "$LAST_STDERR"
+
+printf '## Handoff — craftsman\nFresh handoff after compaction\n' > "$POPCORN/$TEAM/handoff-craftsman.md"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "H2 compacted teammate with handoff stops" 0 "$LAST_RC"
+assert_stdout_contains "H2 compacted teammate stop JSON" '"continue": false' "$LAST_STDOUT"
+if [ ! -f "$POPCORN/$TEAM/.compact-stop-craftsman.json" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: H2 compact-stop marker should be cleared after teammate stop"
+fi
+
 # AA13: check-rotation.sh no-op without .active-team
 rm -rf "$POPCORN"
 run_hook_stdin "check-rotation.sh" '{}'
@@ -649,85 +719,55 @@ else
 fi
 
 # ============================================================
-# 11. R3: mark-dirty.sh edit counter and soft enforcement
+# 11. R3: edit-event checkpoint enforcement via context-store.log
 # ============================================================
 
-echo "--- R3: Edit counter and soft checkpoint enforcement ---"
+echo "--- R3: Edit-event checkpoint enforcement ---"
 
 # No-op when no session
 rm -rf "$POPCORN"
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/foo.ts"}}'
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"src/foo.ts"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "R3 no-op without session" 0 "$LAST_RC"
 assert_stdout_empty "R3 no-op stdout" "$LAST_STDOUT"
 
 # Skips .popcorn-xp/ paths
 setup_session
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":".popcorn-xp/test-team/LOG.md"}}'
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":".popcorn-xp/test-team/LOG.md"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "R3 skip session files" 0 "$LAST_RC"
 assert_stdout_empty "R3 skip session files stdout" "$LAST_STDOUT"
-if [ ! -f "$POPCORN/$TEAM/.edit-count" ]; then
+if [ ! -f "$POPCORN/context-store.log" ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: R3 skip session files should not increment counter"
+  ERRORS="${ERRORS}\n  FAIL: R3 skip session files should not append to context-store.log"
 fi
 
-# First edit: counter=1, no additionalContext
+# First two edits: no additionalContext yet, but event log is created
 setup_session
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/foo.ts"}}'
+write_state "craftsman" "driver" "driving" "7" "" "Implement hook helper"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/r3-foo.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "R3 first edit exit 0" 0 "$LAST_RC"
 assert_stdout_empty "R3 first edit no context" "$LAST_STDOUT"
-if [ -f "$POPCORN/$TEAM/.dirty" ]; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: R3 first edit should set .dirty"
-fi
-if [ "$(cat "$POPCORN/$TEAM/.edit-count")" = "1" ]; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: R3 first edit counter should be 1"
-fi
 
-# Second edit: counter=2, still no context
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/bar.ts"}}'
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/r3-bar.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "R3 second edit exit 0" 0 "$LAST_RC"
 assert_stdout_empty "R3 second edit no context" "$LAST_STDOUT"
 
-# Third edit: counter=3, injects additionalContext
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/baz.ts"}}'
+# Third edit: injects additionalContext from edit count
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/r3-baz.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "R3 third edit exit 0" 0 "$LAST_RC"
 assert_stdout_contains "R3 third edit has context" "additionalContext" "$LAST_STDOUT"
 assert_stdout_contains "R3 third edit shows count" "3 file edits" "$LAST_STDOUT"
 assert_stdout_not_contains "R3 third edit no systemMessage" "systemMessage" "$LAST_STDOUT"
 
-# Fourth edit: counter=4, still injects
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/qux.ts"}}'
+# Fourth edit: still injects with updated count
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/r3-qux.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_stdout_contains "R3 fourth edit has context" "4 file edits" "$LAST_STDOUT"
 
-# remind-checkpoint.sh shows count when counter exists
-run_hook "remind-checkpoint.sh"
+# remind-checkpoint.sh derives the same count from context-store.log
+run_hook_stdin "remind-checkpoint.sh" '{"teammate_name":"craftsman"}'
 assert_exit "R3 remind shows count" 2 "$LAST_RC"
 assert_stderr_contains "R3 remind has count" "4 file edit" "$LAST_STDERR"
-
-# remind-checkpoint.sh cleans up both files
-if [ ! -f "$POPCORN/$TEAM/.dirty" ] && [ ! -f "$POPCORN/$TEAM/.edit-count" ]; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: R3 remind should clean up .dirty and .edit-count"
-fi
-
-# After cleanup, mark-dirty starts fresh (counter=1 again)
-run_hook_stdin "mark-dirty.sh" '{"tool_input":{"file_path":"src/fresh.ts"}}'
-assert_stdout_empty "R3 fresh after cleanup no context" "$LAST_STDOUT"
-if [ "$(cat "$POPCORN/$TEAM/.edit-count")" = "1" ]; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: R3 counter should reset to 1 after cleanup"
-fi
 
 # ============================================================
 # 12. R4: session script subcommands (retro-request, retro, shutdown)
@@ -742,8 +782,10 @@ cat > "$POPCORN/$TEAM/session" << 'SCRIPT'
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 STATE_DIR="$DIR/agent-state"
+POPCORN_DIR="$(dirname "$DIR")"
 mkdir -p "$STATE_DIR"
 state_file() { echo "$STATE_DIR/$1.json"; }
+checkpoint_cursor_file() { echo "$DIR/.checkpoint-cursor"; }
 ensure_state() {
   local file
   file="$(state_file "$1")"
@@ -771,7 +813,7 @@ merge_state() {
 }
 cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
 case "$cmd" in
-  log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; rm -f "$DIR/.dirty" "$DIR/.edit-count" ;;
+  log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; if [ -f "$POPCORN_DIR/context-store.log" ]; then wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$(checkpoint_cursor_file)"; else echo 0 > "$(checkpoint_cursor_file)"; fi ;;
   advice) T="${1:?}"; ID="${2:?}"; shift 2; grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md" ;;
   resolve) ID="${1:?}"; O="${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md" ;;
   task) ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md" ;;
@@ -818,6 +860,16 @@ SCRIPT
 chmod +x "$POPCORN/$TEAM/session"
 
 SESSION="$POPCORN/$TEAM/session"
+
+# log records checkpoint and advances cursor to current context-store.log line
+printf '12:00:00  EDIT       popcorn-xp:craftsman         src/example.ts                           (marked dirty)\n' > "$POPCORN/context-store.log"
+"$SESSION" log 'Checkpoint after example edit'
+if [ "$(cat "$POPCORN/$TEAM/.checkpoint-cursor" 2>/dev/null || echo missing)" = "1" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R4 log should update .checkpoint-cursor to current context-store.log line count"
+fi
 
 # retro-request creates .retro-requested
 "$SESSION" retro-request
@@ -974,12 +1026,12 @@ else
   ERRORS="${ERRORS}\n  FAIL: CS2 — dirty should be false after read, got $CS_DIRTY"
 fi
 
-CS_PREVIEW=$(jq -r --arg p "$CS_FOO" '.[$p].preview' "$CS_STORE" 2>/dev/null || echo "MISSING")
-if echo "$CS_PREVIEW" | grep -q "line1"; then
+CS_PREVIEW_PRESENT=$(jq -r --arg p "$CS_FOO" 'if .[$p] | has("preview") then "yes" else "no" end' "$CS_STORE" 2>/dev/null || echo "MISSING")
+if [ "$CS_PREVIEW_PRESENT" = "no" ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: CS2 — preview should contain file content"
+  ERRORS="${ERRORS}\n  FAIL: CS2 — preview field should not be stored"
 fi
 
 # CS3: check returns additionalContext for known clean file
@@ -1040,7 +1092,7 @@ else
   ERRORS="${ERRORS}\n  FAIL: CS6 — read_by should update to popcorn-xp:expert, got $CS_READ_BY"
 fi
 
-# CS7: mark-dirty is no-op for unknown files
+# CS7: editing an unknown in-project file creates a store entry
 rm -f "$POPCORN/$TEAM/agent-state/"*.json
 run_hook_stdin "context-store-mark-dirty.sh" \
   '{"tool_input":{"file_path":"'"$CS_UNKNOWN"'"},"agent_type":"popcorn-xp:craftsman"}'
@@ -1048,12 +1100,19 @@ assert_exit "CS7: mark-dirty unknown file" 0 "$LAST_RC"
 assert_stdout_empty "CS7: no output for unknown file" "$LAST_STDOUT"
 
 CS_HAS_UNKNOWN=$(jq -r --arg p "$CS_UNKNOWN" 'has($p)' "$CS_STORE" 2>/dev/null || echo "false")
-if [ "$CS_HAS_UNKNOWN" = "false" ]; then
+if [ "$CS_HAS_UNKNOWN" = "true" ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: CS7 — unknown file should not be added to store"
+  ERRORS="${ERRORS}\n  FAIL: CS7 — unknown in-project edit should be added to store"
 fi
+
+run_hook_stdin "context-store-check.sh" \
+  '{"tool_input":{"file_path":"'"$CS_UNKNOWN"'"},"agent_type":"popcorn-xp:expert"}'
+assert_exit "CS7b: check edit-only file" 0 "$LAST_RC"
+assert_stdout_contains "CS7b: edit-only message" "has not been read through the context store yet" "$LAST_STDOUT"
+assert_stdout_contains "CS7b: edit-only still dirty" "DIRTY" "$LAST_STDOUT"
+assert_stdout_not_contains "CS7b: no fake unknown reader" "previously read by unknown" "$LAST_STDOUT"
 
 # CS8: popcorn-xp paths are skipped
 run_hook_stdin "context-store-update-read.sh" \
@@ -1104,6 +1163,7 @@ rm -f "$POPCORN/$TEAM/agent-state/"*.json
 echo '{}' > "$CS_STORE"
 run_hook_stdin "context-store-update-read.sh" \
   '{"tool_input":{"file_path":"'"$CS_LOCK"'","offset":null,"limit":null},"tool_response":"lock content","agent_type":"popcorn-xp:scout"}'
+checkpoint_now
 run_hook_stdin "context-store-mark-dirty.sh" \
   '{"tool_input":{"file_path":"'"$CS_LOCK"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "CS11a: first edit no lock" 0 "$LAST_RC"
@@ -1117,6 +1177,7 @@ assert_stdout_contains "CS11b: soft lock warning" "SOFT LOCK" "$LAST_STDOUT"
 assert_stdout_contains "CS11b: mentions active editor" "popcorn-xp:craftsman" "$LAST_STDOUT"
 
 # CS12: soft lock — same agent re-editing gets no warning
+checkpoint_now
 run_hook_stdin "context-store-mark-dirty.sh" \
   '{"tool_input":{"file_path":"'"$CS_LOCK"'"},"agent_type":"popcorn-xp:expert"}'
 assert_exit "CS12: same agent no warning" 0 "$LAST_RC"
@@ -1127,6 +1188,7 @@ rm -f "$POPCORN/$TEAM/agent-state/"*.json
 echo '{}' > "$CS_STORE"
 run_hook_stdin "context-store-update-read.sh" \
   '{"tool_input":{"file_path":"'"$CS_CLEAN"'","offset":null,"limit":null},"tool_response":"clean content","agent_type":"popcorn-xp:scout"}'
+checkpoint_now
 run_hook_stdin "context-store-mark-dirty.sh" \
   '{"tool_input":{"file_path":"'"$CS_CLEAN"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "CS13: first edit on clean file" 0 "$LAST_RC"

@@ -56,6 +56,16 @@ px_state_file() {
   echo "$STATE_DIR/${short_agent}.json"
 }
 
+px_compact_pending_file() {
+  local short_agent="${1:?}"
+  echo "$TEAM_DIR/.compact-pending-${short_agent}.json"
+}
+
+px_compact_stop_file() {
+  local short_agent="${1:?}"
+  echo "$TEAM_DIR/.compact-stop-${short_agent}.json"
+}
+
 px_state_json() {
   local short_agent="${1:?}"
   local file

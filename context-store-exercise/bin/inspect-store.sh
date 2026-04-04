@@ -20,7 +20,6 @@ jq -r '
   "\(.key)\n  read_by:   \(.value.read_by)  at \(.value.read_at)" +
   (if .value.dirty then "\n  DIRTY:     edited by \(.value.edited_by // "unknown") at \(.value.edited_at // "unknown")" else "\n  status:    CLEAN" end) +
   (if .value.offset then "\n  range:     offset=\(.value.offset) limit=\(.value.limit)" else "" end) +
-  "\n  preview:   \(.value.preview | split("\n") | length) lines cached" +
   "\n"
 ' "$STORE"
 

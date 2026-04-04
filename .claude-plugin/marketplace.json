@@ -3,12 +3,10 @@
     "owner": {
         "name": "mikewolfd"
     },
-    "version": "1.0.0",
     "plugins": [
         {
             "name": "popcorn-xp",
             "description": "XP pair programming for Claude Code agents. One driver edits, one navigator steers, they rotate, advice has teeth.",
-            "version": "1.0.0",
             "source": "./"
         }
     ]

@@ -52,6 +52,7 @@ A four-phase mechanical shutdown, mediated by signal files and `enforce-no-idle.
 8. Lead writes RETRO.md
 9. check-retro-before-delete gates cleanup → blocks TeamDelete until RETRO.md exists
 10. Lead calls TeamDelete
+11. cleanup-context-store removes shared read/edit cache artifacts
 ```
 
 ## Agents
@@ -117,8 +118,7 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 
 | Script | Purpose | Behavior |
 |--------|---------|----------|
-| `mark-dirty.sh` | Counts uncheckpointed edits | Increments `.edit-count`, sets `.dirty`. After 3+ edits, injects soft reminder. Resets when agent runs `session log`. |
-| `context-store-mark-dirty.sh` | Records edit in shared context store | Marks file dirty in `context-store.json`. If another agent is editing the same file, injects soft-lock warning. |
+| `context-store-mark-dirty.sh` | Records edit events and shared file state | Appends every in-project edit to `context-store.log`, marks the file dirty in `context-store.json`, warns on soft locks, and nudges for checkpoints after 3+ edits since `.checkpoint-cursor`. |
 
 #### PreToolUse — Read
 
@@ -132,11 +132,17 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 |--------|---------|----------|
 | `check-retro-before-delete.sh` | Gates cleanup on retro | Blocks (exit 2) unless RETRO.md exists with 5+ lines. |
 
+#### PostToolUse — TeamDelete
+
+| Script | Purpose | Behavior |
+|--------|---------|----------|
+| `cleanup-context-store.sh` | Clears shared context-store artifacts | Removes `context-store.json`, `context-store.log`, and the lock file after TeamDelete succeeds. |
+
 #### PostToolUse — Read
 
 | Script | Purpose | Behavior |
 |--------|---------|----------|
-| `context-store-update-read.sh` | Records read in context store | Writes agent name, timestamp, and file preview to `context-store.json`. Initializes store if needed. |
+| `context-store-update-read.sh` | Records read in context store | Writes agent name, timestamp, and read range to `context-store.json`. Initializes store if needed. |
 
 #### TaskCompleted
 
@@ -150,7 +156,7 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 | Script | Purpose | Behavior |
 |--------|---------|----------|
 | `remind-unread-advice.sh` | Reminds agent of open advice | Counts unresolved items by type. Blocks (exit 2) with summary. |
-| `remind-checkpoint.sh` | Reminds driver to checkpoint | If `.dirty` is set, blocks (exit 2) with edit count. Clears flags after reminding. |
+| `remind-checkpoint.sh` | Reminds driver to checkpoint | Counts `EDIT` events in `context-store.log` since `.checkpoint-cursor` and blocks (exit 2) until the driver logs a checkpoint. |
 | `enforce-no-idle.sh` | Phase-aware idle enforcement | Four phases checked in priority order (see below). |
 
 #### SubagentStop
@@ -158,6 +164,13 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 | Script | Purpose | Behavior |
 |--------|---------|----------|
 | `check-objections.sh` | Backup OBJECTION check | Blocks (exit 2) if unresolved OBJECTIONs exist. Safety net for when a teammate stops without completing a task. |
+
+#### PreCompact / PostCompact
+
+| Script | Purpose | Behavior |
+|--------|---------|----------|
+| `mark-compact-pending.sh` | Marks a teammate as compacting | Records trigger + agent state before compaction. `PreCompact` has no decision control, so this is side-effect only. |
+| `record-compact-summary.sh` | Persists compact summaries and queues retirement | Appends the compact summary to `COMPACTIONS.md`, clears the pending marker, and creates a stop marker that `enforce-no-idle.sh` consumes later. |
 
 ### Helper (not a hook)
 
@@ -175,11 +188,12 @@ The core enforcement hook. Checked in priority order:
 | 1. Retro pending | `.retro-requested` exists, `.retro-{agent}.md` missing | Nudge retro (exit 2) |
 | 2. Shutdown | `.shutdown` exists, retro done or never requested | Force-stop via `{"continue": false}` (exit 0) |
 | 3. Retro done | Both exist, no `.shutdown` | Allow idle (exit 0) |
-| 4. Waiting | Agent state is `waiting_on_driver` or `waiting_on_verification` and READY is published | Allow idle (exit 0) |
-| 5. Navigator drift | Agent state is `navigating`, or waiting without READY | Block and require a READY artifact (exit 2) |
-| 6. Working | Default | Block and require explicit state + next action (exit 2) |
+| 4. Compacted | `.compact-stop-{agent}.json` exists | Require a handoff, then force-stop via `{"continue": false}` (exit 0) |
+| 5. Waiting | Agent state is `waiting_on_driver` or `waiting_on_verification` and READY is published | Allow idle (exit 0) |
+| 6. Navigator drift | Agent state is `navigating`, or waiting without READY | Block and require a READY artifact (exit 2) |
+| 7. Working | Default | Block and require explicit state + next action (exit 2) |
 
-Phase 1 taking priority over phase 2 is critical — it ensures agents can write retros before being stopped, even if `.shutdown` is already set. The major design change is that waiting is now explicit; the hook no longer has to guess whether a silent navigator is productive or lost.
+Phase 1 taking priority over phase 2 is critical — it ensures agents can write retros before being stopped, even if `.shutdown` is already set. The major design change is that waiting is now explicit; the hook no longer has to guess whether a silent navigator is productive or lost. Compaction retirement is also explicit: official `PreCompact` / `PostCompact` hooks record state and summary, but the actual stop happens later in `TeammateIdle`, which is the first hook type with teammate-stop control.
 
 ### Hook Exit Code Semantics
 
@@ -209,8 +223,7 @@ Created at `.popcorn-xp/{team-name}/` during setup. Gitignored.
 | File | Purpose | Created by | Read by |
 |------|---------|------------|---------|
 | `.active-team` | Contains current team name | Lead at setup (at `.popcorn-xp/.active-team`) | Every hook |
-| `.dirty` | Flag: uncheckpointed edits exist | `mark-dirty.sh` | `remind-checkpoint.sh` |
-| `.edit-count` | Counter: number of edits since last checkpoint | `mark-dirty.sh` | `remind-checkpoint.sh` |
+| `.checkpoint-cursor` | Last acknowledged line in `context-store.log` for this team | `session log` | `context-store-mark-dirty.sh`, `remind-checkpoint.sh` |
 | `.retro-requested` | Flag: lead has asked for retros | `session retro-request` | `enforce-no-idle.sh` |
 | `.retro-{agent}.md` | Agent's retro observations | `session retro` | `enforce-no-idle.sh` |
 | `.shutdown` | Flag: lead has initiated shutdown | `session shutdown` | `enforce-no-idle.sh` |
@@ -221,7 +234,7 @@ The only interface teammates use for session file writes. Commands:
 
 | Command | What it does |
 |---------|-------------|
-| `session log "message"` | Appends checkpoint to LOG.md. Clears `.dirty` and `.edit-count`. |
+| `session log "message"` | Appends checkpoint to `LOG.md` and advances `.checkpoint-cursor` to the current `context-store.log` line count. |
 | `session advice TYPE ID "description"` | Appends advice entry to ADVICE.md (idempotent — skips if ID exists). |
 | `session resolve ID OUTCOME "detail"` | Appends resolution entry to ADVICE.md. |
 | `session task ID DRIVER NAV` | Appends task header to LOG.md. |
@@ -273,8 +286,8 @@ REJECTED is a first-class outcome. A driver who rejects an OBJECTION with sound 
 
 Three hooks maintain it:
 - `context-store-check.sh` (PreToolUse Read) — reads from the store, injects metadata
-- `context-store-mark-dirty.sh` (PreToolUse Edit/Write) — marks files dirty, detects soft locks
-- `context-store-update-read.sh` (PostToolUse Read) — records reads with full preview
+- `context-store-mark-dirty.sh` (PreToolUse Edit/Write) — logs every in-project edit, marks files dirty, detects soft locks, and emits checkpoint nudges
+- `context-store-update-read.sh` (PostToolUse Read) — records reads as metadata only
 
 Each file entry tracks:
 
@@ -287,15 +300,14 @@ Each file entry tracks:
     "edited_by": "popcorn-xp:expert",
     "edited_at": "2026-04-03T14:32:00Z",
     "offset": null,
-    "limit": null,
-    "preview": "file content..."
+    "limit": null
   }
 }
 ```
 
 The soft lock is informational, not blocking. When agent A reads a file marked dirty by agent B, the hook injects a warning but allows the read. Edits are stricter: if an agent edits outside its declared task write set, `context-store-mark-dirty.sh` blocks the edit until file ownership is clarified. Uses `lockf` for mutual exclusion on macOS.
 
-`context-store.log` records all read/edit events with timestamps, agent names, and file paths.
+`context-store.log` records all read/edit events with timestamps, agent names, and file paths. It is also the authoritative event stream for checkpoint reminders: `session log` stores the current line number in `.checkpoint-cursor`, and later hooks count only `EDIT` events after that cursor.
 
 ## Hook Scoping
 
@@ -310,4 +322,4 @@ Per the [hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hoo
 | Plugin `hooks/hooks.json` | When plugin is enabled |
 | **Skill or agent frontmatter** | **While the skill or agent is active** |
 
-Hooks that only make sense for teammates (mark-dirty, context-store-*, remind-*, enforce-no-idle) could be moved to agent frontmatter to eliminate unnecessary no-op executions during solo use. Hooks that fire on the lead (check-retro-before-delete, check-rotation) would stay in hooks.json or the lead skill.
+Hooks that only make sense for teammates (context-store-*, remind-*, enforce-no-idle) could be moved to agent frontmatter to eliminate unnecessary no-op executions during solo use. Hooks that fire on the lead (check-retro-before-delete, check-rotation) would stay in hooks.json or the lead skill.

@@ -1,6 +1,6 @@
 # Popcorn XP Protocol
 
-Instructions for teammates in a Popcorn XP session. The lead includes relevant sections of this file in your prompt when spawning you.
+Lead-facing prompt reference for Popcorn XP. The canonical teammate protocol lives in `skills/popcorn-xp-protocol/SKILL.md`; this file exists to provide spawn templates and a compact summary the lead can reuse.
 
 ## Core Rules
 
@@ -35,6 +35,12 @@ Strong opinions, loosely held. The driver has their own approach and should defe
 After sending advice or a resolution via SendMessage, log it with the session script:
 - Advice: `Bash: .popcorn-xp/{team-name}/session advice TYPE ID "description"`
 - Resolution: `Bash: .popcorn-xp/{team-name}/session resolve ID OUTCOME "detail"`
+
+**Navigator preflight for bugfix / RED-test tasks:**
+Before publishing READY or writing RED tests:
+1. Run `git log --oneline -5`
+2. Read the affected files and confirm the bug still exists in current code
+3. If the description has drifted, SendMessage the lead before writing tests
 
 **Enforcement:**
 
@@ -237,8 +243,11 @@ Handoff format:
 
 If you sense your context is getting long (2+ tasks completed, many file reads),
 write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the
-handoff format, message team-lead about the context limit, finish your current
-micro-step cleanly, mark task state, then stop.
+handoff format, message team-lead and your current partner about the context
+limit, finish your current micro-step cleanly, mark task state, then stop.
+
+If compaction happens before you stop, update the handoff immediately and expect
+to be retired on your next idle cycle once the handoff exists.
 
 After context compaction, before resuming work:
 1. Check TaskList for current task status
@@ -397,8 +406,11 @@ You have two modes: reacting to checkpoints and reading ahead.
 
 If you sense your context is getting long (2+ tasks completed, many file reads),
 write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the
-handoff format, message team-lead about the context limit, finish your current
-micro-step cleanly, mark task state, then stop.
+handoff format, message team-lead and your current partner about the context
+limit, finish your current micro-step cleanly, mark task state, then stop.
+
+If compaction happens before you stop, update the handoff immediately and expect
+to be retired on your next idle cycle once the handoff exists.
 
 After context compaction, before resuming work:
 1. Check TaskList for current task status
@@ -636,13 +648,16 @@ A third agent (`tester`) can be added when verification tasks appear on the Task
 
 **Native agent substitution:** These defaults apply when no native agents were discovered. If the lead's discovery step found native agents that align with these personas (e.g., a project-specific `flutter-architect` for craftsman, or a `test-engineer` for tester), use those instead. The persona role (driver/navigator/advisor) stays the same — only the agent filling it changes. See the "Discover Native Agents" section in SKILL.md.
 
-**Rotation rule:** When the first task completes, swap roles. The navigator becomes the driver for the next task — they've been watching the code emerge and carry context. The previous driver becomes the navigator — they know what they did and can catch misunderstandings. Don't assign tasks to the "best-fit" lens. The expert who navigated the implementation should drive the tests. The craftsman who drove the implementation should navigate the hardening. Rotation is for knowledge sharing. **At least one rotation is mandatory per session.** A session where the same agent drives every task is a solo session with an expensive spectator — the lead should intervene before that happens.
+**Rotation rule:** By default, when the first task completes, swap roles. The navigator becomes the driver for the next task — they've been watching the code emerge and carry context. The previous driver becomes the navigator — they know what they did and can catch misunderstandings. Rotation is for knowledge sharing. **At least one rotation is mandatory per session.**
+
+**Bugfix lane exception:** For bug-driven sessions, the lead may declare `confirm -> RED -> GREEN -> verify` lanes instead of strict alternation. Typical split: tester confirms the bug and writes RED, craftsman or expert drives GREEN, then a fresh-eye verification task closes the loop. Use this when it simplifies the work; do not use it as cover for one agent to drive the whole session.
 
 ## Integration Notes
 
 - The lead sets up the dependency chain and session lifecycle. Teammates self-progress through the task chain based on rotation convention (navigator claims the next unblocked task). The lead intervenes on exceptions — reordering, reassignment, scope changes — not on every transition.
 - If a teammate needs context the lead has, the lead sends it via SendMessage.
 - If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
+- The lead should keep core teammates long-lived by default so they retain session context across tasks. Use `maxTurns` only as an optional backstop or when intentionally spawning a fresh-eye verifier/reviewer.
 - The lead runs final verification through a teammate, not directly (coordinator mode has no file tools).
 - Before shutdown, the lead asks for retro feedback. Respond with **process observations** — what worked about the pairing dynamic, what made collaboration harder, whether checkpoints and advice helped. Focus on the process, not the code. See the protocol skill's Retro section for the full prompt. Keep it to 3-5 sentences.
 - On session close, the lead sends `shutdown_request` to each teammate individually (broadcast does not support structured messages). If you receive a shutdown_request, approve it promptly — do not start new work or send additional advice after receiving one. If you have in-progress work, finish the immediate step, mark the task complete or hand it off, then approve the shutdown. The lead will escalate with a plain-text message if the request is not acknowledged after 2 attempts, and will proceed with TeamDelete after 3 failed attempts.
