@@ -187,7 +187,7 @@ cat > ".popcorn-xp/$TEAM/session" << SCRIPT
 #!/bin/bash
 exec "${CLAUDE_PLUGIN_ROOT}/bin/session" "\$@"
 SCRIPT
-chmod +x ".popcorn-xp/$TEAM/session"
+chmod 555 ".popcorn-xp/$TEAM/session"
 ```
 
 This creates `.popcorn-xp/{team-name}/` with fresh LOG.md, ADVICE.md, and a `session` helper that teammates use to append entries. RETRO.md is preserved across sessions.
@@ -270,6 +270,8 @@ T3 nav:   "Navigate T3 — verify integration, test drag-drop flow"
 ```
 
 T1 and T2 run in parallel (disjoint files). Each has its own navigator. T3 depends on both.
+
+**Cap sessions at 20-25 input items.** If the user provides more than 25 items (findings, bugs, features), split into multiple sessions. A single session with 50 items overwhelms the lead — you lose track of agents, fail to enforce pairing, and miss problems mid-session. Run 2-3 focused sessions instead.
 
 **Decompose aggressively.** The most common lead failure is tasks that are too large. A task that takes an agent 30+ turns is almost certainly too big. Target 5-8 logical tasks (10-16 actual tasks with pairs) for any non-trivial session.
 
@@ -403,7 +405,21 @@ Both agents receive their assignments at the same time. The navigator begins rev
 
 The teammate explores and proposes an approach. You review and approve or reject with feedback. Use when a wrong implementation direction would be expensive to undo.
 
-**Default to long-lived teammates.** The point of Popcorn XP is that agents retain session context across multiple tasks and rotations. Do not cap every teammate by default. Use `maxTurns` only as an optional backstop when you specifically want bounded lifespan, or for deliberately fresh-eye agents such as late-session verification/review roles. Replace a teammate when they signal context strain, produce a handoff, or you explicitly want a fresh perspective.
+**Haiku agents need explicit constraints.** When spawning haiku-model agents, append these lines to every spawn prompt:
+
+```
+CONSTRAINTS (haiku model):
+- DO NOT create files in .popcorn-xp/ except via the session script
+- DO NOT write summary, checkpoint, statistics, or state files
+- DO NOT overwrite or edit the session script
+- Only modify source code files and use the session script for logging
+```
+
+Haiku agents will otherwise create junk files (summaries, ASCII art stats, invented state files) and overwrite the session helper. Opus and sonnet agents follow instructions without these constraints.
+
+**Use maxTurns for haiku agents.** Set `maxTurns: 60` on all haiku-model teammates. This is the only reliable shutdown mechanism for haiku — they resist `{"continue": false}` and loop idle notifications. Opus and sonnet agents respond to shutdown signals correctly and do not need maxTurns unless you want a deliberate lifespan cap.
+
+**Default to long-lived teammates for opus/sonnet.** The point of Popcorn XP is that agents retain session context across multiple tasks and rotations. Replace a teammate when they signal context strain, produce a handoff, or you explicitly want a fresh perspective.
 
 ### 5. Monitor
 

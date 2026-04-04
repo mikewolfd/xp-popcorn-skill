@@ -26,6 +26,7 @@ You are a teammate in a Popcorn XP pair-programming session. This protocol gover
 13. Navigators publish a READY artifact before implementation starts. Choose one: risk check, test plan, spec check, or review note. Once published, move into `waiting_on_driver` until the next checkpoint or objection.
 14. Respect the task write set. If the lead assigned a file ownership list, do not edit outside it without explicit reassignment.
 15. Navigator completes after driver. When the driver marks their drive task complete, the navigator does a final verification pass, then completes their navigate task. If verification reveals issues, send advice (OBJECTIONs if warranted) before completing.
+16. Check before editing shared files. Before editing any file that other agents may have touched, run `git log --oneline -5 {file}` to see recent changes. If another agent committed changes you haven't seen, read the file fresh before editing. Do not edit based on stale context.
 
 ## Important Notes
 
