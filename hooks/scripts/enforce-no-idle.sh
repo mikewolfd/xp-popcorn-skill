@@ -2,19 +2,25 @@
 set -euo pipefail
 
 # enforce-no-idle.sh
-# TeammateIdle hook: phase-aware idle enforcement.
+# TeammateIdle hook: phase-aware idle enforcement with checkpoint and advice checking.
 #
 # Phases (checked in priority order):
 # 1. Retro pending: .retro-requested exists, .retro-{agent}.md missing → nudge retro
 #    (takes priority over shutdown so agents can write retros before being stopped)
 # 2. Shutdown: .shutdown exists → block on unresolved OBJECTIONs, then force-stop
 # 3. Retro done: .retro-requested + .retro-{agent}.md exist, no .shutdown → allow idle
-# 4. Working: default → nudge "go find work"
+# 4. Phase 5 working state:
+#    5a. Explicit waiting states (waiting_on_driver, waiting_on_verification) → allow
+#    5b. Navigator drift (navigator, navigating phase) → require READY artifact
+#    5d. Checkpoint check (driver with uncheckpointed edits) → block with checkpoint nudge
+#    5e. Advice check (any agent with unresolved advice) → block with advice summary
+#    5c. Generic working → nudge "go find work"
 #
 # No-op when no active popcorn-xp session.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/session-common.sh"
+source "$SCRIPT_DIR/context-store-log.sh"
 px_load_session || exit 0
 
 # Read teammate_name from stdin (TeammateIdle input)
@@ -71,14 +77,16 @@ if [ -f "$COMPACT_STOP_FILE" ]; then
   exit 0
 fi
 
-# Phase 5a: explicit waiting states are allowed
+# Phase 5a: explicit waiting states (check navigator READY requirement first)
+IN_WAITING_STATE=0
 if [ "$PHASE" = "waiting_on_driver" ] || [ "$PHASE" = "waiting_on_verification" ]; then
+  IN_WAITING_STATE=1
+  # Navigator must have READY artifact published
   if [ "$ROLE" = "navigator" ] && { [ "$NAV_READY" != "true" ] || [ "$NAV_STATUS" != "published" ]; }; then
     KIND_LABEL="${NAV_KIND:-risk_check}"
     echo "Popcorn XP: Before you idle as navigator on task ${TASK_ID:-current}, publish your READY artifact (${KIND_LABEL}) and set state. Use: .popcorn-xp/$TEAM/session ready ${AGENT_SHORT:-agent} ${TASK_ID:-current} ${KIND_LABEL} 'What you checked and what the driver should watch.'" >&2
     exit 2
   fi
-  exit 0
 fi
 
 # Phase 5b: navigator drift — require a concrete artifact
@@ -87,7 +95,102 @@ if [ "$ROLE" = "navigator" ] && [ "$PHASE" = "navigating" ]; then
   exit 2
 fi
 
-# Phase 5c: generic working state
+# Phase 5d: checkpoint check (driver with uncheckpointed edits)
+if [ "$ROLE" = "driver" ] || [ "$PHASE" = "driving" ]; then
+  LOG_FILE=$(cs_log_file)
+  CURSOR_FILE=$(cs_checkpoint_cursor_file "$TEAM_DIR")
+  COUNT=$(cs_edit_count_since_cursor "$LOG_FILE" "$CURSOR_FILE")
+  if [ "$COUNT" -gt 0 ]; then
+    echo "Popcorn XP: You have $COUNT file edit(s) since your last checkpoint. Send a checkpoint to your navigator and log it: .popcorn-xp/$TEAM/session log 'what you did'" >&2
+    exit 2
+  fi
+fi
+
+# Phase 5e: advice check (any agent with unresolved advice)
+ADVICE="$TEAM_DIR/ADVICE.md"
+if [ -f "$ADVICE" ]; then
+  # Skip OBJECTION-specific check if in waiting_on_driver with no OBJECTIONs (they can wait for driver)
+  if [ "$IN_WAITING_STATE" = "1" ] && [ "$PHASE" = "waiting_on_driver" ]; then
+    open_obj_ids=$(grep -oE '### OBJECTION ([^ ]+) — open' "$ADVICE" | sed 's/### OBJECTION \([^ ]*\) — open/\1/' || true)
+    if [ -z "$open_obj_ids" ]; then
+      # No OBJECTIONs, waiting_on_driver can proceed to 5a exit
+      :
+    else
+      # Has OBJECTIONs, must resolve
+      total=0
+      summary=""
+      for TYPE in "OBJECTION" "SMELL" "STEER" "FYI"; do
+        open_ids=$(grep -oE "### $TYPE ([^ ]+) — open" "$ADVICE" | sed 's/### [^ ]* \([^ ]*\) — open/\1/' || true)
+        count=0
+        for id in $open_ids; do
+          if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+            count=$((count + 1))
+          fi
+        done
+        if [ "$count" -gt 0 ]; then
+          total=$((total + count))
+          [ -n "$summary" ] && summary="$summary, "
+          summary="${summary}${count} ${TYPE}(s)"
+        fi
+      done
+
+      if [ "$total" -gt 0 ]; then
+        echo "Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work." >&2
+        exit 2
+      fi
+    fi
+  else
+    # Not in waiting_on_driver, check all advice items
+    total=0
+    summary=""
+    for TYPE in "OBJECTION" "SMELL" "STEER" "FYI"; do
+      open_ids=$(grep -oE "### $TYPE ([^ ]+) — open" "$ADVICE" | sed 's/### [^ ]* \([^ ]*\) — open/\1/' || true)
+      count=0
+      for id in $open_ids; do
+        if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
+          count=$((count + 1))
+        fi
+      done
+      if [ "$count" -gt 0 ]; then
+        total=$((total + count))
+        [ -n "$summary" ] && summary="$summary, "
+        summary="${summary}${count} ${TYPE}(s)"
+      fi
+    done
+
+    if [ "$total" -gt 0 ]; then
+      echo "Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work." >&2
+      exit 2
+    fi
+  fi
+fi
+
+# Phase 5c: explicit waiting states allow idle (after advice/checkpoint checks pass)
+if [ "$IN_WAITING_STATE" = "1" ]; then
+  exit 0
+fi
+
+# Phase 5c2: completed tasks allow idle — agent is between tasks, waiting for assignment
+if [ "$PHASE" = "completed" ]; then
+  exit 0
+fi
+
+# Phase 5f: generic working state — no matching phase found
+# Debounce: allow through after 3 consecutive nudges to prevent infinite block loops
+NUDGE_FILE="$TEAM_DIR/.idle-nudge-${AGENT_SHORT}"
+NUDGE_COUNT=0
+if [ -f "$NUDGE_FILE" ]; then
+  NUDGE_COUNT=$(cat "$NUDGE_FILE" 2>/dev/null || echo 0)
+  [[ "$NUDGE_COUNT" =~ ^[0-9]+$ ]] || NUDGE_COUNT=0
+fi
+NUDGE_COUNT=$((NUDGE_COUNT + 1))
+echo "$NUDGE_COUNT" > "$NUDGE_FILE"
+
+if [ "$NUDGE_COUNT" -ge 3 ]; then
+  rm -f "$NUDGE_FILE"
+  exit 0
+fi
+
 DETAIL=""
 [ -n "$NEXT_ACTION" ] && DETAIL=" Next action: $NEXT_ACTION."
 [ -n "$BLOCKED_ON" ] && DETAIL="$DETAIL Blocked on: $BLOCKED_ON."

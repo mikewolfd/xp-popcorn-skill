@@ -3,9 +3,10 @@ set -euo pipefail
 
 # context-store-check.sh
 # PreToolUse hook on Read: checks the shared context store.
-# If the file has been read before, injects additionalContext
-# with metadata (who read/edited, when, dirty status).
-# Always allows the read to proceed (inform, not deny).
+# ONLY emits additionalContext when ALL of these are true:
+# 1. File is marked dirty (dirty=true)
+# 2. Current agent is different from the agent that edited it (edited_by != AGENT)
+# Otherwise exits silently (exit 0, no output).
 # No-op when no active popcorn-xp session.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -40,30 +41,17 @@ AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.agent_type // empty' 2>/de
 ENTRY=$(jq -r --arg path "$FILE_PATH" '.[$path] // empty' "$STORE" 2>/dev/null || true)
 [ -z "$ENTRY" ] && exit 0
 
-READ_BY=$(echo "$ENTRY" | jq -r '.read_by // empty')
-READ_AT=$(echo "$ENTRY" | jq -r '.read_at // empty')
 DIRTY=$(echo "$ENTRY" | jq -r '.dirty // false')
 EDITED_BY=$(echo "$ENTRY" | jq -r '.edited_by // empty')
 EDITED_AT=$(echo "$ENTRY" | jq -r '.edited_at // empty')
 
-# Build context message
-if [ -n "$READ_BY" ] && [ -n "$READ_AT" ]; then
-  MSG="[context-store] File previously read by $READ_BY at $READ_AT."
-else
-  MSG="[context-store] File has not been read through the context store yet."
+# Only emit context if BOTH conditions are true:
+# 1. File is marked dirty
+# 2. Current agent is different from editor (cross-agent dirty)
+if [ "$DIRTY" = "true" ] && [ -n "$EDITED_BY" ] && [ "$EDITED_BY" != "$AGENT" ]; then
+  MSG="[context-store] WARNING: $FILE_PATH was edited by $EDITED_BY at $EDITED_AT and has uncommitted changes. Coordinate with your teammate before making changes."
+  cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, DIRTY by ${EDITED_BY}"
+  jq -n --arg ctx "$MSG" '{additionalContext: $ctx}'
 fi
 
-if [ "$DIRTY" = "true" ]; then
-  if [ -n "$EDITED_BY" ]; then
-    MSG="$MSG Marked DIRTY — edited by $EDITED_BY at $EDITED_AT."
-  else
-    MSG="$MSG Marked DIRTY."
-  fi
-  cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, DIRTY by ${EDITED_BY:-unknown}"
-else
-  MSG="$MSG File is CLEAN (unchanged since last read)."
-  cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, CLEAN, read by ${READ_BY:-unknown}"
-fi
-
-jq -n --arg ctx "$MSG" '{additionalContext: $ctx}'
 exit 0

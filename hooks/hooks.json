@@ -1,5 +1,5 @@
 {
-  "description": "Popcorn XP lifecycle hooks — advice enforcement, rotation checks, checkpoint guidance, retro gating, and shared context state",
+  "description": "Popcorn XP lifecycle hooks — advice enforcement, idle state enforcement, checkpoint guidance, retro gating, and shared context state",
   "hooks": {
     "TaskCompleted": [
       {
@@ -9,23 +9,6 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-advice-on-complete.sh",
             "timeout": 10,
             "statusMessage": "Checking advice before task completion..."
-          },
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-rotation.sh",
-            "timeout": 10,
-            "statusMessage": "Checking driver rotation..."
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-objections.sh",
-            "timeout": 10
           }
         ]
       }
@@ -33,16 +16,6 @@
     "TeammateIdle": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/remind-unread-advice.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/remind-checkpoint.sh",
-            "timeout": 5
-          },
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/enforce-no-idle.sh",
@@ -143,22 +116,11 @@
         ]
       },
       {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-store-update-read.sh",
-            "timeout": 10,
-            "statusMessage": "Updating context store..."
-          }
-        ]
-      },
-      {
         "matcher": "TaskUpdate",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-task-registry.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-task-state.sh",
             "timeout": 5
           }
         ]

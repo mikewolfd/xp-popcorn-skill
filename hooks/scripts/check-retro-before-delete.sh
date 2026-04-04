@@ -3,7 +3,7 @@ set -euo pipefail
 
 # check-retro-before-delete.sh
 # PreToolUse hook on TeamDelete: blocks if RETRO.md doesn't exist
-# or hasn't been updated this session. The retro happens BEFORE the summary,
+# or doesn't have meaningful content (at least 5 lines). The retro happens BEFORE the summary,
 # BEFORE shutdown, BEFORE cleanup — it's mandatory.
 # No-op when no active popcorn-xp session directory exists.
 

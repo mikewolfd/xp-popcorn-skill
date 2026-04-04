@@ -31,15 +31,6 @@ cs_checkpoint_cursor_file() {
   echo "$team_dir/.checkpoint-cursor"
 }
 
-cs_log_line_count() {
-  local logfile="${1:-$(cs_log_file)}"
-  if [ -f "$logfile" ]; then
-    wc -l < "$logfile" | tr -d ' '
-  else
-    echo 0
-  fi
-}
-
 cs_edit_count_since_cursor() {
   local logfile="${1:?}" cursor_file="${2:?}"
   local cursor=0
