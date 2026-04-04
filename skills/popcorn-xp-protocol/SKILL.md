@@ -18,8 +18,17 @@ You are a teammate in a Popcorn XP pair-programming session. This protocol gover
 7. Keep work small. One task, one goal, one set of files. Finish before starting something new.
 8. You are not alone in the codebase. Do not revert or overwrite work you did not make.
 9. No idle hands. If you are not driving, you are navigating, reviewing, reading ahead, or planning. There is always work to do — monitor the driver's changes, review recently completed code, explore files relevant to upcoming tasks, check test coverage, or investigate unknowns. "Waiting for a task" is not a state — find useful work and do it.
-10. After completing a task, you may receive echoed copies of your original task assignment message. These are platform delivery artifacts, not re-assignments. Ignore them and continue with your next task.
-11. Commit before you rotate. When your task is done, `git add` and `git commit` your changes before handing off. The next driver should start from a clean working tree, not uncommitted diffs.
+10. Declare intent. Before going idle or switching focus, state what you plan to do next via SendMessage and mirror it into session state. This lets your partner plan their own work and catch misalignment early.
+11. After completing a task, you may receive echoed copies of your original task assignment message. These are platform delivery artifacts, not re-assignments. Ignore them and continue with your next task.
+12. Commit before you rotate. When your task is done, `git add` and `git commit` your changes before handing off. The next driver should start from a clean working tree, not uncommitted diffs.
+13. Navigators publish a READY artifact before implementation starts. Choose one: risk check, test plan, spec check, or review note. Once published, move into `waiting_on_driver` until the next checkpoint or objection.
+14. Respect the task write set. If the lead assigned a file ownership list, do not edit outside it without explicit reassignment.
+
+## Important Notes
+
+**Linter hooks:** If a linter hook reverts your write, re-read the file before retrying — don't re-apply the same edit blindly. The hook may have made changes beyond formatting.
+
+**Critical actions:** For critical actions (shutdown, retro collection), always follow up hook nudges with direct SendMessage — do not rely on hook stderr alone to convey critical information.
 
 ## Advice Lifecycle
 
@@ -35,6 +44,15 @@ Strong opinions, loosely held. The driver has their own approach and should defe
 After sending advice or a resolution via SendMessage, log it with the session script:
 - Advice: `Bash: .popcorn-xp/{team-name}/session advice TYPE ID "description"`
 - Resolution: `Bash: .popcorn-xp/{team-name}/session resolve ID OUTCOME "detail"`
+
+**Tracking your phase:**
+Before work starts, and whenever your role changes, update your explicit state:
+- Driver: `Bash: .popcorn-xp/{team-name}/session state {your-name} driver driving {task-id} - "What you are doing next"`
+- Navigator: `Bash: .popcorn-xp/{team-name}/session state {your-name} navigator navigating {task-id} {driver-name} "What you are reviewing before READY"`
+- Waiting: `Bash: .popcorn-xp/{team-name}/session state {your-name} navigator waiting_on_driver {task-id} {driver-name} "What signal you are waiting for"`
+
+If the lead assigned a write set, record it before editing:
+- `Bash: .popcorn-xp/{team-name}/session writeset {your-name} {task-id} path/to/file1 path/to/file2`
 
 **Enforcement:**
 
@@ -130,6 +148,11 @@ After sending advice, log it:
 Bash: .popcorn-xp/{team-name}/session advice SMELL SML-3-01 "Issue description"
 ```
 
+Before edits begin, navigators publish a READY artifact:
+```
+Bash: .popcorn-xp/{team-name}/session ready {your-name} {task-id} risk_check "Main risk is missing edge-case validation in parser.ts."
+```
+
 After resolving advice, log it:
 ```
 Bash: .popcorn-xp/{team-name}/session resolve SML-3-01 INCORPORATED "Detail"
@@ -138,6 +161,11 @@ Bash: .popcorn-xp/{team-name}/session resolve SML-3-01 INCORPORATED "Detail"
 Log task headers when claiming a task:
 ```
 Bash: .popcorn-xp/{team-name}/session task {id} {your-role} {navigator-role}
+```
+
+When you rotate out after completing a task, create a structured snapshot:
+```
+Bash: .popcorn-xp/{team-name}/session snapshot {your-name} {task-id}
 ```
 
 READ LOG.md and ADVICE.md before starting work and before completing a task.
@@ -157,6 +185,8 @@ Issue description here
 ### SML-3-01 — INCORPORATED
 Detail of what was done
 ```
+
+Include file:line references in resolution details when applicable (e.g., "FIXED in utils/validation.ts:45").
 
 ### LOG.md Format
 
@@ -198,6 +228,14 @@ Message team-lead about the context limit, finish your current micro-step cleanl
 
 If you sense your context is getting long (2+ tasks completed, many file reads), write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the handoff format, message team-lead about the context limit, finish your current micro-step cleanly, mark task state, then stop.
 
+After context compaction, before resuming work:
+1. Check TaskList for current task status
+2. Read LOG.md for latest checkpoints
+3. Read ADVICE.md for any open items
+4. Check git log for recent commits
+
+Do not re-do work that's already complete.
+
 ## Rotation
 
 After your task completes, commit your changes before anything else:
@@ -209,9 +247,15 @@ Use semantic commit style: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. S
 
 After committing, you become the NAVIGATOR. The agent who was navigating self-claims the next unblocked task and becomes driver. Your role shifts immediately:
 - Stop editing code files. Your job becomes reading and advising.
+- Create `.popcorn-xp/{team-name}/snapshot-{your-name}.md` with touched files, verification run, open advice, and the next risk.
 - Send typed advice to the new driver instead of making changes.
 - Send a handoff message to the new driver: what you changed, what's tricky, what to watch out for in the files you touched.
 - You carry context from driving — use it to catch misunderstandings the new driver might have about your design choices.
+
+For ambiguous tasks, do not start editing immediately. First:
+1. Driver sends a 2-4 sentence approach note.
+2. Navigator publishes READY with the main risk or test plan.
+3. Driver begins implementation only after that handshake.
 
 If the lead overrides your self-claim (reassigns, reorders, or redirects), follow their direction — they see the full session and the user's intent.
 

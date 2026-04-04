@@ -6,12 +6,19 @@ set -euo pipefail
 # Blocking — exits 2 with plain text feedback to prevent idle transition
 # No-op when no active popcorn-xp session
 
-POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
-TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
-[ -z "$TEAM" ] && exit 0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/session-common.sh"
+px_load_session || exit 0
+[ -f "$TEAM_DIR/.shutdown" ] && exit 0
 
-ADVICE="$POPCORN_DIR/$TEAM/ADVICE.md"
+ADVICE="$TEAM_DIR/ADVICE.md"
 [ ! -f "$ADVICE" ] && exit 0
+
+INPUT=$(cat)
+AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.teammate_name // .agent_type // empty' 2>/dev/null || true)")
+AGENT_SHORT=$(px_short_agent "$AGENT")
+PHASE=$(px_state_field "$AGENT_SHORT" "phase")
+[ "$PHASE" = "waiting_on_driver" ] && [ -z "$(grep -oE '### OBJECTION ([^ ]+) — open' "$ADVICE" || true)" ] && exit 0
 
 # Count unresolved items by type
 total=0

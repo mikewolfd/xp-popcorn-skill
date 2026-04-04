@@ -183,22 +183,83 @@ mkdir -p ".popcorn-xp/$TEAM"
 echo "# Popcorn XP Log" > ".popcorn-xp/$TEAM/LOG.md"
 printf "# Advice\n" > ".popcorn-xp/$TEAM/ADVICE.md"
 echo "$TEAM" > .popcorn-xp/.active-team
-cat > ".popcorn-xp/$TEAM/session" << 'SCRIPT'
+cat > ".popcorn-xp/$TEAM/session" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-DIR="$(cd "$(dirname "$0")" && pwd)"
-cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
-case "$cmd" in
-  log) printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"; rm -f "$DIR/.dirty" "$DIR/.edit-count" ;;
-  advice) T="${1:?}"; ID="${2:?}"; shift 2; grep -q "^### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md" ;;
-  resolve) ID="${1:?}"; O="${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md" ;;
-  task) ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md" ;;
-  handoff) AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
-    printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "$AGENT" > "$FILE"
-    echo "Handoff template written to $FILE — fill it out now." ;;
-  retro-request) touch "$DIR/.retro-requested" ;;
-  retro) AGENT="${1:?}"; shift; printf '%s\n' "$*" > "$DIR/.retro-$AGENT.md" ;;
-  shutdown) touch "$DIR/.shutdown" ;;
+DIR="\${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp/$TEAM"
+STATE_DIR="\$DIR/agent-state"
+mkdir -p "\$STATE_DIR"
+state_file() { echo "\$STATE_DIR/\$1.json"; }
+ensure_state() {
+  local file
+  file="\$(state_file "\$1")"
+  [ -f "\$file" ] || jq -n --arg agent "\$1" --arg task_id "\${2:-}" --arg updated_at "\$(date -u +"%Y-%m-%dT%H:%M:%SZ")" '{
+    agent: \$agent,
+    role: "",
+    phase: "",
+    task_id: \$task_id,
+    blocked_on: "",
+    next_action: "",
+    navigator_ready: false,
+    navigator_artifact_kind: "",
+    navigator_artifact_status: "",
+    write_set: [],
+    updated_at: \$updated_at
+  }' > "\$file"
+  echo "\$file"
+}
+merge_state() {
+  local file tmp
+  file="\$(ensure_state "\$1" "\${2:-}")"
+  shift 2
+  tmp="\$file.tmp"
+  jq "\$@" "\$file" > "\$tmp" && mv "\$tmp" "\$file"
+}
+cmd="\${1:-}"; [ -z "\$cmd" ] && exit 1; shift
+case "\$cmd" in
+  log) printf '\n### Checkpoint\n%s\n' "\$*" >> "\$DIR/LOG.md"; rm -f "\$DIR/.dirty" "\$DIR/.edit-count" ;;
+  advice) T="\${1:?}"; ID="\${2:?}"; shift 2; grep -q "^### \$T \$ID" "\$DIR/ADVICE.md" 2>/dev/null && exit 0; printf '\n### %s %s — open\n%s\n' "\$T" "\$ID" "\$*" >> "\$DIR/ADVICE.md" ;;
+  resolve) ID="\${1:?}"; O="\${2:?}"; shift 2; printf '\n### %s — %s\n%s\n' "\$ID" "\$O" "\${*:-(no detail)}" >> "\$DIR/ADVICE.md" ;;
+  task) ID="\${1:?}"; DRIVER="\${2:?}"; NAV="\${3:?}"; printf '\n## Task %s — Driver @%s, Navigator @%s\n' "\$ID" "\$DRIVER" "\$NAV" >> "\$DIR/LOG.md" ;;
+  state) AGENT="\${1:?}"; ROLE="\${2:?}"; PHASE="\${3:?}"; TASK_ID="\${4:?}"; BLOCKED_ON="\${5:--}"; shift 5
+    NEXT_ACTION="\${*:--}"
+    merge_state "\$AGENT" "\$TASK_ID" --arg agent "\$AGENT" --arg role "\$ROLE" --arg phase "\$PHASE" --arg task_id "\$TASK_ID" \
+      --arg blocked_on "\$BLOCKED_ON" --arg next_action "\$NEXT_ACTION" --arg updated_at "\$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      '.agent = \$agent
+       | .role = \$role
+       | .phase = \$phase
+       | .task_id = \$task_id
+       | .blocked_on = (if \$blocked_on == "-" then "" else \$blocked_on end)
+       | .next_action = (if \$next_action == "-" then "" else \$next_action end)
+       | .updated_at = \$updated_at' ;;
+  ready) AGENT="\${1:?}"; TASK_ID="\${2:?}"; KIND="\${3:?}"; shift 3
+    DETAIL="\${*:?(detail required)}"
+    FILE="\$DIR/navigator-ready-\$AGENT.md"
+    printf '## READY — %s\n\n### Task\n%s\n\n### Artifact Type\n%s\n\n### Notes\n%s\n' "\$AGENT" "\$TASK_ID" "\$KIND" "\$DETAIL" > "\$FILE"
+    merge_state "\$AGENT" "\$TASK_ID" --arg agent "\$AGENT" --arg task_id "\$TASK_ID" --arg updated_at "\$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      --arg kind "\$KIND" --arg detail "\$DETAIL" '.agent = \$agent
+        | .role = "navigator"
+        | .phase = "waiting_on_driver"
+        | .task_id = \$task_id
+        | .blocked_on = "driver checkpoint"
+        | .next_action = \$detail
+        | .navigator_ready = true
+        | .navigator_artifact_kind = \$kind
+        | .navigator_artifact_status = "published"
+        | .updated_at = \$updated_at'
+    printf '\n### Navigator READY\n@%s task %s %s: %s\n' "\$AGENT" "\$TASK_ID" "\$KIND" "\$DETAIL" >> "\$DIR/LOG.md" ;;
+  writeset) AGENT="\${1:?}"; TASK_ID="\${2:?}"; shift 2
+    WRITE_SET="\$(printf '%s\n' "\$@" | jq -R . | jq -s .)"
+    merge_state "\$AGENT" "\$TASK_ID" --arg task_id "\$TASK_ID" --argjson write_set "\$WRITE_SET" '.task_id = \$task_id | .write_set = \$write_set' ;;
+  handoff) AGENT="\${1:?}"; FILE="\$DIR/handoff-\$AGENT.md"
+    printf '## Handoff — %s\n\n### Role & Task\n\n### What I Was About To Do\n\n### Key Context\n\n### Open Advice\n\n### Recommended Start\n' "\$AGENT" > "\$FILE"
+    echo "Handoff template written to \$FILE — fill it out now." ;;
+  snapshot) AGENT="\${1:?}"; TASK_ID="\${2:?}"; FILE="\$DIR/snapshot-\$AGENT.md"
+    printf '## Rotation Snapshot — %s\n\n### Task\n%s\n\n### Files Touched\n\n### Verification Run\n\n### Open Advice\n\n### Next Risk\n\n### Recommended Start\n' "\$AGENT" "\$TASK_ID" > "\$FILE"
+    echo "Rotation snapshot template written to \$FILE — fill it out before handoff." ;;
+  retro-request) touch "\$DIR/.retro-requested" ;;
+  retro) AGENT="\${1:?}"; shift; printf '%s\n' "\$*" > "\$DIR/.retro-\$AGENT.md" ;;
+  shutdown) touch "\$DIR/.shutdown" ;;
 esac
 SCRIPT
 chmod +x ".popcorn-xp/$TEAM/session"
@@ -219,6 +280,13 @@ export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70
 ### 3. Create Tasks
 
 Use TaskCreate for each work item. Set dependencies with TaskUpdate so tasks unblock in order.
+
+Each task should declare:
+- `ambiguity`: `simple` or `ambiguous`
+- `writes`: the files this task may edit
+- `reads`: optional files the navigator should stay ahead on
+
+For `ambiguous` tasks, require a short design-alignment handshake before the first edit: the driver states the approach, the navigator responds with a READY artifact, and only then does implementation begin.
 
 **Decompose aggressively.** The most common lead failure is tasks that are too large. A task that takes an agent 30+ turns is almost certainly too big. Target 5-8 tasks minimum for any non-trivial session. More tasks = more rotations = more knowledge distribution = better results.
 
@@ -275,6 +343,17 @@ Task Xc: Finalize — blocked by Xb
 ```
 
 **Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` so tasks auto-unblock as each dependency completes. Teammates self-claim the next unblocked task based on rotation convention (navigator becomes driver), so the chain should reflect the intended execution order. You assign the first task; after that, the normal path flows through built-in task dependencies without your intervention. If you can anticipate auxiliary tasks — an API audit, a renderer compatibility check, a supplementary research pass — create them now. Tasks added mid-session arrive as addenda and feed synthesis less cleanly than tasks planned upfront.
+
+**Declare file ownership for parallel tasks.** If two tasks can run in parallel, each one must own a disjoint write set. Put the owned files directly in the task description so teammates can run:
+
+```text
+Task 4: Add verification hook replay tests
+ambiguity: simple
+writes: tests/test-hooks.sh, tests/fixtures/task-update-claim.json
+reads: hooks/scripts/check-task-claim.sh
+```
+
+If you cannot name a disjoint write set, the tasks are not really parallel.
 
 **When to include a separate verification task:**
 
@@ -374,7 +453,11 @@ Agent(name: "test-engineer", subagent_type: "test-engineer",
   prompt: "FIRST: Skill('popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
 ```
 
-Assign the first task to the driver via TaskUpdate.
+Assign the first task to the driver via TaskUpdate. Alongside the assignment, SendMessage the driver and navigator with the task metadata they must mirror into session state:
+
+- Driver: `.popcorn-xp/{team-name}/session state {agent} driver driving {task-id} - 'Implement the assigned task and checkpoint after meaningful edits.'`
+- Navigator: `.popcorn-xp/{team-name}/session state {agent} navigator navigating {task-id} {driver} 'Read the spec/code and publish a READY artifact before edits start.'`
+- Both: `.popcorn-xp/{team-name}/session writeset {agent} {task-id} <owned files...>`
 
 **Reuse orientation agents.** If you spawn a scout or research-focused agent for an initial orientation task, create their follow-up task in Step 3 — not mid-session. A follow-up task added after synthesis has already started arrives as an addendum rather than feeding it. Either plan the second assignment upfront (test review, API audit, demo validation) or don't spawn the agent.
 
@@ -394,7 +477,7 @@ You receive messages from teammates automatically. Your role during execution:
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
 - **Watch for rotation failures.** **At least one rotation is mandatory per session.** If the same agent has driven every task and you're approaching the final task, intervene and force a swap. A session with no rotation is a solo session with an expensive spectator.
-- **No idle agents.** If a teammate is not driving, they should be navigating, reviewing, reading ahead, or planning. If you notice a teammate going quiet (no messages, no advice, no file reads), SendMessage them with a specific direction: "Review the files craftsman just changed," "Read ahead into the test files for task 4," "Check test coverage for the module we just touched." An agent that isn't actively contributing is wasting a context window.
+- **No idle agents.** If a teammate is not driving, they should be navigating, reviewing, reading ahead, or planning. Require navigators to publish a READY artifact before edits start: risk check, test plan, spec check, or review note. After that, they may enter `waiting_on_driver` explicitly; "silent and maybe thinking" is not a valid state.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
 - **Periodic code review.** After every 2-3 completed tasks (or after any task that touches shared/critical code), launch `popcorn-xp:code-reviewer` independently — **not** as a teammate. Use the Agent tool without `team_name`. Give it the list of files changed since the last review and ask for a review certificate. When the review comes back:
   - **BLOCKER findings**: relay as OBJECTIONs to the current driver via SendMessage, then run the session script to log it
@@ -407,7 +490,7 @@ You receive messages from teammates automatically. Your role during execution:
   code-reviewer functions correctly despite this — it does not use SendMessage,
   TaskUpdate, or team coordination tools. Its independence is behavioral (enforced
   by its prompt), not structural.
-- **Handle handoff requests.** When a teammate sends a context-limit handoff message, read `.popcorn-xp/{team-name}/handoff-{agent-name}.md` immediately. Decide: (a) spawn a fresh agent seeded with the handoff as context, (b) reassign the task to an existing teammate with less context usage, or (c) fold the task if it's close to done. Do not wait for the agent to degrade further — the handoff is most useful when written while the agent is still coherent.
+- **Handle handoff requests.** When a teammate sends a context-limit handoff message, read `.popcorn-xp/{team-name}/handoff-{agent-name}.md` immediately. If they are rotating out after a completed task, also require `.popcorn-xp/{team-name}/snapshot-{agent-name}.md` so the next driver gets touched files, verification run, open advice, and the next risk in one place.
 - **Watch for stuck tasks.** If a task appears stuck after a teammate reports it complete, the `TaskUpdate` call may have silently failed (known platform limitation). Check task status directly and update manually if the work is done. Don't wait for the agent to retry — prompt them or update it yourself.
 - **Recovering unresponsive agents.** Before giving up on a teammate, try sending them a direct message via `SendMessage`. A stopped agent auto-resumes on receipt of a message. If two resume attempts fail, spawn a fresh replacement seeded with LOG.md context. Do not do the work yourself.
 - **Don't fall into the orchestrator trap.** Coordinator mode stops you from editing files, but you can still centralize too much by over-crafting instructions, pre-reading every file for the team, or synthesizing every result before passing it on. If you're spending more time crafting instructions than teammates spend executing them, you're doing their thinking for them. Write the task, assign it, step back. Trust the pair to figure out the approach — that's what the navigator is for.

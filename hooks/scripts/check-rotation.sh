@@ -7,6 +7,9 @@ set -euo pipefail
 # before they let a single agent drive the entire session.
 # No-op when no active popcorn-xp session or fewer than 2 completed tasks.
 
+POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
+[ ! -f "$POPCORN_DIR/.active-team" ] && exit 0
+
 # Read hook input from stdin — TaskCompleted provides team_name
 INPUT=$(cat)
 TEAM_NAME=$(echo "$INPUT" | jq -r '.team_name // empty' 2>/dev/null)

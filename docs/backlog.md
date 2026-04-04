@@ -18,12 +18,12 @@ These block correct shutdown, cause double work, or represent dead hooks.
 
 | # | ID(s) | Title | Fix type | Batch | Notes |
 |---|-------|-------|----------|-------|-------|
-| 1 | AA1 | Shutdown deadlock: parallel TeammateIdle hooks override force-stop | Hook | 1 | **Confirmed.** Neither `remind-unread-advice.sh` nor `remind-checkpoint.sh` checks `.shutdown` — can exit 2 before `enforce-no-idle.sh` runs. Fix: add `.shutdown` early-exit to both (4 lines). |
-| 2 | V6, P12, P20 | Agent self-assignment / shutdown race / lifespan enforcement | Hook + Protocol | 4 | **Confirmed.** No PreToolUse:TaskUpdate hook exists. No per-agent task counting. Protocol says "never claim after shutdown" but nothing enforces it. Fix: new hook + registration + protocol update. |
-| 3 | V9, V10 | Retro notification chain is dead (both hooks never fire) | Protocol | 1 | **Confirmed.** `notify-retro-written.sh` unreachable (agents use Bash, not Write tool). `notify-retro-received.sh` never fires (FileChanged subdirectory gap). Fix: remove dead hooks from `hooks.json`, add SendMessage-based retro notification to protocol. |
-| 4 | P10, P11, P17 | Navigator role ineffective — all navigators go idle after 1-2 messages | Protocol | — | **Confirmed as design gap.** Protocol says "no idle hands" but gives no concrete navigator deliverables. `enforce-no-idle.sh` nudge is generic. Needs design discussion before implementation — three alternatives in notes. |
-| 5 | P13 | Session script breaks on CWD change | Hook | 2 | **Confirmed.** `dirname "$0"` in session template resolves relative to caller's CWD. Fix: `DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp/{team}"` — one-line change in SKILL.md template + test. |
-| 6 | V5 | Agents don't reliably act on TeammateIdle hook stderr | Protocol | 3 | **Confirmed as platform behavior.** Hook stderr is informational, not directive. Fix: strengthen lead monitoring guidance to require direct SendMessage for critical actions. |
+| 1 | AA1 | Shutdown deadlock: parallel TeammateIdle hooks override force-stop | Hook | 1 | **Done (Session 3).** Added `.shutdown` early-exit to `remind-unread-advice.sh` and `remind-checkpoint.sh`. |
+| 2 | V6, P12, P20 | Agent self-assignment / shutdown race / lifespan enforcement | Hook + Protocol | 4 | **Done (Session 3).** `check-task-claim.sh` (PreToolUse:TaskUpdate) + `update-task-registry.sh` (PostToolUse:TaskUpdate) + `.task-registry` file. Blocks post-shutdown claims and concurrent claims. |
+| 3 | V9, V10 | Retro notification chain is dead (both hooks never fire) | Protocol | 1 | **Done (Session 3).** Removed dead `notify-retro-written.sh` and `notify-retro-received.sh` hooks from `hooks.json`. Added SendMessage-based retro notification guidance to protocol. |
+| 4 | P10, P11, P17 | Navigator role ineffective — all navigators go idle after 1-2 messages | Protocol | 5 | **Done (Session 4).** Added explicit agent phase state, mandatory navigator READY artifacts, and waiting-state-aware idle enforcement. |
+| 5 | P13 | Session script breaks on CWD change | Hook | 2 | **Done (Session 3).** SKILL.md session template heredoc changed from `<< 'SCRIPT'` to `<< SCRIPT`; DIR bakes in team name at write time. |
+| 6 | V5 | Agents don't reliably act on TeammateIdle hook stderr | Protocol | 3 | **Done (Session 3).** Lead monitoring guidance strengthened to require direct SendMessage for critical actions. |
 
 ## Open — Medium
 
@@ -31,17 +31,20 @@ Functional gaps, accuracy issues, and protocol holes.
 
 | # | ID(s) | Title | Fix type | Batch | Notes |
 |---|-------|-------|----------|-------|-------|
-| 7 | V2 | Context store preview field causes token bloat (17K+ for 11 files) | Hook | 2 | **Confirmed.** `context-store-update-read.sh` stores full `tool_response` as `preview` — no truncation or size limit. Fix: truncate to first 10 lines. |
-| 9 | V8 | `enforce-no-idle` can't distinguish waiting-for-partner from truly idle | Hook + Protocol | — | **Confirmed.** Only four phases, no "navigator-waiting" state. No `.navigator-ready-{agent}` signal exists. **Deferred** — depends on #4 navigator role design decision. |
-| 10 | V11 | `check-objections.sh` (SubagentStop) never fires for team members | Hook | 1 | **Confirmed as platform limitation.** SubagentStop fires for Agent-tool subagents only, not teammates. Primary enforcement on TaskCompleted still works. Fix: add OBJECTION check to `enforce-no-idle.sh` shutdown path as additional safety net. |
+| 7 | V2 | Context store preview field causes token bloat (17K+ for 11 files) | Hook | 2 | **Done (Session 3).** `context-store-update-read.sh` now truncates preview to first 10 lines via `head -10`. |
+| 9 | V8 | `enforce-no-idle` can't distinguish waiting-for-partner from truly idle | Hook + Protocol | 5 | **Done (Session 4).** Added explicit `waiting_on_driver` / `waiting_on_verification` phases plus READY artifact gating. |
+| 10 | V11 | `check-objections.sh` (SubagentStop) never fires for team members | Hook | 1 | **Done (Session 3).** Added OBJECTION check to `enforce-no-idle.sh` shutdown phase — blocks with exit 2 and resolve instructions when unresolved OBJECTIONs exist at shutdown. |
 | 11 | V13 | Context store doesn't surface stale reads at rotation time | Hook + Protocol | — | **Confirmed.** No rotation-triggered summary exists. **Deferred** — protocol already says "re-read files before driving"; mechanical hook adds complexity for marginal value. |
 | 12 | V1 | Context store `read_by` only tracks last reader | Hook | — | **Confirmed.** `context-store-update-read.sh` overwrites on each read. The log file has full history. Fix if convenient or accept limitation. |
-| 14 | AA4 | Lead session reads attributed to "unknown" in context store | Hook | 2 | **Confirmed.** All three context store hooks extract `agent_type` from stdin, default to `"unknown"`. No check for `CLAUDE_CODE_COORDINATOR_MODE`. Fix: add fallback to `"lead"` when coordinator mode detected. |
+| 14 | AA4 | Lead session reads attributed to "unknown" in context store | Hook | 2 | **Done (Session 3).** All three context store hooks now fall back to `"lead"` when `CLAUDE_CODE_COORDINATOR_MODE` is set and `agent_type` is unknown. |
 | 15 | R6 | Require explicit OBJECTION confirmation in task completion message | Hook + Protocol | — | **Protocol addressed, not mechanically enforced.** `check-advice-on-complete.sh` checks resolutions exist in ADVICE.md but does not grep completion message. **Deferred** — current check catches the real problem; requiring text in messages is fragile. |
-| 17 | P14 | Agents don't declare intent before going idle | Protocol | 3 | **Confirmed.** Neither protocol nor core rules mention intent declaration. Fix: add to core rules. |
-| 18 | P15 | Context compaction risks re-driving completed work | Protocol | 3 | **Partially addressed.** Protocol has Context Limit section with handoff instructions but no explicit "after compaction, check git log/TaskList/ADVICE.md" step. Fix: add post-compaction checklist. |
-| 19 | P16 | ADVICE.md resolutions need file:line citations | Protocol | 3 | **Not addressed.** Resolution format shows examples with line refs but doesn't require file:line format. Fix: update protocol wording only — don't change session script (freeform text with conventions is more robust). |
-| 20 | P18 | Mocked hooks gave false confidence — need integration test guidance | Docs | — | **Valid observation.** `test-hooks.sh` is unit testing (crafted inputs). No integration test exercises hooks through actual Claude Code event system. Fix: document the gap. Integration testing requires live sessions. |
+| 17 | P14 | Agents don't declare intent before going idle | Protocol | 3 | **Done (Session 3).** Intent declaration added to protocol core rules. |
+| 18 | P15 | Context compaction risks re-driving completed work | Protocol | 3 | **Done (Session 3).** Post-compaction checklist added to protocol (check git log, TaskList, ADVICE.md before driving). |
+| 19 | P16 | ADVICE.md resolutions need file:line citations | Protocol | 3 | **Done (Session 3).** Protocol wording updated to require file:line format in resolution details. |
+| 20 | P18 | Mocked hooks gave false confidence — need integration test guidance | Docs | 5 | **Done (Session 4).** Added replay-fixture coverage in `test-hooks.sh` and documented the live-session gap explicitly. |
+| 34 | S3-1 | Parallel agents need file ownership convention | Protocol | 5 | **Done (Session 4).** Task creation now requires declared write sets for parallel work; context-store hook blocks edits outside the write set. |
+| 35 | S3-2 | Navigator "ready for implementation" signal | Protocol | 5 | **Done (Session 4).** Added `session ready` artifact plus hook enforcement before waiting is allowed. |
+| 36 | S3-3 | Design alignment step before complex implementation tasks | Protocol | 5 | **Done (Session 4).** Added `ambiguity: ambiguous` handshake requirement before first edit. |
 
 ## Open — Low
 
@@ -51,27 +54,29 @@ Docs cleanup, cosmetic issues, and edge cases.
 |---|-------|-------|----------|-------|-------|
 | 23 | AA6 | Lens text drift across source files | Docs | — | **Confirmed, minor.** Truncations between `agents/*.md` (canonical) and SKILL.md/architecture doc. Fix incidentally when touching those files. |
 | 24 | AA7, AA8 | `color: magenta` invalid + `color` not in frontmatter allowlist | Config | — | **Confirmed.** `visual-designer.md` and `code-reviewer.md` both use `color: magenta`. Cosmetic — **deferred** unless it causes runtime issues. |
-| 25 | AA9 | Redundant `references/protocol.md` body reference in 8 agents | Config | 3 | **Confirmed.** 8 of 9 agents reference `references/protocol.md` in body; protocol already auto-loaded via `skills` field. Fix: update wording to "protocol auto-loaded via skills." |
+| 25 | AA9 | Redundant `references/protocol.md` body reference in 8 agents | Config | 3 | **Done (Session 3).** All 8 agents updated — body now says "protocol auto-loaded via the `popcorn-xp-protocol` skill." |
 | 26 | AA10 | `lockf` is macOS-only | Hook | — | **Confirmed.** `context-store-update-read.sh` and `context-store-mark-dirty.sh` use `lockf`. **Deferred** — no Linux target documented. |
 | 27 | AA12 | Context store JSON example misleading in architecture doc | Docs | — | **Confirmed.** Example shows `edited_by`/`edited_at` as always-present; only appear after edit. Fix incidentally when touching docs. |
-| 28 | AA13 | `check-rotation.sh` missing `.active-team` guard | Hook | 2 | **Confirmed.** Only hook without the standard `.active-team` guard. Fix: add guard (3 lines) for consistency. |
+| 28 | AA13 | `check-rotation.sh` missing `.active-team` guard | Hook | 2 | **Done (Session 3).** Guard added — exits 0 when no `.active-team` file present. |
 | 29 | AA14 | `CLAUDE_CODE_COORDINATOR_MODE` undocumented | Docs | — | **Confirmed.** Referenced in 7+ files, 0 in official Claude Code docs. Fix: document as experimental in README/CLAUDE.md. |
-| 30 | V3 | Context store tracks files outside project directory | Hook | 2 | **Confirmed.** No path filtering in any of the three context store hooks. Fix: skip files outside `$CLAUDE_PROJECT_DIR`. |
+| 30 | V3 | Context store tracks files outside project directory | Hook | 2 | **Done (Session 3).** All three context store hooks skip files where path doesn't start with `$CLAUDE_PROJECT_DIR`. |
 | 31 | V7 | Session script bootstrapping gap | Docs | — | **Confirmed as inherent design limitation.** Template changes don't propagate to running sessions. Fix: document the limitation. Upgrade subcommand adds complexity for a rare edge case. |
-| 33 | P19 | Linter hooks reverting writes causes agent confusion | Protocol | 3 | **Valid.** No hook detects post-write content mismatches. Fix: add protocol guidance note about linter hooks. |
+| 33 | P19 | Linter hooks reverting writes causes agent confusion | Protocol | 3 | **Done (Session 3).** Protocol guidance note added about linter hooks and post-write content mismatches. |
 
 ## Implementation Batches
 
-Recommended order based on code-scout investigation (2026-04-03).
+Recommended order based on code-scout investigation (2026-04-03). **All batches completed in Session 3 (2026-04-03).**
 
-| Batch | Theme | Tickets | Est. effort |
-|-------|-------|---------|-------------|
-| 1 | Shutdown reliability | #1 (AA1), #3 (V9/V10), #10 (V11) | ~30 min |
-| 2 | Quick hook fixes | #5 (P13), #7 (V2), #14 (AA4), #28 (AA13), #30 (V3) | ~30 min |
-| 3 | Protocol text updates | #6 (V5), #17 (P14), #18 (P15), #19 (P16), #25 (AA9), #33 (P19) | ~1 hr |
-| 4 | Task claim enforcement | #2 (V6/P12/P20) — new PreToolUse:TaskUpdate hook | ~2-3 hrs |
+| Batch | Theme | Tickets | Status |
+|-------|-------|---------|--------|
+| 1 | Shutdown reliability | #1 (AA1), #3 (V9/V10), #10 (V11) | **Done** |
+| 2 | Quick hook fixes | #5 (P13), #7 (V2), #14 (AA4), #28 (AA13), #30 (V3) | **Done** |
+| 3 | Protocol text updates | #6 (V5), #17 (P14), #18 (P15), #19 (P16), #25 (AA9), #33 (P19) | **Done** |
+| 4 | Task claim enforcement | #2 (V6/P12/P20) — new PreToolUse:TaskUpdate hook | **Done** |
 
-**Deferred pending discussion:** #4 (navigator role design), #9 (waiting vs idle — depends on #4), #11 (stale read surfacing), #15 (OBJECTION in completion msg)
+**Deferred pending discussion:** #11 (stale read surfacing), #15 (OBJECTION in completion msg)
+
+**New from Session 3 retro:** #34 (file ownership convention), #35 (navigator ready signal — relates to #4), #36 (design alignment step)
 
 **Fix incidentally:** #23 (lens drift), #27 (JSON example)
 
@@ -138,6 +143,37 @@ Recommended order based on code-scout investigation (2026-04-03).
 | R5 | Agents SendMessage lead after writing retro | Session 2 retro | `notify-retro-written.sh` (PostToolUse Write). **Re-opened as V9**: agents use Bash, not Write tool |
 | R10 | Lead retro-file awareness via FileChanged hook | Session 2 retro | `notify-retro-received.sh` (FileChanged). **Re-opened as V10**: FileChanged never fires for subdirectory retro files |
 | R11 | Retro file reliability on shutdown | Session 2 retro | `enforce-no-idle.sh` phase reorder. Verified working in hook-validation session |
+
+## Completed (Session 3 — 2026-04-03)
+
+| ID | Title | Source | Notes |
+|----|-------|--------|-------|
+| AA1 | Shutdown deadlock: parallel TeammateIdle hooks override force-stop | Batch 1 | Added `.shutdown` early-exit guards to `remind-unread-advice.sh` and `remind-checkpoint.sh` |
+| V9, V10 | Retro notification chain is dead (both hooks never fire) | Batch 1 | Removed unreachable `notify-retro-written.sh` and `notify-retro-received.sh` from `hooks.json`; added SendMessage guidance to protocol |
+| V11 | `check-objections.sh` (SubagentStop) never fires for team members | Batch 1 | Added OBJECTION check to `enforce-no-idle.sh` shutdown phase — blocks (exit 2) with resolve instructions when unresolved OBJECTIONs exist |
+| P13 | Session script breaks on CWD change | Batch 2 | SKILL.md session template: unquoted heredoc + escaped variables + hardcoded team name in DIR |
+| V2 | Context store preview field causes token bloat (17K+ for 11 files) | Batch 2 | `context-store-update-read.sh`: limited preview to first 10 lines via `head -10` |
+| AA4 | Lead session reads attributed to "unknown" in context store | Batch 2 | All three context store hooks: added fallback to `"lead"` when `CLAUDE_CODE_COORDINATOR_MODE` is set |
+| AA13 | `check-rotation.sh` missing `.active-team` guard | Batch 2 | Added early exit when no `.active-team` file present |
+| V3 | Context store tracks files outside project directory | Batch 2 | All three context store hooks: added PROJECT_DIR boundary check (skip external files) |
+| V5 | Agents don't reliably act on TeammateIdle hook stderr | Batch 3 | Lead monitoring guidance: require direct SendMessage for critical actions instead of relying on stderr parsing |
+| P14 | Agents don't declare intent before going idle | Batch 3 | Added Rule 10 to protocol core rules: "Declare intent. Before going idle or switching focus, state what you plan to do next via SendMessage." |
+| P15 | Context compaction risks re-driving completed work | Batch 3 | Added post-compaction recovery checklist to protocol context limit section (4 steps) |
+| P16 | ADVICE.md resolutions need file:line citations | Batch 3 | Protocol guidance updated to require `file:line` format in resolution details |
+| P19 | Linter hooks reverting writes causes agent confusion | Batch 3 | Added Important Notes section to protocol with guidance on linter hook behavior |
+| AA9 | Redundant `references/protocol.md` body reference in 8 agents | Batch 3 | Updated all 8 agent files: body now says "protocol auto-loaded via the `popcorn-xp-protocol` skill" |
+| V6, P12, P20 | Agent self-assignment / shutdown race / lifespan enforcement | Batch 4 | New `check-task-claim.sh` (PreToolUse:TaskUpdate) blocks post-shutdown claims and concurrent claims. New `update-task-registry.sh` (PostToolUse:TaskUpdate) maintains `.task-registry` TSV. P20 lifespan limits deferred — no protocol-defined numeric limit |
+
+## Completed (Session 4 — 2026-04-03)
+
+| ID | Title | Source | Notes |
+|----|-------|--------|-------|
+| P10, P11, P17 | Navigator role ineffective — all navigators go idle after 1-2 messages | Refactor pass | Added explicit `agent-state/*.json`, mandatory READY artifacts, and waiting-state-aware idle enforcement |
+| V8 | `enforce-no-idle` can't distinguish waiting-for-partner from truly idle | Refactor pass | Added explicit waiting phases plus READY gating in `enforce-no-idle.sh` |
+| P18 | Mocked hooks gave false confidence — need integration test guidance | Refactor pass | Added replay-fixture tests in `tests/test-hooks.sh` and documented replay/live-test split |
+| S3-1 | Parallel agents need file ownership convention | Session 3 retro | Lead skill now requires declared write sets; `context-store-mark-dirty.sh` blocks out-of-scope edits |
+| S3-2 | Navigator "ready for implementation" signal | Session 3 retro | Added `session ready` command, READY markdown artifact, and hook checks |
+| S3-3 | Design alignment step before complex implementation tasks | Session 3 retro | Added `ambiguity: ambiguous` handshake requirement in lead skill and protocol |
 
 ## Closed (Validation — 2026-04-03)
 

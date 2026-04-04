@@ -8,16 +8,13 @@ set -euo pipefail
 # Always allows the read to proceed (inform, not deny).
 # No-op when no active popcorn-xp session.
 
-POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
-TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
-[ -z "$TEAM" ] && exit 0
-[ ! -d "$POPCORN_DIR/$TEAM" ] && exit 0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/session-common.sh"
+px_load_session || exit 0
 
 STORE="$POPCORN_DIR/context-store.json"
 [ ! -f "$STORE" ] && exit 0
 
-# Source the logger
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/context-store-log.sh"
 
 INPUT=$(cat)
@@ -29,11 +26,15 @@ case "$FILE_PATH" in
   */.popcorn-xp/*|.popcorn-xp/*) exit 0 ;;
 esac
 
-AGENT=$(echo "$INPUT" | jq -r '.agent_type // "unknown"' 2>/dev/null || echo "unknown")
-# Prefix agent names with popcorn-xp: convention
-if [ "$AGENT" != "unknown" ] && ! [[ "$AGENT" =~ ^popcorn-xp: ]]; then
-  AGENT="popcorn-xp:$AGENT"
+# Skip files outside the project directory
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  case "$FILE_PATH" in
+    "${CLAUDE_PROJECT_DIR}"/*) ;;  # inside project — continue
+    *) exit 0 ;;
+  esac
 fi
+
+AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null || true)")
 
 # Read-only access, no lock needed
 ENTRY=$(jq -r --arg path "$FILE_PATH" '.[$path] // empty' "$STORE" 2>/dev/null || true)

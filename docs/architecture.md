@@ -46,13 +46,12 @@ A four-phase mechanical shutdown, mediated by signal files and `enforce-no-idle.
 2. Lead SendMessages each agent for retro
 3. enforce-no-idle sees retro-pending      → nudges idle agents to write retro
 4. Agents write retros via `session retro` → creates .retro-{agent}.md
-5. notify-retro-written nudges agent       → agent SendMessages the lead
-6. notify-retro-received tells the lead    → FileChanged hook fires
-7. Lead calls `session shutdown`           → creates .shutdown
-8. enforce-no-idle sees shutdown            → force-stops agents via {"continue": false}
-9. Lead writes RETRO.md
-10. check-retro-before-delete gates cleanup → blocks TeamDelete until RETRO.md exists
-11. Lead calls TeamDelete
+5. Agents SendMessage lead to confirm retro submitted
+6. Lead calls `session shutdown`           → creates .shutdown
+7. enforce-no-idle sees shutdown            → force-stops agents via {"continue": false}
+8. Lead writes RETRO.md
+9. check-retro-before-delete gates cleanup → blocks TeamDelete until RETRO.md exists
+10. Lead calls TeamDelete
 ```
 
 ## Agents
@@ -139,12 +138,6 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 |--------|---------|----------|
 | `context-store-update-read.sh` | Records read in context store | Writes agent name, timestamp, and file preview to `context-store.json`. Initializes store if needed. |
 
-#### PostToolUse — Write
-
-| Script | Purpose | Behavior |
-|--------|---------|----------|
-| `notify-retro-written.sh` | Nudges agent after retro write | If written file matches `.retro-*.md`, injects "SendMessage the lead to confirm." |
-
 #### TaskCompleted
 
 | Script | Purpose | Behavior |
@@ -166,17 +159,12 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 |--------|---------|----------|
 | `check-objections.sh` | Backup OBJECTION check | Blocks (exit 2) if unresolved OBJECTIONs exist. Safety net for when a teammate stops without completing a task. |
 
-#### FileChanged — `.retro-*.md`
-
-| Script | Purpose | Behavior |
-|--------|---------|----------|
-| `notify-retro-received.sh` | Tells lead a retro arrived | Counts collected retros, injects context for the lead. |
-
 ### Helper (not a hook)
 
 | Script | Purpose |
 |--------|---------|
 | `context-store-log.sh` | Sourced by context-store hooks. Provides `cs_log()` for appending events to `context-store.log`. |
+| `session-common.sh` | Shared active-team lookup, agent normalization, state-file access, and write-set helpers. |
 
 ### enforce-no-idle.sh Phases
 
@@ -187,9 +175,11 @@ The core enforcement hook. Checked in priority order:
 | 1. Retro pending | `.retro-requested` exists, `.retro-{agent}.md` missing | Nudge retro (exit 2) |
 | 2. Shutdown | `.shutdown` exists, retro done or never requested | Force-stop via `{"continue": false}` (exit 0) |
 | 3. Retro done | Both exist, no `.shutdown` | Allow idle (exit 0) |
-| 4. Working | Default | Nudge "go find work" (exit 2) |
+| 4. Waiting | Agent state is `waiting_on_driver` or `waiting_on_verification` and READY is published | Allow idle (exit 0) |
+| 5. Navigator drift | Agent state is `navigating`, or waiting without READY | Block and require a READY artifact (exit 2) |
+| 6. Working | Default | Block and require explicit state + next action (exit 2) |
 
-Phase 1 taking priority over phase 2 is critical — it ensures agents can write retros before being stopped, even if `.shutdown` is already set.
+Phase 1 taking priority over phase 2 is critical — it ensures agents can write retros before being stopped, even if `.shutdown` is already set. The major design change is that waiting is now explicit; the hook no longer has to guess whether a silent navigator is productive or lost.
 
 ### Hook Exit Code Semantics
 
@@ -210,6 +200,9 @@ Created at `.popcorn-xp/{team-name}/` during setup. Gitignored.
 | `ADVICE.md` | Append-only advice ledger (advice + resolutions) | Teammates via `session advice` / `session resolve` |
 | `RETRO.md` | Accumulated retros across sessions | Lead after shutdown |
 | `session` | Bash helper script — the only interface for writing to LOG.md and ADVICE.md | Lead creates at setup |
+| `agent-state/{agent}.json` | Explicit role / phase / task / write-set state | Teammates via `session state`, `session ready`, `session writeset` |
+| `navigator-ready-{agent}.md` | Navigator READY artifact | Navigators via `session ready` |
+| `snapshot-{agent}.md` | Rotation snapshot for the next driver | Drivers via `session snapshot` |
 
 ### Signal Files
 
@@ -219,7 +212,7 @@ Created at `.popcorn-xp/{team-name}/` during setup. Gitignored.
 | `.dirty` | Flag: uncheckpointed edits exist | `mark-dirty.sh` | `remind-checkpoint.sh` |
 | `.edit-count` | Counter: number of edits since last checkpoint | `mark-dirty.sh` | `remind-checkpoint.sh` |
 | `.retro-requested` | Flag: lead has asked for retros | `session retro-request` | `enforce-no-idle.sh` |
-| `.retro-{agent}.md` | Agent's retro observations | `session retro` | `enforce-no-idle.sh`, `notify-retro-received.sh` |
+| `.retro-{agent}.md` | Agent's retro observations | `session retro` | `enforce-no-idle.sh` |
 | `.shutdown` | Flag: lead has initiated shutdown | `session shutdown` | `enforce-no-idle.sh` |
 
 ### The `session` Script
@@ -232,10 +225,28 @@ The only interface teammates use for session file writes. Commands:
 | `session advice TYPE ID "description"` | Appends advice entry to ADVICE.md (idempotent — skips if ID exists). |
 | `session resolve ID OUTCOME "detail"` | Appends resolution entry to ADVICE.md. |
 | `session task ID DRIVER NAV` | Appends task header to LOG.md. |
+| `session state AGENT ROLE PHASE TASK_ID BLOCKED_ON NEXT_ACTION` | Writes explicit per-agent state to `agent-state/{agent}.json`. |
+| `session ready AGENT TASK_ID KIND "detail"` | Publishes navigator READY artifact and moves navigator into `waiting_on_driver`. |
+| `session writeset AGENT TASK_ID <files...>` | Records the current task write set. |
 | `session handoff AGENT` | Creates handoff template at `handoff-{agent}.md`. |
+| `session snapshot AGENT TASK_ID` | Creates rotation snapshot template at `snapshot-{agent}.md`. |
 | `session retro-request` | Creates `.retro-requested` signal file. |
 | `session retro AGENT "observations"` | Writes retro to `.retro-{agent}.md`. |
 | `session shutdown` | Creates `.shutdown` signal file. |
+
+## Explicit Agent State
+
+Popcorn XP now keeps a small JSON state file per agent at `.popcorn-xp/{team}/agent-state/{agent}.json` so the runtime no longer has to infer collaboration state from task status and idle timing alone.
+
+Each state file tracks:
+
+- `role` — `driver` or `navigator`
+- `phase` — `driving`, `navigating`, `waiting_on_driver`, `waiting_on_verification`, `handoff_pending`, `completed`
+- `task_id`
+- `blocked_on`
+- `next_action`
+- `navigator_ready`, `navigator_artifact_kind`, `navigator_artifact_status`
+- `write_set`
 
 ## Advice Resolution Model
 
@@ -282,7 +293,7 @@ Each file entry tracks:
 }
 ```
 
-The soft lock is informational, not blocking. When agent A reads a file marked dirty by agent B, the hook injects a warning but allows the read. Uses `lockf` for mutual exclusion on macOS.
+The soft lock is informational, not blocking. When agent A reads a file marked dirty by agent B, the hook injects a warning but allows the read. Edits are stricter: if an agent edits outside its declared task write set, `context-store-mark-dirty.sh` blocks the edit until file ownership is clarified. Uses `lockf` for mutual exclusion on macOS.
 
 `context-store.log` records all read/edit events with timestamps, agent names, and file paths.
 
@@ -299,4 +310,4 @@ Per the [hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hoo
 | Plugin `hooks/hooks.json` | When plugin is enabled |
 | **Skill or agent frontmatter** | **While the skill or agent is active** |
 
-Hooks that only make sense for teammates (mark-dirty, context-store-*, remind-*, enforce-no-idle) could be moved to agent frontmatter to eliminate unnecessary no-op executions during solo use. Hooks that fire on the lead (check-retro-before-delete, notify-retro-received, check-rotation) would stay in hooks.json or the lead skill.
+Hooks that only make sense for teammates (mark-dirty, context-store-*, remind-*, enforce-no-idle) could be moved to agent frontmatter to eliminate unnecessary no-op executions during solo use. Hooks that fire on the lead (check-retro-before-delete, check-rotation) would stay in hooks.json or the lead skill.

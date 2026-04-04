@@ -8,14 +8,21 @@ set -euo pipefail
 # Blocking — exits 2 with plain text feedback to prevent idle transition.
 # No-op when no active popcorn-xp session or no dirty flag.
 
-POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
-TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
-[ -z "$TEAM" ] && exit 0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/session-common.sh"
+px_load_session || exit 0
+[ -f "$TEAM_DIR/.shutdown" ] && exit 0
 
-[ ! -f "$POPCORN_DIR/$TEAM/.dirty" ] && exit 0
+INPUT=$(cat)
+AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.teammate_name // .agent_type // empty' 2>/dev/null || true)")
+AGENT_SHORT=$(px_short_agent "$AGENT")
+PHASE=$(px_state_field "$AGENT_SHORT" "phase")
+[ -n "$PHASE" ] && [ "$PHASE" != "driving" ] && exit 0
+
+[ ! -f "$TEAM_DIR/.dirty" ] && exit 0
 
 # Read edit count if available
-COUNT_FILE="$POPCORN_DIR/$TEAM/.edit-count"
+COUNT_FILE="$TEAM_DIR/.edit-count"
 COUNT=0
 [ -f "$COUNT_FILE" ] && COUNT=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
 
@@ -26,7 +33,7 @@ else
 fi
 
 # Remove flags so we don't nag on every idle cycle
-rm -f "$POPCORN_DIR/$TEAM/.dirty"
-rm -f "$POPCORN_DIR/$TEAM/.edit-count"
+rm -f "$TEAM_DIR/.dirty"
+rm -f "$TEAM_DIR/.edit-count"
 
 exit 2

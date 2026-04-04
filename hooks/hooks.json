@@ -103,6 +103,17 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-task-claim.sh",
+            "timeout": 5,
+            "statusMessage": "Checking task claim..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -118,23 +129,11 @@
         ]
       },
       {
-        "matcher": "Write",
+        "matcher": "TaskUpdate",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify-retro-written.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "FileChanged": [
-      {
-        "matcher": "\\.retro-.*\\.md$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify-retro-received.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-task-registry.sh",
             "timeout": 5
           }
         ]

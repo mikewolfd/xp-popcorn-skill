@@ -1,0 +1,8 @@
+{
+  "tool_input": {
+    "taskId": "12",
+    "status": "in_progress",
+    "owner": "craftsman"
+  },
+  "agent_type": "popcorn-xp:craftsman"
+}
