@@ -204,126 +204,133 @@ export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70
 
 ### 3. Create Tasks
 
-Use TaskCreate for each work item. Set dependencies with TaskUpdate so tasks unblock in order.
+Every logical task becomes a **pair**: a drive task and a navigate task. This is not optional — solo drivers are a protocol violation. The paired structure makes pairing mechanical: if a drive task has no matching navigate task, the gap is visible in the task list.
 
-Each task should declare:
-- `ambiguity`: `simple` or `ambiguous`
+**Pair structure:**
+
+```
+T{n} drive: "{what to implement}"
+T{n} nav:   "Navigate T{n} — {what to review, READY scope}"
+```
+
+The drive task describes the implementation: what to change, file ownership, exit criteria. The navigate task describes the review scope: what to check, what READY artifact to produce, what risks to watch.
+
+**Task fields** — each drive task should declare:
 - `writes`: the files this task may edit
 - `reads`: optional files the navigator should stay ahead on
 
-For `ambiguous` tasks, require a short design-alignment handshake before the first edit: the driver states the approach, the navigator responds with a READY artifact, and only then does implementation begin.
+For `ambiguous` tasks (novel design, unclear scope), require a design-alignment handshake before the first edit: the driver states the approach, the navigator responds with a READY artifact, and only then does implementation begin.
 
-**Decompose aggressively.** The most common lead failure is tasks that are too large. A task that takes an agent 30+ turns is almost certainly too big. Target 5-8 tasks minimum for any non-trivial session. More tasks = more rotations = more knowledge distribution = better results.
+**Navigator lifecycle within a pair:**
 
-**Decomposition checklist — run this on every task before creating it:**
+1. Navigator starts when the drive task is assigned (both tasks are assigned simultaneously)
+2. Navigator reads code, publishes READY artifact, sends advice
+3. Navigator stays active through the driver's full implementation cycle — sending advice, responding to questions, verifying checkpoints
+4. Driver completes their drive task (OBJECTIONs must be resolved)
+5. Navigator verifies the final state, then completes their nav task
 
-1. **The "and" test.** If the task description contains "and" connecting two distinct actions, split it. "Add validation and write tests" → two tasks.
-2. **The file test.** If the task requires meaningful changes to 3+ files, split by file or layer. "Update the parser, transformer, and renderer" → three tasks.
-3. **The verb test.** Each task should have one primary verb: implement, test, refactor, validate, review. Multiple verbs = multiple tasks.
-4. **The 15-minute test.** If you imagine a human pair spending more than 15 minutes on it, it's too big. Split by sub-behavior or sub-component.
-5. **The description length test.** If the task description needs more than 3-4 sentences to explain what to do, the scope is too broad. A well-scoped task is obvious from a short description.
+The navigate task completes AFTER the drive task. This gives the navigator a verification pass on the finished work — exactly the quality gate that solo drivers skip.
 
-**Example: too coarse (3 tasks)**
+**Dependencies between pairs:**
 
-```
-Task 1: "Map affected files, entry points, and constraints"
-Task 2: "Implement depth validation in parseBlock()" — blocked by 1
-Task 3: "Add regression tests and run full suite" — blocked by 2
-```
-
-**Example: properly decomposed (6 tasks)**
+- Drive tasks chain sequentially: T2-drive blocked by T1-drive (no two drivers editing the same codebase simultaneously, unless files are disjoint)
+- Navigate tasks are NOT blocked by anything within their pair — the navigator starts when the driver starts
+- Navigate tasks for the NEXT pair can start early: T2-nav can read ahead while T1 is still in progress
 
 ```
-Task 1: "Inventory affected files and entry points for depth validation"
-Task 2: "Add maxDepth parameter to parseBlock() signature and threading" — blocked by 1
-Task 3: "Implement depth-exceeded error path in parseBlock()" — blocked by 2
-Task 4: "Add unit tests for valid depths (0, 1, max-1, max)" — blocked by 3
-Task 5: "Add unit tests for invalid depths (max+1, negative, nested overflow)" — blocked by 3
-Task 6: "Run full test suite, verify no regressions in existing parse tests" — blocked by 4, 5
+T1 drive: "Add maxDepth parameter to parseBlock()"
+T1 nav:   "Navigate T1 — review signature threading, check callers"
+
+T2 drive: "Implement depth-exceeded error path" — blocked by T1-drive
+T2 nav:   "Navigate T2 — review error semantics, check test coverage"
+
+T3 drive: "Add unit tests for valid/invalid depths" — blocked by T2-drive
+T3 nav:   "Navigate T3 — verify edge cases, check assertion quality"
 ```
 
-Notice: task 2 was split from task 3 (signature change vs. error path — different concerns). Tasks 4 and 5 are parallel (valid vs. invalid cases — different agents can drive them simultaneously). Task 6 is a separate verification task with fresh eyes.
+**Rotation is encoded in the assignments:**
 
-**Split by observable behavior, not by implementation step.** "Implement the happy path" and "implement error handling" are better splits than "write the function" and "wire it up" — the first pair each deliver testable behavior, the second pair don't.
+```
+T1: craftsman drives, expert navigates
+T2: expert drives (was T1 navigator), craftsman navigates (was T1 driver)
+T3: craftsman drives (was T2 navigator), expert navigates (was T2 driver)
+```
+
+The navigator-becomes-driver pattern is visible in the task assignments, not a soft rule the lead forgets.
+
+**Parallel pairs** work when drive tasks touch disjoint files:
+
+```
+T1 drive: "Add drop zone markup"           — writes: src/DropZone.tsx
+T1 nav:   "Navigate T1 — review drop zone markup"
+T2 drive: "Add drag handlers"              — writes: src/DragSource.tsx
+T2 nav:   "Navigate T2 — review drag handler state"
+T3 drive: "Integrate drop + drag + state"  — blocked by T1-drive, T2-drive
+T3 nav:   "Navigate T3 — verify integration, test drag-drop flow"
+```
+
+T1 and T2 run in parallel (disjoint files). Each has its own navigator. T3 depends on both.
+
+**Decompose aggressively.** The most common lead failure is tasks that are too large. A task that takes an agent 30+ turns is almost certainly too big. Target 5-8 logical tasks (10-16 actual tasks with pairs) for any non-trivial session.
+
+**Decomposition checklist — run this on every logical task before creating the pair:**
+
+1. **The "and" test.** If the description contains "and" connecting two distinct actions, split it.
+2. **The file test.** If it requires meaningful changes to 3+ files, split by file or layer.
+3. **The verb test.** Each task should have one primary verb: implement, test, refactor, validate, review.
+4. **The 15-minute test.** If a human pair would spend more than 15 minutes, it's too big.
+5. **The description length test.** More than 3-4 sentences to explain = too broad.
+
+**Split by observable behavior, not by implementation step.** "Implement the happy path" and "implement error handling" are better splits than "write the function" and "wire it up."
 
 Include enough context in each task description for a teammate to execute it independently. State what to do, why it matters, and what success looks like.
 
-**Research and analysis pipelines often run in parallel, not series.** When two agents can gather information independently (one reads the implementation, another reads the spec), model them as concurrent tasks that both feed a synthesis task — not a serial chain. Serial chains cause unnecessary idle time when agents could be working in parallel.
-
-Example parallel breakdown:
+**Research and analysis pipelines** often run in parallel. When two agents can gather information independently, model them as concurrent pairs that feed a synthesis pair:
 
 ```
-Task 1a: "Inventory implementation — components, APIs, constraints" (no dependencies)
-Task 1b: "Read spec — catalog what each section requires" (no dependencies)
-Task 2:  "Cross-reference: implementation vs. spec" — blocked by 1a and 1b
-Task 3:  "Synthesize findings into prioritized gap list" — blocked by 2
+T1a drive: "Inventory implementation — components, APIs, constraints"
+T1a nav:   "Navigate T1a — verify inventory completeness"
+T1b drive: "Read spec — catalog requirements"
+T1b nav:   "Navigate T1b — cross-check spec interpretation"
+T2 drive:  "Cross-reference: implementation vs. spec" — blocked by T1a-drive, T1b-drive
+T2 nav:    "Navigate T2 — verify gap analysis"
 ```
 
-**For synthesis or authoring tasks, make expert review an explicit blocking sub-task.** Don't fold it into a note in the task description — review that isn't a hard dependency won't happen until after the synthesis is "done." Use a draft → review → finalize chain:
+**For synthesis or authoring tasks,** make expert review an explicit blocking sub-task:
 
 ```
-Task Xa: Draft synthesis
-Task Xb: Expert reviews draft — blocked by Xa (OBJECTION gate)
-Task Xc: Finalize — blocked by Xb
+T5 drive: "Draft synthesis"
+T5 nav:   "Navigate T5 — review draft for completeness"
+T6 drive: "Finalize synthesis" — blocked by T5-drive
+T6 nav:   "Navigate T6 — final verification pass"
 ```
 
-**Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` so tasks auto-unblock as each dependency completes. Teammates self-claim the next unblocked task based on rotation convention (navigator becomes driver), so the chain should reflect the intended execution order. You assign the first task; after that, the normal path flows through built-in task dependencies without your intervention. If you can anticipate auxiliary tasks — an API audit, a renderer compatibility check, a supplementary research pass — create them now. Tasks added mid-session arrive as addenda and feed synthesis less cleanly than tasks planned upfront.
+**Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` on drive tasks so they auto-unblock in order. Navigate tasks do not need formal blocking dependencies — they are assigned alongside their paired drive task and the navigator starts immediately.
 
-**Declare file ownership for parallel tasks.** If two tasks can run in parallel, each one must own a disjoint write set. Put the owned files directly in the task description so teammates can run:
+**Declare file ownership for parallel drive tasks.** If two drive tasks can run in parallel, each must own a disjoint write set. Put the owned files directly in the drive task description. If you cannot name a disjoint write set, the tasks are not really parallel.
 
-```text
-Task 4: Add verification hook replay tests
-ambiguity: simple
-writes: tests/test-hooks.sh, tests/fixtures/task-update-claim.json
-reads: hooks/scripts/check-task-claim.sh
-```
-
-If you cannot name a disjoint write set, the tasks are not really parallel.
-
-**When to include a separate verification task:**
+**Verification tasks** — when to include as a separate pair:
 
 - A different agent runs verification than wrote the code (fresh eyes)
 - Integration or E2E tests that weren't part of the unit test task
-- Verification requires a different environment (staging, browser, device)
 
-**When to fold verification into the last task's exit criteria:**
+When to fold into the last task's exit criteria:
 
 - Same agent would re-run the same tests
-- The test-writing task already runs all tests
 - The project is small enough that "run tests" takes seconds
 
-**Task sizing:** Each task is the smallest coherent unit that delivers testable or observable value. Run the decomposition checklist above on every task — if any check fires, split before creating.
+**QA and late-session verification pairs** should be assigned to fresh agents. Note this in the task description: "Assign to a fresh agent." Plan the fresh spawn in the task breakdown, not as a reactive decision.
 
-A 3-task session means almost no rotation. Target 5-8 tasks. A session with 7 small tasks where both agents drove multiple times beats a session with 3 large tasks where one agent did all the work. Verification tasks force rotations and bring fresh eyes — that's a feature, not overhead.
+**If task scope is unclear,** create a parallel scout research pair with no dependencies alongside the first implementation pair.
 
-Examples of splitting:
-
-- "Implement drag-and-drop" → split: "add drop zone markup", "implement drag start/move handlers", "implement drop handler and state update", "add visual feedback during drag", "test drag-and-drop with keyboard"
-- "Add auth middleware" → split: "add middleware skeleton and route registration", "implement token validation logic", "implement error responses (401, 403)", "add tests for valid tokens", "add tests for expired/invalid/missing tokens"
-- "Refactor config loading" → split: "extract config schema type", "implement schema validation", "migrate callers to validated config", "add tests for invalid config shapes"
-
-Examples of valid single tasks:
-
-- "Add regression test for invalid input" → one verb, one deliverable
-- "Implement depth-exceeded error path in parseBlock()" → one behavior, one file
-
-Examples of tasks to fold (not standalone):
-
-- "Read the parser module" → fold into first implementation task
-- "Run `tsc --noEmit`" → fold into task exit criteria
-
-**QA and late-session verification tasks** should be assigned to fresh agents — not agents that drove implementation. Note this in the task description: "Assign to a fresh agent. Do not reuse an agent that has completed 3+ tasks in this session." Plan the fresh spawn in the task breakdown, not as a reactive decision when an agent degrades.
-
-**If task scope is unclear or spans multiple files/areas,** create a parallel scout research task with no dependencies alongside the first implementation task. Do not serialize orientation before implementation — plan the full dependency chain upfront and let scout research feed into it concurrently. A scout task that finishes before the implementation task starts is still valuable; a scout task created after implementation has started is largely wasted.
-
-**For sessions with 4+ implementation tasks,** schedule independent code review as explicit tasks with blocking dependencies:
+**For sessions with 4+ implementation pairs,** schedule independent code review as explicit tasks:
 
 ```
-Task N:   Code review phases 1-2 — blocked by tasks 1, 2
-Task N+1: Code review phases 3-5 — blocked by tasks 3, 4, 5
+T-review drive: "Code review T1-T3 changes" — blocked by T1-drive, T2-drive, T3-drive
+T-review nav:   "Navigate review — verify findings, check false positives"
 ```
 
-The reviewer agent is launched independently (no `team_name`) and its findings are relayed by the lead. Planning these as tasks ensures they happen at the right checkpoint, not whenever the lead remembers.
+The reviewer's findings are relayed by the lead as OBJECTIONs or SMELLs to the relevant driver.
 
 ### 4. Spawn Teammates
 
@@ -378,11 +385,15 @@ Agent(name: "test-engineer", subagent_type: "test-engineer",
   prompt: "FIRST: Skill('popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
 ```
 
-Assign the first task to the driver via TaskUpdate. Alongside the assignment, SendMessage the driver and navigator with the task metadata they must mirror into session state:
+Assign the first task pair — both the drive task and navigate task — simultaneously. SendMessage both agents with their task metadata:
 
-- Driver: `.popcorn-xp/{team-name}/session state {agent} driver driving {task-id} - 'Implement the assigned task and checkpoint after meaningful edits.'`
-- Navigator: `.popcorn-xp/{team-name}/session state {agent} navigator navigating {task-id} {driver} 'Read the spec/code and publish a READY artifact before edits start.'`
-- Both: `.popcorn-xp/{team-name}/session writeset {agent} {task-id} <owned files...>`
+- Driver: `TaskUpdate(T1-drive, assigned to craftsman)` + SendMessage with:
+  `.popcorn-xp/{team-name}/session state {agent} driver driving {task-id} - 'Implement the assigned task and checkpoint after meaningful edits.'`
+  `.popcorn-xp/{team-name}/session writeset {agent} {task-id} <owned files...>`
+- Navigator: `TaskUpdate(T1-nav, assigned to expert)` + SendMessage with:
+  `.popcorn-xp/{team-name}/session state {agent} navigator navigating {task-id} {driver} 'Read the spec/code and publish a READY artifact before edits start.'`
+
+Both agents receive their assignments at the same time. The navigator begins reviewing immediately — they do not wait for the driver to start.
 
 **Reuse orientation agents.** If you spawn a scout or research-focused agent for an initial orientation task, create their follow-up task in Step 3 — not mid-session. A follow-up task added after synthesis has already started arrives as an addendum rather than feeding it. Either plan the second assignment upfront (test review, API audit, demo validation) or don't spawn the agent.
 
@@ -398,11 +409,11 @@ The teammate explores and proposes an approach. You review and approve or reject
 
 You receive messages from teammates automatically. Your role during execution:
 
-- **Let rotation self-progress.** Teammates self-claim the next unblocked task based on rotation convention: the navigator becomes the driver, the driver becomes the navigator. You set up the dependency chain in Step 3; the platform auto-unblocks tasks and teammates self-claim. Only intervene to override (wrong agent claimed, reorder needed, scope changed) or if self-claim stalls. The check-rotation hook blocks same-agent consecutive driving as a safety net.
-- **Use bugfix lanes when the work is naturally asymmetric.** For bug-driven sessions, prefer `confirm -> RED -> GREEN -> verify` over forcing strict alternation on every task. Typical split: tester confirms the bug and writes RED, craftsman drives GREEN, then a fresh-eye verification task closes the loop. This is the main exception to navigator-becomes-driver; use it when it simplifies the session rather than adding more role churn.
+- **Assign pairs, enforce rotation.** When a drive task completes, assign the next pair with roles swapped: the navigator claims the next drive task, the driver claims the next nav task. This is the mechanical rotation — it happens at pair assignment, not as a soft rule. If the same agent has driven two consecutive pairs, you have failed to rotate. Fix it on the next assignment.
+- **Navigator completes after driver.** When a driver marks their drive task complete, SendMessage the navigator to verify and complete their nav task. The navigator's final action is a verification pass on the finished work. If the navigator finds issues during verification, they send advice (which may include OBJECTIONs that reopen the drive task).
+- **Use bugfix lanes when the work is naturally asymmetric.** For bug-driven sessions, prefer `confirm -> RED -> GREEN -> verify` over forcing strict alternation on every pair. Typical split: tester drives confirmation+RED pair, craftsman drives GREEN pair, then a fresh-eye verification pair closes the loop.
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
-- **Watch for rotation failures.** **At least one rotation is mandatory per session.** If the same agent has driven every task and you're approaching the final task, intervene and force a swap. A session with no rotation is a solo session with an expensive spectator.
 - **No idle agents.** If a teammate is not driving, they should be navigating, reviewing, reading ahead, or planning. Require navigators to publish a READY artifact before edits start: risk check, test plan, spec check, or review note. After that, they may enter `waiting_on_driver` explicitly; "silent and maybe thinking" is not a valid state.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
 - **Periodic code review.** After every 2-3 completed tasks (or after any task that touches shared/critical code), launch `popcorn-xp:code-reviewer` independently — **not** as a teammate. Use the Agent tool without `team_name`. Give it the list of files changed since the last review and ask for a review certificate. When the review comes back:

@@ -36,16 +36,15 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 | Event | Script | Purpose |
 |-------|--------|---------|
 | TaskCompleted | `check-advice-on-complete.sh` | Blocks on unresolved OBJECTIONs, warns on open SMELLs/STEERs/FYIs |
-| TaskCompleted | `check-rotation.sh` | Warns when same agent drives all completed tasks |
-| SubagentStop | `check-objections.sh` | Backup block on unresolved OBJECTIONs |
-| TeammateIdle | `remind-unread-advice.sh` | Reminds agent of open advice items |
-| TeammateIdle | `remind-checkpoint.sh` | Reminds driver to checkpoint after edits |
-| TeammateIdle | `enforce-no-idle.sh` | Phase-aware: working→nudge, retro-pending→nudge retro, retro-done→allow, shutdown→force-stop |
-| PreToolUse(Read) | `context-store-check.sh` | Checks if file was previously read/edited; injects cache hit metadata |
+| TeammateIdle | `enforce-no-idle.sh` | Phase-aware idle enforcement with checkpoint and advice checks, debounce, and shutdown lifecycle |
+| PreCompact | `mark-compact-pending.sh` | Records compaction event for controlled retirement |
+| PostCompact | `record-compact-summary.sh` | Preserves compact summary and queues retirement |
+| PreToolUse(Read) | `context-store-check.sh` | Warns when reading a file dirty-edited by another agent (cross-agent only) |
 | PreToolUse(Edit/Write) | `context-store-mark-dirty.sh` | Marks file dirty on edit; warns if another agent is actively editing (soft lock) |
-| PostToolUse(Read) | `context-store-update-read.sh` | Records file read event, agent, timestamp, and preview in shared context store |
-| PreToolUse(Edit/Write) | `mark-dirty.sh` | Counts uncheckpointed edits, soft reminder after 3+ |
 | PreToolUse(TeamDelete) | `check-retro-before-delete.sh` | Blocks TeamDelete until RETRO.md exists with >= 5 lines |
+| PreToolUse(TaskUpdate) | `check-task-claim.sh` | Blocks claims after shutdown; blocks claiming while already driving |
+| PostToolUse(TeamDelete) | `cleanup-context-store.sh` | Removes shared context-store artifacts after team deletion |
+| PostToolUse(TaskUpdate) | `update-task-state.sh` | Synchronizes task claims/completions into agent-state/*.json |
 
 ### Context Store (Soft Lock)
 
@@ -54,19 +53,13 @@ The context store enables cross-agent awareness of file edits during pair progra
 **Store Location**: `.popcorn-xp/context-store.json` (shared across agents during session)
 
 **Tracking**: Each file entry records:
-- `read_by`: Agent name (popcorn-xp:*) who last read the file
-- `read_at`: Timestamp of last read
-- `dirty`: Boolean; `true` if the file has unsaved edits by any agent
+- `dirty`: Boolean; `true` if the file has been edited by any agent
 - `edited_by`: Agent name of the current editor
 - `edited_at`: Timestamp of most recent edit
-- `preview`: Cached file content (for reference)
 
-**Soft Lock Behavior**: When an agent reads a file marked dirty by another agent, the context store hooks inject metadata:
-- Cache hit message shows who edited it and when
-- Allows the read to proceed (not blocking)
-- Used for awareness, not enforcement — promotes async communication
+**Soft Lock Behavior**: When an agent reads a file marked dirty by a different agent, the context store check hook injects a warning. Clean reads and same-agent reads produce no output.
 
-**Event Log**: `.popcorn-xp/context-store.log` records all read/edit events with agent names, file paths, and lock status.
+**Event Log**: `.popcorn-xp/context-store.log` records edit events with agent names, file paths, and lock status. Used by `enforce-no-idle.sh` for checkpoint counting.
 
 ### Session Files (Runtime)
 
@@ -75,9 +68,14 @@ Created at `.popcorn-xp/{team-name}/` during session setup. Gitignored.
 - `LOG.md` — Append-only checkpoint log
 - `ADVICE.md` — Append-only advice ledger (advice entries + resolution entries)
 - `RETRO.md` — Accumulated retrospectives across sessions
-- `session` — Bash helper script teammates call to append entries (never edit files directly)
+- `session` — Thin wrapper that execs `bin/session` (the canonical session helper)
 - `.active-team` — Contains current team name (at `.popcorn-xp/.active-team`)
-- Signal files: `.dirty`, `.edit-count`, `.retro-requested`, `.retro-{agent}.md`, `.shutdown`
+- `agent-state/*.json` — Per-agent machine-readable state (role, phase, task, write set)
+- Signal files: `.retro-requested`, `.retro-{agent}.md`, `.shutdown`, `.checkpoint-cursor`
+
+### Paired Task Model
+
+Every logical task becomes two tasks: a drive task and a navigate task. This makes pairing structural — a drive task without a matching navigate task is a visible gap. The navigator stays active through the driver's full cycle and completes after verifying the driver's finished work. Rotation is encoded in the assignments: the T1 navigator claims T2's drive task, and vice versa.
 
 ### Advice Resolution Model
 
@@ -98,8 +96,8 @@ Four-phase lifecycle enforced by `enforce-no-idle.sh` reading signal files:
 ## Key Conventions
 
 - Hook scripts use `$CLAUDE_PROJECT_DIR` (set by Claude Code) to find `.popcorn-xp/`.
-- The `session` script is the only interface teammates use to write to LOG.md and ADVICE.md.
-- `session log` resets `.dirty` and `.edit-count` (checkpoint clears the edit counter).
+- `bin/session` is the canonical session helper. A thin wrapper at `.popcorn-xp/{team}/session` execs it.
+- `session log` advances the checkpoint cursor (context-store.log line count).
 - Context store agent names follow `popcorn-xp:<agent-name>` convention (prefixed by hooks).
 - `references/protocol.md` contains teammate prompt templates (driver, navigator, advisor) that the lead includes when spawning agents. This is the detailed version; the protocol skill is the condensed version auto-loaded into agents.
 - `research/` contains background research on Claude Code features. Not loaded at runtime.
