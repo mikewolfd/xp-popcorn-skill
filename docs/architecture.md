@@ -77,10 +77,10 @@ Each agent has a **lens** — a question they filter everything through:
 | `craftsman` | "Is this clean and readable?" |
 | `expert` | "Does this actually work in edge cases?" |
 | `tester` | "How will we prove this works?" |
-| `service-designer` | "Does the interface serve the experience?" |
+| `service-designer` | "Does the interface serve the experience — from API contract to user interaction?" |
 | `visual-designer` | "Does this look right and feel right?" |
 | `qa` | "Does this work from the user's perspective?" |
-| `product-manager` | "What problem are we solving?" |
+| `product-manager` | "What problem are we solving, and is this the right way to solve it?" |
 | `code-reviewer` | "What does this code actually do, and can I prove it?" |
 
 The lens shapes how an agent thinks, not what it's allowed to do. Any agent can drive, navigate, write tests, or review code.
@@ -138,32 +138,17 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 |--------|---------|----------|
 | `cleanup-context-store.sh` | Clears shared context-store artifacts | Removes `context-store.json`, `context-store.log`, and the lock file after TeamDelete succeeds. |
 
-#### PostToolUse — Read
-
-| Script | Purpose | Behavior |
-|--------|---------|----------|
-| `context-store-update-read.sh` | Records read in context store | Writes agent name, timestamp, and read range to `context-store.json`. Initializes store if needed. |
-
 #### TaskCompleted
 
 | Script | Purpose | Behavior |
 |--------|---------|----------|
 | `check-advice-on-complete.sh` | Enforces OBJECTION engagement | Blocks (exit 2) if unresolved OBJECTIONs exist. Warns (additionalContext) about open SMELLs/STEERs/FYIs. |
-| `check-rotation.sh` | Warns about missing rotation | If all completed tasks had the same driver, injects rotation warning. |
 
 #### TeammateIdle
 
 | Script | Purpose | Behavior |
 |--------|---------|----------|
-| `remind-unread-advice.sh` | Reminds agent of open advice | Counts unresolved items by type. Blocks (exit 2) with summary. |
-| `remind-checkpoint.sh` | Reminds driver to checkpoint | Counts `EDIT` events in `context-store.log` since `.checkpoint-cursor` and blocks (exit 2) until the driver logs a checkpoint. |
-| `enforce-no-idle.sh` | Phase-aware idle enforcement | Four phases checked in priority order (see below). |
-
-#### SubagentStop
-
-| Script | Purpose | Behavior |
-|--------|---------|----------|
-| `check-objections.sh` | Backup OBJECTION check | Blocks (exit 2) if unresolved OBJECTIONs exist. Safety net for when a teammate stops without completing a task. |
+| `enforce-no-idle.sh` | Phase-aware idle enforcement | Seven phases checked in priority order (see below). |
 
 #### PreCompact / PostCompact
 
@@ -215,7 +200,7 @@ Created at `.popcorn-xp/{team-name}/` during setup. Gitignored.
 | `RETRO.md` | Accumulated retros across sessions | Lead after shutdown |
 | `session` | Bash helper script — the only interface for writing to LOG.md and ADVICE.md | Lead creates at setup |
 | `agent-state/{agent}.json` | Explicit role / phase / task / write-set state | Teammates via `session state`, `session ready`, `session writeset` |
-| `navigator-ready-{agent}.md` | Navigator READY artifact | Navigators via `session ready` |
+| `navigator-ready-{agent}-T{n}.md` | Navigator READY artifact | Navigators via `session ready` |
 | `snapshot-{agent}.md` | Rotation snapshot for the next driver | Drivers via `session snapshot` |
 
 ### Signal Files
@@ -284,23 +269,18 @@ REJECTED is a first-class outcome. A driver who rejects an OBJECTION with sound 
 
 `context-store.json` at `.popcorn-xp/context-store.json` enables cross-agent file awareness.
 
-Three hooks maintain it:
+Two hooks maintain it:
 - `context-store-check.sh` (PreToolUse Read) — reads from the store, injects metadata
 - `context-store-mark-dirty.sh` (PreToolUse Edit/Write) — logs every in-project edit, marks files dirty, detects soft locks, and emits checkpoint nudges
-- `context-store-update-read.sh` (PostToolUse Read) — records reads as metadata only
 
 Each file entry tracks:
 
 ```json
 {
   "path/to/file": {
-    "read_by": "popcorn-xp:craftsman",
-    "read_at": "2026-04-03T14:30:00Z",
     "dirty": true,
     "edited_by": "popcorn-xp:expert",
-    "edited_at": "2026-04-03T14:32:00Z",
-    "offset": null,
-    "limit": null
+    "edited_at": "2026-04-03T14:32:00Z"
   }
 }
 ```

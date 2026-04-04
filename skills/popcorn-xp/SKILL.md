@@ -36,16 +36,16 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 | `popcorn-xp:scout` | "Are we solving the right problem?" |
 | `popcorn-xp:craftsman` | "Is this clean and readable?" |
 | `popcorn-xp:expert` | "Does this actually work in edge cases?" |
-| `popcorn-xp:tester` | "How will we prove this?" |
+| `popcorn-xp:tester` | "How will we prove this works?" |
 
 **Specialist roles (when needed):**
 
 | Agent | Lens |
 |-------|------|
-| `popcorn-xp:service-designer` | "Does the interface serve the experience — API to UI?" |
+| `popcorn-xp:service-designer` | "Does the interface serve the experience — from API contract to user interaction?" |
 | `popcorn-xp:visual-designer` | "Does this look right and feel right?" |
 | `popcorn-xp:qa` | "Does this work from the user's perspective?" |
-| `popcorn-xp:product-manager` | "What problem are we solving, and is this the right way?" |
+| `popcorn-xp:product-manager` | "What problem are we solving, and is this the right way to solve it?" |
 
 **Independent auditor (not a teammate):**
 
@@ -425,7 +425,7 @@ Haiku agents will otherwise create junk files (summaries, ASCII art stats, inven
 
 You receive messages from teammates automatically. Your role during execution:
 
-- **Assign pairs, enforce rotation.** When a drive task completes, assign the next pair with roles swapped: the navigator claims the next drive task, the driver claims the next nav task. This is the mechanical rotation — it happens at pair assignment, not as a soft rule. If the same agent has driven two consecutive pairs, you have failed to rotate. Fix it on the next assignment.
+- **Assign pairs, enforce rotation.** When a drive task completes, assign the next pair with roles swapped: the navigator claims the next drive task, the driver claims the next nav task. This is the mechanical rotation — it happens at pair assignment, not as a soft rule. If the same agent has driven two consecutive pairs, you have failed to rotate. Fix it on the next assignment. Do not SendMessage the next assignment until the prior drive task's TaskUpdate confirms completed status — assigning before the TaskUpdate risks the driver abandoning an in-progress task mid-stream.
 - **Navigator completes after driver.** When a driver marks their drive task complete, SendMessage the navigator to verify and complete their nav task. The navigator's final action is a verification pass on the finished work. If the navigator finds issues during verification, they send advice (which may include OBJECTIONs that reopen the drive task).
 - **Use bugfix lanes when the work is naturally asymmetric.** For bug-driven sessions, prefer `confirm -> RED -> GREEN -> verify` over forcing strict alternation on every pair. Typical split: tester drives confirmation+RED pair, craftsman drives GREEN pair, then a fresh-eye verification pair closes the loop.
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
@@ -468,6 +468,8 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
    ```
 
    The `enforce-no-idle.sh` hook will nudge any idle teammate automatically. After retro-request, wait for all `.retro-*.md` files before writing RETRO.md. The FileChanged hook will notify you as each one arrives.
+
+   If an agent sends their retro text via SendMessage instead of running the session script themselves, record it on their behalf: `.popcorn-xp/{team-name}/session retro {agent} '{text}'`. This creates the `.retro-{agent}.md` file so the shutdown lifecycle proceeds normally.
 5. **Shut down all teammates — mechanically.** Run the shutdown subcommand, then let the hook do the work:
 
    **Important:** Send a retro request to each agent BEFORE issuing shutdown. The retro-pending phase in `enforce-no-idle.sh` takes priority over shutdown, ensuring agents can write their retro even after `.shutdown` is set. But sending the retro request first gives agents a turn to write while still fully active.
