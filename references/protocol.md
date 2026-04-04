@@ -13,6 +13,13 @@ Instructions for teammates in a Popcorn XP session. The lead includes relevant s
 7. Keep work small. One task, one goal, one set of files. Finish before starting something new.
 8. You are not alone in the codebase. Do not revert or overwrite work you did not make.
 9. No idle hands. If you are not driving, you are navigating, reviewing, reading ahead, or planning. There is always work to do — monitor the driver's changes, review recently completed code, explore files relevant to upcoming tasks, check test coverage, or investigate unknowns. "Waiting for a task" is not a state — find useful work and do it.
+10. Declare intent. Before going idle or switching focus, state what you plan to do next via SendMessage. This lets your partner plan their own work and catch misalignment early.
+
+## Important Notes
+
+**Linter hooks:** If a linter hook reverts your write, re-read the file before retrying — don't re-apply the same edit blindly. The hook may have made changes beyond formatting.
+
+**Critical actions:** For critical actions (shutdown, retro collection), always follow up hook nudges with direct SendMessage — do not rely on hook stderr alone to convey critical information.
 
 ## Advice Lifecycle
 
@@ -233,6 +240,14 @@ write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the
 handoff format, message team-lead about the context limit, finish your current
 micro-step cleanly, mark task state, then stop.
 
+After context compaction, before resuming work:
+1. Check TaskList for current task status
+2. Read LOG.md for latest checkpoints
+3. Read ADVICE.md for any open items
+4. Check git log for recent commits
+
+Do not re-do work that's already complete.
+
 ## Rotation
 
 After your task completes, you become the NAVIGATOR. The agent who was navigating
@@ -385,6 +400,14 @@ write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the
 handoff format, message team-lead about the context limit, finish your current
 micro-step cleanly, mark task state, then stop.
 
+After context compaction, before resuming work:
+1. Check TaskList for current task status
+2. Read LOG.md for latest checkpoints
+3. Read ADVICE.md for any open items
+4. Check git log for recent commits
+
+Do not re-do work that's already complete.
+
 ## Rotation
 
 After this task completes, you become the DRIVER for the next task. You've been
@@ -530,6 +553,8 @@ Issue description here
 ### SML-3-01 — INCORPORATED
 Detail of what was done
 ```
+
+Include file:line references in resolution details when applicable (e.g., "FIXED in utils/validation.ts:45").
 
 **READ ADVICE.md:**
 - Before starting a task — check for open advice from prior rounds
