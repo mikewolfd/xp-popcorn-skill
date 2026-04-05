@@ -23,6 +23,7 @@ Derived from the `layout-complete` session retro (2026-04-02), ADVICE.md analysi
 **Context:** The `layout-complete` retro noted agents becoming unresponsive in late-session tasks. Separately, the advisor and navigator prompts had explicit "go idle" language when no task was available. An idle agent contributes nothing and wastes a context window.
 
 **Change applied:**
+
 - Added Core Rule 9 to `protocol.md`: "No idle hands. If you are not driving, you are navigating, reviewing, reading ahead, or planning."
 - Replaced "go idle — the lead will assign" in driver prompt step 7e with a list of productive activities (review own changes, read ahead, check tests)
 - Replaced "go idle" language in navigator prompt with gap-filling directives
@@ -36,6 +37,7 @@ Derived from the `layout-complete` session retro (2026-04-02), ADVICE.md analysi
 ## Hooks
 
 ### H1 — TeammateIdle must exit 2, not 0
+
 **Priority:** 🔴 Critical
 
 **Context:** The `TeammateIdle` hook fires when a teammate is about to go idle. The canonical hooks documentation defines generic exit code semantics for all hook events: exit 0 allows the action to proceed, exit 2 blocks the action and feeds the stderr message back to Claude as feedback. Applied to `TeammateIdle`, exit 2 blocks the idle transition — the agent receives the feedback and stays active. Both `remind-unread-advice.sh` and `remind-checkpoint.sh` exit 0 with JSON output. This means the agent is not prevented from going idle. The "no idle hands" principle has no enforcement layer.
@@ -47,6 +49,7 @@ Derived from the `layout-complete` session retro (2026-04-02), ADVICE.md analysi
 ---
 
 ### H2 — Unconditional "no idle hands" TeammateIdle hook
+
 **Priority:** 🔴 Critical
 
 **Context:** Even when there are no open advice items and no dirty edits, an agent should not go idle. There is always something productive to do: read ahead, review completed code, check test coverage, investigate unknowns. Currently no hook enforces this — an agent with no pending advice can go idle freely.
@@ -68,6 +71,7 @@ Productive options:
 ---
 
 ### H3 — Fix ID pattern — enforcement is blind to non-standard IDs
+
 **Priority:** 🔴 Critical
 
 **Context:** `check-advice-on-complete.sh` and `remind-unread-advice.sh` both scan for `OBJ-[0-9]+-[0-9]+`. In the `layout-complete` session, the code-reviewer used `REV2-B1` as an OBJECTION ID. The enforcement hook never detected it as a blocking OBJECTION — the pattern didn't match. The OBJECTION was handled manually, not because the hook enforced it. Any advice with a non-standard ID is silently invisible to all enforcement.
@@ -89,6 +93,7 @@ Apply the same fix to SMELL/STEER/FYI patterns in `remind-unread-advice.sh`.
 ---
 
 ### H4 — Case-insensitive resolution matching
+
 **Priority:** 🔴 Critical
 
 **Context:** Both scripts grep for `(FIXED|REJECTED|INCORPORATED|NOTED)` in uppercase. The `layout-complete` session logged resolutions as `### REV2-B1 — fixed` (lowercase). Even if H3 were fixed and the ID matched, the resolution would not be detected — items would appear permanently unresolved. Any agent that writes lowercase outcomes has their resolutions silently ignored.
@@ -108,6 +113,7 @@ grep -qiE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)"
 ---
 
 ### H5 — Fix block output channel in `check-advice-on-complete.sh`
+
 **Priority:** 🟠 High
 
 **Context:** The canonical docs specify two distinct output patterns: (a) exit 2 with plain text to stderr for blocking, (b) exit 0 with JSON to stdout for structured decisions. `check-advice-on-complete.sh` sends JSON to stderr with exit 2 — a mix of both patterns. The canonical docs explicitly say "don't mix them: Claude Code ignores JSON when you exit 2." This likely means the feedback content is **fully discarded**, not just rendered as raw JSON. The blocking still works (exit 2 is exit 2), but the reason explaining *why* the task was blocked may be lost entirely — the agent knows it was blocked but not what to fix.
@@ -131,6 +137,7 @@ exit 2
 ## Protocol (`references/protocol.md`)
 
 ### P1 — Context limit + handoff pattern
+
 **Priority:** 🟠 High
 
 **Context:** The `layout-complete` retro identified agent degradation after 4-5 tasks. This is almost certainly Sonnet hitting its context window limit (~200K tokens). After 2-3 tasks of pair work — file reads, checkpoint messages, advice exchanges, test output — context fills up and model quality degrades. The current protocol has no mechanism for agents to self-manage this. Agents degrade silently and become unresponsive rather than handing off cleanly.
@@ -150,6 +157,7 @@ The handoff approach is preferred because: the agent writes it while still coher
 ---
 
 ### P2 — Handoff format definition
+
 **Priority:** 🟠 High (depends on P1)
 
 **Context:** P1 requires a handoff file format. Without a defined format, agents will write inconsistent handoffs that fresh agents can't reliably parse as a starting prompt.
@@ -181,6 +189,7 @@ Fresh {role} should: [concrete first action]
 ---
 
 ### P3 — `session handoff` command
+
 **Priority:** 🟡 Medium (depends on P1, P2)
 
 **Context:** Agents should write handoffs via the session script for consistency, not via free-form Write tool calls. The session script standardizes the file location and can prepend the template automatically.
@@ -200,6 +209,7 @@ Agent calls: `Bash: .popcorn-xp/{team-name}/session handoff {agent-name}`, then 
 ---
 
 ### P4 — Run project-native verification before marking complete
+
 **Priority:** 🟠 High
 
 **Context:** The `layout-complete` retro noted that test fixtures written by agents had TypeScript errors (missing `title` field in `FormDefinition`, literal type widening). These were caught during lead QA, not by the agents themselves. Agents completed tasks and marked them done without running any verification commands.
@@ -219,6 +229,7 @@ Also add to SKILL.md Quality Bar: "Project verification commands pass before any
 ---
 
 ### P5 — Check messages before claiming a task
+
 **Priority:** 🟢 Low
 
 **Context:** The `layout-complete` retro noted frequent message crossing: agents completing work before receiving assignment messages, leading to duplicate confirmations and confusion about task ownership. Agents were claiming tasks and starting work before checking whether new messages had arrived that changed the picture.
@@ -230,6 +241,7 @@ Also add to SKILL.md Quality Bar: "Project verification commands pass before any
 ---
 
 ### P6 — Navigator advice dual-write is mandatory
+
 **Priority:** 🟠 High
 
 **Context:** The `layout-complete` ADVICE.md contained only code-reviewer relay entries. The pair's actual advice — navigator-to-driver observations — lived entirely in ephemeral SendMessage calls and was never persisted. The retro mentioned "craftsman SMELL on NumberPropertyInput" but it doesn't appear in ADVICE.md. When those messages aged out (cap: 50), the advice history was lost. ADVICE.md is supposed to be the persistent record; it functioned instead as a reviewer relay log.
@@ -237,15 +249,18 @@ Also add to SKILL.md Quality Bar: "Project verification commands pass before any
 **Recommended solution:** Strengthen navigator prompt step 1c from a reminder to a hard paired action:
 
 > When you send advice via SendMessage, immediately call the session script in the same turn — both happen together, every time:
+>
 > ```
 > SendMessage(to: "{driver}", ...)
 > Bash: .popcorn-xp/{team-name}/session advice SMELL SML-3-01 "description"
 > ```
+>
 > Do not send advice without logging it. A SendMessage without a session script call means the advice disappears when messages age out.
 
 ---
 
 ### P7 — Per-edit logging as a numbered sub-step
+
 **Priority:** 🟠 High
 
 **Context:** The `layout-complete` LOG.md had ~10 entries covering 5 phases of work — approximately 2 entries per phase. The protocol says "log after each file edit" but the agents logged at task boundaries instead. The LOG became a task-summary list, not a working record. A fresh agent reading it can reconstruct what was done but not how, what was tried, or what was decided.
@@ -254,15 +269,16 @@ The issue is structural: `session log` appears as a note ("Then log it: ...") af
 
 **Recommended solution:** Split driver prompt step 5 into explicit sub-steps:
 
-> 5. Work in small steps. After EACH file edit, test run, or discovery:
+> 1. Work in small steps. After EACH file edit, test run, or discovery:
 >    - **5a.** Send a checkpoint to your navigator via SendMessage
 >    - **5b.** Log it: `Bash: .popcorn-xp/{team-name}/session log "file:line — what you changed, what's next"`
->    
+>
 >    Do not batch. One edit = one checkpoint = one log entry. These happen in sequence, not eventually.
 
 ---
 
 ### P8 — Task headers are mandatory
+
 **Priority:** 🟠 High
 
 **Context:** The `layout-complete` LOG.md had no task headers. The protocol specifies `## Task {id} — Driver @{role}, Navigator @{role}` but agents never wrote them. The result: an undifferentiated checkpoint list with no structure. You cannot tell which checkpoints belong to which task, who was driving, or who was navigating. The LOG is the team's memory — without headers it's a flat stream.
@@ -281,6 +297,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ---
 
 ### P9 — Log advice engagements inline in LOG.md
+
 **Priority:** 🟢 Low
 
 **Context:** When a driver resolves an OBJECTION, they call `session resolve` (writes to ADVICE.md) and send a RESOLVE message. But LOG.md gets no entry. The LOG shows what was built; it doesn't show what was challenged or changed in response to advice. A reader of LOG.md cannot tell that OBJ-3-01 caused a change to the implementation.
@@ -295,6 +312,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ## SKILL.md (`skills/popcorn-xp/SKILL.md`)
 
 ### S1 — Lead handles handoff requests
+
 **Priority:** 🟠 High (depends on P1)
 
 **Context:** P1 adds a handoff protocol for agents near context limit. Without a corresponding instruction for the lead, the handoff message arrives and there's no defined response. The lead needs to know what to do.
@@ -306,6 +324,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ---
 
 ### S2 — Plan QA as a fresh agent from the start
+
 **Priority:** 🟡 Medium
 
 **Context:** The `layout-complete` retro noted that the lead had to take over QA because both agents were unresponsive by Task 6. The recommendation was to spawn a fresh agent for QA rather than reusing exhausted ones. This is also a quality argument independent of context exhaustion: QA benefits from genuinely fresh eyes that haven't been involved in the implementation decisions.
@@ -317,6 +336,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ---
 
 ### S3 — ID convention for code-reviewer relays
+
 **Priority:** 🟠 High
 
 **Context:** The code-reviewer is an independent agent that produces its own finding IDs (`REV-W1`, `REV2-B1`). When the lead relays these findings to the team, they're logged to ADVICE.md with freeform IDs. The enforcement hooks only recognize `OBJ-[0-9]+-[0-9]+` / `SML-[0-9]+-[0-9]+` patterns (and after H3 is fixed, any `### OBJECTION <ID>` pattern). But beyond hook compatibility, freeform IDs mean the team's advice ledger has two ID conventions mixed together, making it harder to audit.
@@ -328,6 +348,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ---
 
 ### S4 — Open SMELL audit at session close
+
 **Priority:** 🟡 Medium
 
 **Context:** The `layout-complete` session ended with `REV-W1` and `REV-W2` still open in ADVICE.md — both SMELLs about real issues (NumberPropertyInput clear behavior, wrap default mismatch). SMELLs don't block task completion, so they persisted silently. The session close checklist only checks OBJECTIONs. Open SMELLs either become tech debt or get forgotten.
@@ -339,6 +360,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ---
 
 ### S5 — Parallel scout as default
+
 **Priority:** 🟢 Low
 
 **Context:** The `layout-complete` retro confirmed that running scout research in parallel from session start was effective: "Scout findings were directly usable — no re-exploration needed." The prior retro had recommended this, and it worked. Currently SKILL.md doesn't codify parallel scout as a default — it's described as one option among others.
@@ -350,6 +372,7 @@ Add to driver prompt step 2 (immediately after claiming a task):
 ---
 
 ### S6 — Two-phase code review as explicit task
+
 **Priority:** 🟢 Low
 
 **Context:** The `layout-complete` retro confirmed the two-phase review pattern worked well: "The final review's BLOCKER was a real runtime bug that would have shipped silently." Currently the Monitor section describes periodic code review as an ad hoc lead action. Scheduling it as an explicit task in the breakdown makes it a hard dependency, not a best-effort action.
@@ -357,15 +380,18 @@ Add to driver prompt step 2 (immediately after claiming a task):
 **Recommended solution:** Add to the task breakdown template in Step 3:
 
 > For sessions with 4+ implementation tasks, schedule independent code review as explicit tasks with blocking dependencies:
+>
 > ```
 > Task N:   Code review phases 1-2 — blocked by tasks 1, 2
 > Task N+1: Code review phases 3-5 — blocked by tasks 3, 4, 5
 > ```
+>
 > The reviewer agent is launched independently (no `team_name`) and its findings are relayed by the lead. Planning these as tasks ensures they happen at the right checkpoint, not whenever the lead remembers.
 
 ---
 
 ### S7 — Reframe task sizing around user value + rotation
+
 **Priority:** 🟡 Medium
 
 **Context:** SKILL.md currently says "Break the work into 3-6 concrete tasks" and warns against "thin verification tasks just to have 4 tasks." This framing optimizes for efficiency and biases leads toward larger tasks. But smaller tasks have a compounding benefit: more rotations, more knowledge distribution, fresher perspectives at each step, and more frequent context handoff opportunities (relevant to P1).
@@ -379,6 +405,7 @@ The current "just right" definition ("a function, a test file, or a review") is 
 > Err toward smaller. More tasks = more rotations = more knowledge distribution. The coordination cost of an extra rotation is low; the cost of one agent driving 3 hours without a perspective change is high.
 >
 > Examples:
+>
 > - "Implement drag-and-drop" → too large; split by observable behavior
 > - "Add regression tests for invalid input" → valid, user has proof the case is covered
 > - "Read the parser module" → not valid, no deliverable, fold into the first implementation task
@@ -393,6 +420,7 @@ Remove the guideline "Don't create thin verification tasks just to have 4 tasks.
 *Findings from canonical subagent and skills documentation.*
 
 ### H6 — Verify `systemMessage` vs `additionalContext` in hook output
+
 **Priority:** 🔴 Critical — **resolve before all other hook items**
 
 **Context:** The canonical hooks docs consistently use `additionalContext` as the field name for injecting text into Claude's context from hook JSON output. All current non-blocking hook scripts output `{"systemMessage":"..."}`. If the correct field is `additionalContext`, then every reminder from `remind-unread-advice.sh` and `check-advice-on-complete.sh` is silently discarded — agents never see the SMELL/STEER/FYI nudges. The OBJECTION block (exit 2 + stderr) still works, but the soft enforcement layer doesn't.
@@ -420,6 +448,7 @@ echo '{"additionalContext":"Popcorn XP: ..."}'
 ---
 
 ### H8 — Shell profile echo issue can break JSON output
+
 **Priority:** 🟢 Low
 
 **Context:** When Claude Code runs a hook, it spawns a shell that sources the user's profile (`.zshrc`/`.bashrc`). If the profile has unconditional `echo` statements, that text gets prepended to the hook's stdout — breaking JSON parsing. Users with "Shell ready" or similar debug messages in their profiles will see intermittent JSON validation failures from popcorn-xp hooks.
@@ -433,6 +462,7 @@ No change needed to hook scripts themselves — this is a user environment issue
 ---
 
 ### AT1 — Task status lag: explicit lead check in Monitor section
+
 **Priority:** 🟡 Medium
 
 **Context:** The canonical agent-teams docs list "task status can lag" as a known platform limitation: "Teammates sometimes fail to mark tasks as completed, which blocks dependent tasks." This is distinct from agents becoming unresponsive — the agent may have finished the work but the `TaskUpdate` call silently failed. Dependent tasks won't unblock. The lead has no protocol for this case currently.
@@ -444,6 +474,7 @@ No change needed to hook scripts themselves — this is a user environment issue
 ---
 
 ### AT2 — Plan approval mode for high-risk tasks
+
 **Priority:** 🟢 Low
 
 **Context:** The agent-teams platform supports requiring plan approval before a teammate begins implementation. The teammate works in read-only plan mode until the lead approves their approach. The lead reviews and either approves (teammate begins implementation) or rejects with feedback (teammate revises). Currently undocumented in popcorn-xp. Relevant for high-risk tasks: schema changes, auth rewrites, API contract changes, anything where a wrong approach is expensive to undo.
@@ -453,16 +484,19 @@ No change needed to hook scripts themselves — this is a user environment issue
 **Recommended solution:** Add to SKILL.md Step 4 (Spawn Teammates) as an optional pattern:
 
 > **For high-risk tasks**, instruct the lead to require plan approval before any edits:
+>
 > ```
 > Spawn a craftsman teammate for task 5. Require plan approval
 > before they make any changes — review their approach before
 > they edit anything.
 > ```
+>
 > The teammate explores and proposes an approach. You review and approve or reject with feedback. Use when a wrong implementation direction would be expensive to undo — schema migrations, auth changes, public API surface changes.
 
 ---
 
 ### AT3 — Note no-session-resumption limitation and why LOG.md matters
+
 **Priority:** 🟢 Low
 
 **Context:** The canonical docs state: "`/resume` and `/rewind` do not restore in-process teammates. After resuming a session, the lead may attempt to message teammates that no longer exist." If the lead's session crashes or is resumed, the entire team is gone. This is a known platform limitation. LOG.md and ADVICE.md exist precisely to survive this — but the protocol doesn't explicitly say "if you resume a session and teammates are gone, read LOG.md to reconstruct state and spawn fresh agents."
@@ -474,6 +508,7 @@ No change needed to hook scripts themselves — this is a user environment issue
 ---
 
 ### R1 — Batch checkpoint allowance for repetitive edits
+
 **Priority:** 🟡 Medium
 
 **Context:** The 2026-04-02 "improvement backlog" retro observed the craftsman batching many edits without checkpoints during Task 3 SKILL.md edits. The protocol says "Do NOT batch multiple file edits into one checkpoint." But for mechanical, repetitive changes — applying the same fix pattern across 4 files, renaming a variable in 6 locations — per-edit checkpoints add noise without value. The navigator doesn't gain new information from "applied the same H3 fix to file 4 of 4."
@@ -485,6 +520,7 @@ No change needed to hook scripts themselves — this is a user environment issue
 ---
 
 ### R2 — Retro instructions in protocol prompts
+
 **Priority:** 🟠 High
 
 **Context:** The 2026-04-02 retro noted "Retro feedback requests went unanswered — both agents kept responding about task status instead of process observations." The retro instructions live in SKILL.md (which agents don't read) and one weak line in `protocol.md` Integration Notes: "the lead *may* ask teammates for retro feedback." S10 auto-loads the protocol via skills, so agents DO read it — but the instruction is buried and optional-sounding.
@@ -494,6 +530,7 @@ No change needed to hook scripts themselves — this is a user environment issue
 > ## Retro
 >
 > Before shutdown, the lead asks for retro feedback. When you receive a retro request, respond with **process observations**, not task status:
+>
 > - What worked well about the pairing dynamic?
 > - What made collaboration harder?
 > - Did the advice system help or get in the way?
@@ -507,6 +544,7 @@ Also update the Integration Notes line from "the lead *may* ask" to reference th
 ---
 
 ### R3 — Soft checkpoint frequency enforcement via PreToolUse counter
+
 **Priority:** 🟡 Medium
 
 **Context:** The 2026-04-02 retro identified that `remind-checkpoint.sh` only fires on `TeammateIdle`. A driver who keeps editing without going idle (the exact Task 3 failure) never receives a checkpoint reminder. The retro recommends "mechanical enforcement for checkpoint frequency — perhaps a hook that counts edits since last `session log` call."
@@ -514,6 +552,7 @@ Also update the Integration Notes line from "the lead *may* ask" to reference th
 The canonical hooks docs confirm PreToolUse on Edit/Write can inject `additionalContext` (exit 0 with JSON) without blocking the edit. The existing `mark-dirty.sh` already fires on PreToolUse Edit/Write and uses a flag file. It can be extended to maintain a counter.
 
 **Recommended solution:** Modify `mark-dirty.sh` to:
+
 1. Read stdin to extract `tool_input.file_path`
 2. Skip files under `.popcorn-xp/` (session bookkeeping shouldn't count)
 3. Increment a counter file (`.popcorn-xp/{team}/.edit-count`) instead of just touching `.dirty`
@@ -529,6 +568,7 @@ Update `remind-checkpoint.sh` to also read the counter for its message (so Teamm
 ---
 
 ### R4 — Mechanical shutdown lifecycle enforcement via signal files and TeammateIdle phases
+
 **Priority:** 🟠 High
 
 **Context:** The 2026-04-02 retro identified two enforcement failures: (1) teammates ignored retro requests, responding with task status instead of process observations even after R2 added retro instructions to the protocol; (2) teammates ignored `shutdown_request` messages, idle-looping indefinitely and requiring `TeamDelete` to force cleanup. R2 addressed the informational gap but cannot enforce compliance — a mechanical backstop is needed.
@@ -543,6 +583,7 @@ Update `remind-checkpoint.sh` to also read the counter for its message (so Teamm
 | Shutdown | `.shutdown` | Force-stop: `{"continue": false}` to stdout | `exit 0` |
 
 Add three new subcommands to the session script template:
+
 - `retro-request` — lead signals retro phase has begun (touches `.retro-requested`)
 - `retro {agent} 'feedback'` — teammate submits observations (writes `.retro-{agent}.md`)
 - `shutdown` — lead signals force-stop on next idle (touches `.shutdown`)
@@ -556,6 +597,7 @@ Update the protocol SKILL.md Integration Notes to remove "approve shutdown_reque
 ---
 
 ### AT4 — Canonical docs recommend 5-6 tasks per teammate; S7 recommends smaller tasks
+
 **Priority:** 🟡 Medium (tension to resolve)
 
 **Context:** The canonical agent-teams docs recommend "5-6 tasks per teammate keeps everyone productive." S7 in this backlog recommends smaller tasks sized by user value to encourage more rotation. These pull in opposite directions. The canonical guidance optimizes for throughput (fewer task-switching overhead); S7 optimizes for knowledge distribution (more rotations). The popcorn-xp protocol should explicitly resolve this tension rather than leaving both in play.
@@ -567,6 +609,7 @@ Update the protocol SKILL.md Integration Notes to remove "approve shutdown_reque
 ---
 
 ### A1 — Set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` during team setup
+
 **Priority:** 🟡 Medium
 
 **Context:** Subagent auto-compaction defaults to 95% context capacity. By that point agents have been operating near-full for a while and quality has already degraded. This is a direct contributor to the unresponsiveness observed in the retro. The environment variable `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` controls when compaction triggers.
@@ -584,6 +627,7 @@ This triggers compaction at 70% rather than 95%, giving agents a clean context w
 ---
 
 ### A2 — Use `maxTurns` as a mechanical context budget
+
 **Priority:** 🟡 Medium
 
 **Context:** The `maxTurns` frontmatter field limits how many agentic turns a subagent can take before stopping cleanly. After 2-3 tasks of pair work, teammates approach context limits. Rather than relying on agents to self-report (P1) or waiting for degradation, `maxTurns` enforces a hard stop. The stopped agent then triggers the lead to spawn a replacement.
@@ -595,6 +639,7 @@ This triggers compaction at 70% rather than 95%, giving agents a clean context w
 ---
 
 ### A3 — Try SendMessage to resume unresponsive agents before declaring them dead
+
 **Priority:** 🟡 Medium
 
 **Context:** The canonical docs state: "If a stopped subagent receives a SendMessage, it auto-resumes in the background." The retro had agents become unresponsive to task assignments and shutdown requests. The lead's current recovery path is to give up and do the work themselves — which violates the "lead doesn't code" principle. Attempting a SendMessage resume is a free recovery option that wasn't tried.
@@ -606,6 +651,7 @@ This triggers compaction at 70% rather than 95%, giving agents a clean context w
 ---
 
 ### A4 — Add `memory: project` to expert agent only
+
 **Priority:** 🟢 Low
 
 **Context:** Agent definitions support a `memory` frontmatter field that gives each agent a persistent directory surviving across sessions. Teammates currently start every session with no accumulated knowledge of the project. Over time, agents with project memory would build up codebase knowledge — making them increasingly effective on the same codebase.
@@ -615,6 +661,7 @@ This triggers compaction at 70% rather than 95%, giving agents a clean context w
 **Scoping decision:** Only the expert gets `memory: project`. The expert's lens is "does this actually work in edge cases?" — they benefit most from accumulated knowledge of invariants, failure modes, hidden coupling, and codebase quirks that aren't obvious from reading the code cold. The other roles (craftsman, scout, tester) benefit from starting fresh each session.
 
 **What to remember:** The expert's memory should focus on **discovered facts about the codebase** — not user preferences, style opinions, or design decisions. Things worth remembering:
+
 - Invariants that aren't documented ("the parser assumes depth >= 0 but never checks")
 - Hidden coupling between modules ("changing X always requires updating Y")
 - Test infrastructure quirks ("integration tests require the dev server running")
@@ -635,6 +682,7 @@ should be structured. Consult your memory before starting work on a familiar cod
 ---
 
 ### A5 — Navigator "no-edit" enforcement: prompt-only is correct
+
 **Priority:** 🟢 Low — keep as-is
 
 **Context:** The navigator role should never edit code files. Currently this is enforced only by the prompt ("do not edit code files — read and advise only"). There's no mechanical enforcement.
@@ -646,6 +694,7 @@ should be structured. Consult your memory before starting work on a familiar cod
 ---
 
 ### S8 — Add `disable-model-invocation: true` to SKILL.md
+
 **Priority:** 🟠 High
 
 **Context:** The popcorn-xp SKILL.md says "Activate when the user explicitly asks" — but this is prose instruction, not frontmatter enforcement. Without `disable-model-invocation: true`, Claude could decide to auto-launch a multi-agent team session when it judges a task warrants one, without the user explicitly requesting it. A team session is expensive (multiple Sonnet instances), disruptive if unexpected, and requires the user's active involvement. It must only fire when explicitly invoked.
@@ -661,6 +710,7 @@ This removes the skill from Claude's auto-invocation consideration entirely. The
 ---
 
 ### S9 — Dynamic context injection at skill invocation
+
 **Priority:** 🟢 Low
 
 **Context:** When `/popcorn-xp` is invoked on a codebase with a prior session, the lead currently has to manually read LOG.md and RETRO.md to pick up context. The canonical docs show that `!backtick` syntax in SKILL.md runs shell commands before the skill prompt reaches Claude, injecting their output directly. This could auto-inject current session state.
@@ -678,6 +728,7 @@ The lead immediately has recent LOG context and retro recommendations without a 
 ---
 
 ### S10 — Preload protocol via `skills` field in agent definitions
+
 **Priority:** 🟢 Low
 
 **Context:** Currently the popcorn-xp protocol is included in each teammate's spawn prompt by the lead copy-pasting from `references/protocol.md`. The canonical docs show that subagent definitions support a `skills` field — the full skill content is injected at startup, not just made available for invocation. This could make the protocol load automatically when a teammate is spawned, without requiring the lead to include it in every spawn prompt.
@@ -689,6 +740,7 @@ The lead immediately has recent LOG context and retro recommendations without a 
 ---
 
 ### N1 — Permission pre-approval as setup step
+
 **Priority:** 🟡 Medium
 
 **Context:** The canonical agent-teams docs warn: "Teammate permission requests bubble up to the lead, which can create friction. Pre-approve common operations in your permission settings before spawning teammates to reduce interruptions." In a multi-agent pair-programming session, permission prompts interrupt flow for both the agent mid-task and the human watching. Long-running agents hit more permission prompts over their lifetime than short-lived subagents — each interruption breaks the driver's editing cadence and the navigator's reading rhythm.
@@ -700,6 +752,7 @@ The lead immediately has recent LOG context and retro recommendations without a 
 ---
 
 ### N2 — Team cleanup sequencing in Step 6
+
 **Priority:** 🟡 Medium
 
 **Context:** The canonical agent-teams docs are emphatic: "Always use the lead to clean up. When the lead runs cleanup, it checks for active teammates and fails if any are still running, so shut them down first." The current Step 6 close sequence checks for open OBJECTIONs and presents a summary, but doesn't explicitly sequence teammate shutdown before TeamDelete. If a teammate is still processing when the lead calls TeamDelete, cleanup may fail or leave resources in an inconsistent state.
@@ -716,6 +769,7 @@ The lead immediately has recent LOG context and retro recommendations without a 
 ---
 
 ### N3 — Lead-doing-thinking guard in Monitor section
+
 **Priority:** 🟢 Low
 
 **Context:** The canonical agent-teams docs call out a specific failure mode: "Sometimes the lead starts implementing tasks itself instead of waiting for teammates." Coordinator mode prevents the lead from editing files, which handles the literal case. But the subtler version — the lead over-directing, pre-digesting context, synthesizing instead of delegating — is the same orchestrator trap wearing different clothes. The README's "Orchestrator Trap" section describes this philosophy, but the operational Monitor section doesn't guard against it.
@@ -736,7 +790,7 @@ All items from this session have been applied. See [backlog.md](backlog.md) for 
 
 ### Doc validation (2026-04-02)
 
-All hook scripts validated against canonical documentation in `research/offical/hooks-ref.md` and `research/offical/hooks-anthro.md`. Findings:
+All hook scripts validated against canonical documentation in `research/official/hooks-ref.md` and `research/official/hooks-anthro.md`. Findings:
 
 - **check-retro-before-delete.sh**: Had same H5 bug (JSON to stderr with exit 2). Fixed — now uses plain text stderr.
 - **`additionalContext` for TaskCompleted**: Not explicitly documented for this event in per-event tables, but mentioned as a context injection field alongside `systemMessage` and plain stdout. Likely works; not confirmed per-event. Monitoring.
@@ -747,6 +801,7 @@ All hook scripts validated against canonical documentation in `research/offical/
 ### Test suite (2026-04-02)
 
 Added `tests/test-hooks.sh` — 62 assertions covering all hook scripts:
+
 - No-op behavior (no active session → exit 0)
 - H1: exit code semantics for TeammateIdle hooks
 - H2: enforce-no-idle always blocks when session active

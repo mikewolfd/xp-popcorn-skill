@@ -227,7 +227,7 @@ echo "--- AA14: CLAUDE_CODE_COORDINATOR_MODE references ---"
 REF_COUNT=$(grep -rl 'CLAUDE_CODE_COORDINATOR_MODE' "$SCRIPT_DIR" --include='*.md' --include='*.sh' --include='*.json' 2>/dev/null | wc -l || true)
 REF_COUNT=$(echo "$REF_COUNT" | tr -d '[:space:]')
 [ -z "$REF_COUNT" ] && REF_COUNT=0
-OFFICIAL_DOCS_REF=$(grep -rl 'CLAUDE_CODE_COORDINATOR_MODE' "$SCRIPT_DIR/research/offical/" 2>/dev/null | wc -l || true)
+OFFICIAL_DOCS_REF=$(grep -rl 'CLAUDE_CODE_COORDINATOR_MODE' "$SCRIPT_DIR/research/official/" 2>/dev/null | wc -l || true)
 OFFICIAL_DOCS_REF=$(echo "$OFFICIAL_DOCS_REF" | tr -d '[:space:]')
 [ -z "$OFFICIAL_DOCS_REF" ] && OFFICIAL_DOCS_REF=0
 
