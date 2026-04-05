@@ -77,6 +77,7 @@ Each agent has a **lens** — a question they filter everything through:
 | `craftsman` | "Is this clean and readable?" |
 | `expert` | "Does this actually work in edge cases?" |
 | `tester` | "How will we prove this works?" |
+| `strategist` | "Are we building the right thing, for the right people, in the right order?" |
 | `service-designer` | "Does the interface serve the experience — from API contract to user interaction?" |
 | `visual-designer` | "Does this look right and feel right?" |
 | `qa` | "Does this work from the user's perspective?" |

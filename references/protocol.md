@@ -645,6 +645,10 @@ You are `expert`. Your lens is: "Does this actually work in edge cases?" Check i
 
 You are `tester`. Your lens is: "How will we prove this?" Identify the smallest convincing test set, likely regressions, missing assertions, and any manual verification still required. Prefer exact test names or scenarios when possible.
 
+### Strategist
+
+You are `strategist`. Your lens is: "Are we building the right thing, for the right people, in the right order?" Clarify the bet, compare sequencing options, and turn strategic direction into a concrete plan. Use this lens when the question is about planning, positioning, roadmap tradeoffs, or deciding what not to build.
+
 ## Suggested First Task Assignment
 
 For most coding tasks, start with three agents:
@@ -663,6 +667,7 @@ Supplemental agents are spawned for specific task pairs, not as part of the core
 - `visual-designer` — UI/UX review
 - `qa` — user-flow validation, acceptance testing
 - `product-manager` — requirements, scope decisions
+- `strategist` — planning, sequencing, positioning
 - `code-reviewer` — independent audit (launched without `team_name`)
 
 Supplemental agents do not rotate into the core driver/navigator cycle. Assign them a specific drive+navigate pair, let them complete it, then retire or reuse them for the next specialist task.

@@ -12,7 +12,7 @@ Key findings that motivate this proposal:
 
 - **AA1 (shutdown deadlock)**: Three TeammateIdle hooks run in parallel. `remind-unread-advice.sh` (exit 2) can override `enforce-no-idle.sh` (`continue: false`), preventing shutdown. Removing the reminder hooks eliminates the conflict entirely.
 - **AA10 (platform portability)**: Context store hooks use `lockf` (macOS-only). Removing them eliminates the only platform-specific dependency.
-- **AA2 (agent naming)**: All 9 agents manually include the `popcorn-xp:` prefix that the plugin system auto-adds, relying on undocumented double-prefix handling.
+- **AA2 (agent naming)**: All 10 agents manually include the `popcorn-xp:` prefix that the plugin system auto-adds, relying on undocumented double-prefix handling.
 - **SKILL.md size**: 547 lines loaded into the lead's context at every turn. Reference material (decomposition examples, spawn templates, retro format) is consulted once but paid for on every turn.
 
 ## Change 1: Cut hooks from 14 to 6
@@ -134,7 +134,7 @@ Agents that ignore the protocol's checkpointing instructions won't be nagged. Th
 
 ### Agent names
 
-The plugin system auto-namespaces agents as `<plugin-name>:<agent-name>`. All 9 agents manually include the `popcorn-xp:` prefix, which may produce `popcorn-xp:popcorn-xp:expert` at runtime (AA2). The system appears to handle this gracefully today, but it relies on undocumented behavior.
+The plugin system auto-namespaces agents as `<plugin-name>:<agent-name>`. All 10 agents manually include the `popcorn-xp:` prefix, which may produce `popcorn-xp:popcorn-xp:expert` at runtime (AA2). The system appears to handle this gracefully today, but it relies on undocumented behavior.
 
 Change every agent's `name` field to the bare name:
 
@@ -148,6 +148,7 @@ Change every agent's `name` field to the bare name:
 | `agents/service-designer.md` | `name: popcorn-xp:service-designer` | `name: service-designer` |
 | `agents/visual-designer.md` | `name: popcorn-xp:visual-designer` | `name: visual-designer` |
 | `agents/product-manager.md` | `name: popcorn-xp:product-manager` | `name: product-manager` |
+| `agents/strategist.md` | `name: popcorn-xp:strategist` | `name: strategist` |
 | `agents/code-reviewer.md` | `name: popcorn-xp:code-reviewer` | `name: code-reviewer` |
 
 ### Invalid colors

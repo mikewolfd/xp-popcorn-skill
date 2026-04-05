@@ -224,8 +224,12 @@ The skill defaults to 2-3 agents. Each has a lens — a default perspective they
 | **craftsman** | "Is this clean and readable?" | Implementation shape, naming, boundaries |
 | **expert** | "Does this actually work in edge cases?" | Invariants, failure modes, hidden coupling |
 | **tester** | "How will we prove this?" | Test strategy, regressions, verification gaps |
+| **strategist** | "Are we building the right thing, for the right people, in the right order?" | Planning, sequencing, positioning, roadmap tradeoffs |
 
-The lens is a starting point for analysis, not a job description. When the expert drives an implementation task, they bring a correctness lens to the code they write. When the craftsman navigates a verification task, they bring a readability lens to the test review. Rotation works because every agent can do every job — the lens just means they'll notice different things.
+The lens is a starting point for analysis, not a job description. When the expert drives an implementation task, they bring a correctness lens to the code they write. When the craftsman navigates a verification task, they bring a readability lens to the test review. When the strategist is present, they keep the team honest about sequencing, positioning, and whether the work still serves the intended market. Rotation works because every agent can do every job — the lens just means they'll notice different things.
+
+The strategist is especially useful when the session starts with planning or positioning instead of implementation.
+It is usually a supplemental lens, not part of the core driver/navigator/tester rotation.
 
 ## Workflow Detail
 
@@ -450,6 +454,7 @@ popcorn-xp/
 │   ├── craftsman.md          # Implementation, readability, minimal changes
 │   ├── expert.md             # Edge cases, invariants, correctness (has project memory)
 │   ├── tester.md             # Test strategy, regression hunting, verification
+│   ├── strategist.md         # Planning, sequencing, positioning, roadmap tradeoffs
 │   ├── service-designer.md   # API design, service boundaries, contracts
 │   ├── visual-designer.md    # UI/UX, accessibility, visual patterns
 │   ├── qa.md                 # Acceptance testing, user flows, end-to-end verification

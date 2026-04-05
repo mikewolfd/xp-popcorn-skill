@@ -44,11 +44,13 @@ The **navigator's** standing work is **read-ahead**: stay one step ahead of the 
 The **advisor's** standing work is **log-watching**: read `.popcorn-xp/{team-name}/context-store.log` after every batch of edits, read the changed files through your lens, and send advice. The advisor does not rotate into driving unless they own an explicit task.
 
 The `scout` agent is for orientation-first sessions where the first task is "map the codebase" rather than "implement X."
+The `strategist` agent is for planning-first sessions where the first task is "clarify the bet" rather than "start building."
 
 **Supplemental roles (task-scoped, not part of core rotation):**
 
 | Agent | Lens |
 |-------|------|
+| `popcorn-xp:strategist` | "Are we building the right thing, for the right people, in the right order?" |
 | `popcorn-xp:service-designer` | "Does the interface serve the experience — from API contract to user interaction?" |
 | `popcorn-xp:visual-designer` | "Does this look right and feel right?" |
 | `popcorn-xp:qa` | "Does this work from the user's perspective?" |
@@ -74,6 +76,7 @@ Native agents carry project-specific context, conventions, and tool configuratio
 | Implementing features, refactoring, clean code | **craftsman** |
 | Correctness analysis, edge cases, invariants, auditing | **expert** |
 | Writing/designing tests, running verification | **tester** |
+| Planning, sequencing, positioning, roadmap tradeoffs | **strategist** |
 | API design, service boundaries, contracts | **service-designer** |
 | UI/UX design, visual patterns, accessibility | **visual-designer** |
 | User flow validation, acceptance testing, E2E | **qa** |
@@ -164,6 +167,7 @@ Read the frontmatter (`name`, `description`) of each discovered file. Also revie
 > | craftsman | `popcorn-xp:craftsman`, `flutter-architect` (native) |
 > | expert | `popcorn-xp:expert` |
 > | tester | `popcorn-xp:tester`, `test-engineer` (native) |
+> | strategist | `popcorn-xp:strategist` |
 > | code-reviewer | `popcorn-xp:code-reviewer`, `code-reviewer` (native) |
 >
 > Which roles do you want on the team, and which agent for each? I'll spawn the initial three (driver, navigator, advisor) at the start and bring in supplemental specialists as specific tasks require them.
