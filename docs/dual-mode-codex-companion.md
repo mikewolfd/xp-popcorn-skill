@@ -88,7 +88,7 @@ This matches **“subagent-mode-first on Codex”** above: your **default** pack
 
 A minimal, maintainable stack on Codex:
 
-1. **`developer_instructions`** in each custom agent TOML: require typed advice in `ADVICE.md`, task chat in `back-forth.md`, state transitions through `bin/session`, and explicit closeout discipline.
+1. **`developer_instructions`** in each custom agent TOML: keep them **short** and point at the packaged **shared core** + **subagent transport** (see [Skills and prompts: layer transport, don’t fork the product](#skills-and-prompts-layer-transport-dont-fork-the-product)) instead of duplicating prose — require typed advice in `ADVICE.md`, task chat in `back-forth.md`, state via `bin/session`, and explicit closeout discipline.
 2. **`SessionStart`** with `matcher` `startup|resume`: if an active Popcorn session exists for the repo, inject **`additionalContext`** (short reminder of session path and rules).
 3. **`Stop` hook, gated in script** (for example by inspecting `cwd` or `.popcorn-xp/.active-team` inside the hook handler): run the same **unresolved OBJECTION** / **`close-check`** logic you already trust, so turns do not “finish clean” against broken invariants when you choose to enforce. `Stop` does not honor `matcher`, so the filter has to live in the hook code.
 
@@ -113,6 +113,7 @@ Popcorn XP’s Claude plugin paths (`.claude/`, `hooks/hooks.json` in the plugin
 ## References
 
 - [dual-mode-proposal.md](./dual-mode-proposal.md) — full product proposal.
+- [references/protocol.md](../references/protocol.md) — long-form teammate templates (shared core + mode-specific addenda); mirror this layering in Codex-packaged skills.
 - `research/official/codex/subagents.md` — subagents and custom agents.
 - `research/official/codex/hooks.md` — hook events and limitations.
 - `research/official/codex/config.md` — `features.multi_agent`, `features.codex_hooks`, and other keys.
