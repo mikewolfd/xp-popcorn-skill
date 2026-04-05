@@ -211,6 +211,10 @@ run_hook_stdin "record-compact-summary.sh" '{"hook_event_name":"PostCompact","tr
 assert_exit "no-op: record-compact-summary.sh" 0 "$LAST_RC"
 assert_stdout_empty "no-op stdout: record-compact-summary.sh" "$LAST_STDOUT"
 
+run_hook_stdin "check-advice-on-subagent-stop.sh" '{"hook_event_name":"SubagentStop","agent_type":"Explore"}'
+assert_exit "no-op: check-advice-on-subagent-stop.sh" 0 "$LAST_RC"
+assert_stdout_empty "no-op stdout: check-advice-on-subagent-stop.sh" "$LAST_STDOUT"
+
 # ============================================================
 # 2. H6: Non-blocking output uses additionalContext, not systemMessage
 # ============================================================
@@ -1844,6 +1848,310 @@ else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: V92c — update-task-state should convert a completed driver to navigator (got: $V92C_ROLE)"
 fi
+
+# ============================================================
+# DM: dual-mode (subagent runtime)
+# ============================================================
+
+echo "--- DM: subagent mode hook bypass ---"
+
+# DM-1: TaskUpdate claim hook skipped in subagent mode (claims use session task-claim)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "navigator" "completed" "T1" "" ""
+run_session task T1 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "DM-1: subagent skips check-task-claim" 0 "$LAST_RC"
+
+# DM-2: subagent mode — no working-phase TeammateIdle nudges without agent-state (phases 1–4 still run first)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "DM-2: subagent unregistered agent idle OK" 0 "$LAST_RC"
+assert_stdout_empty "DM-2: no stdout" "$LAST_STDOUT"
+
+# DM-3: SubagentStop advice gate skipped in team mode (even with open OBJECTION)
+setup_session
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-9-01 — open
+Blocking
+EOF
+run_hook_stdin "check-advice-on-subagent-stop.sh" '{"hook_event_name":"SubagentStop","agent_type":"Explore"}'
+assert_exit "DM-3: team mode skips SubagentStop advice gate" 0 "$LAST_RC"
+
+# DM-4: SubagentStop runs advice gate in subagent mode
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-9-02 — open
+Blocking
+EOF
+run_hook_stdin "check-advice-on-subagent-stop.sh" '{"hook_event_name":"SubagentStop","agent_type":"Explore"}'
+assert_exit "DM-4: subagent SubagentStop enforces OBJECTIONs" 2 "$LAST_RC"
+
+echo "--- DM: session task-bus ---"
+
+# DM-5: task-init, chat, cursor, close
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+if [ -f "$POPCORN/$TEAM/tasks/T1/meta.json" ] && [ -f "$POPCORN/$TEAM/tasks/T1/back-forth.md" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-5 task-init should create meta.json and back-forth.md"
+fi
+
+run_session chat T1 alice note "hello bus"
+run_session cursor-ack alice T1 5
+DM5_CUR=$(env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" "$BIN_DIR/session" cursor-get alice T1)
+if [ "$DM5_CUR" = "5" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-5 cursor-get expected 5 (got $DM5_CUR)"
+fi
+
+run_session mode
+if echo "$LAST_STDOUT" | grep -q subagent; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-5 session mode should print subagent"
+fi
+
+run_session close-check
+assert_exit "DM-5 close-check OK" 0 "$LAST_RC"
+
+printf '# Retro\nl1\nl2\nl3\nl4\nl5\n' > "$POPCORN/$TEAM/RETRO.md"
+run_session close
+if [ -f "$POPCORN/$TEAM/.closed.json" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-5 session close should write .closed.json"
+fi
+
+# DM-6: task-claim rotation enforced via session (same as team hook semantics)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "navigator" "completed" "T1" "" ""
+run_session task T1 craftsman expert
+run_session task-init 2
+run_session task-claim 2 craftsman driver
+assert_exit "DM-6: consecutive drive blocked by session task-claim" 2 "$LAST_RC"
+
+# DM-7: log in subagent mode does not touch context-store cursor
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+printf 'line\n' > "$POPCORN/context-store.log"
+run_session log 'subagent checkpoint'
+if [ ! -f "$POPCORN/$TEAM/.checkpoint-cursor" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-7 subagent log should not create .checkpoint-cursor"
+fi
+
+# DM-8: session health --strict fails on open OBJECTION
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-88-01 — open
+Health test
+EOF
+run_session health --strict
+assert_exit "DM-8 health strict fails on OBJECTION" 1 "$LAST_RC"
+
+# DM-9: session health non-strict passes with OBJECTION (report only)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-88-02 — open
+Health test
+EOF
+run_session health
+assert_exit "DM-9 health default passes with OBJECTION listed" 0 "$LAST_RC"
+assert_stdout_contains "DM-9 lists OBJECTION" "OBJECTION" "$LAST_STDOUT"
+
+# DM-10: health --strict fails when navigator navigating without READY file
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+write_state "expert" "navigator" "navigating" "1" "" "Review" false "" ""
+run_session health --strict
+assert_exit "DM-10 strict fails missing READY" 1 "$LAST_RC"
+
+# DM-11: health --strict OK when READY file exists
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+write_state "expert" "navigator" "navigating" "1" "" "Review" false "" ""
+printf 'ready\n' > "$POPCORN/$TEAM/navigator-ready-expert-T1.md"
+run_session health --strict
+assert_exit "DM-11 strict OK with READY file" 0 "$LAST_RC"
+
+# DM-12: subagent + registered advisor + task chat ahead of review cursor → enforce-no-idle blocks
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session chat T1 driver note "needs advisor eyes"
+write_state "tester" "advisor" "working" "1" "" "catch up on chat"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"popcorn-xp:tester"}'
+assert_exit "DM-12 subagent advisor chat drift blocks idle" 2 "$LAST_RC"
+assert_stderr_contains "DM-12 mentions task chat" "back-forth" "$LAST_STDERR"
+
+# DM-13: subagent advisor after session review clears chat drift nudge
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session chat T1 driver note "needs advisor eyes"
+write_state "tester" "advisor" "working" "1" "" "catch up"
+run_session review tester
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"popcorn-xp:tester"}'
+# May still nudge generic "declare state" (debounce) — must not be subagent chat drift
+assert_stderr_not_contains "DM-13 no chat drift after review" "back-forth" "$LAST_STDERR"
+
+# DM-14+15: close-check rejects active task claims; task-abandon clears them
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session task-claim 1 bob driver
+run_session close-check
+assert_exit "DM-14 close-check blocks open task claim" 1 "$LAST_RC"
+run_session task-abandon 1 "session end"
+run_session close-check
+assert_exit "DM-15 close-check OK after task-abandon" 0 "$LAST_RC"
+
+# DM-16+17: retro-requested requires .retro-{agent}.md or substantial handoff
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+write_state "craftsman" "driver" "completed" "1" "" "done"
+touch "$POPCORN/$TEAM/.retro-requested"
+run_session close-check
+assert_exit "DM-16 close-check blocks missing retro" 1 "$LAST_RC"
+printf 'line one\nline two\n' > "$POPCORN/$TEAM/.retro-craftsman.md"
+run_session close-check
+assert_exit "DM-17 close-check OK with retro file" 0 "$LAST_RC"
+
+# DM-18+19: compaction stop marker requires handoff file with 5+ lines
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+jq -n '{agent:"tester"}' > "$POPCORN/$TEAM/.compact-stop-tester.json"
+run_session close-check
+assert_exit "DM-18 close-check blocks compact-stop without handoff" 1 "$LAST_RC"
+printf '1\n2\n3\n4\n5\n' > "$POPCORN/$TEAM/handoff-tester.md"
+run_session close-check
+assert_exit "DM-19 close-check OK with handoff after compact-stop" 0 "$LAST_RC"
+
+# DM-20: subagent mode — TeamDelete retro gate skipped (use session close path)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_hook "check-retro-before-delete.sh"
+assert_exit "DM-20 subagent skips retro-before-delete" 0 "$LAST_RC"
+
+# DM-21: subagent mode — cleanup-context-store does not remove log
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+printf 'keep\n' > "$POPCORN/context-store.log"
+run_hook "cleanup-context-store.sh"
+assert_exit "DM-21 subagent cleanup-context-store no-op" 0 "$LAST_RC"
+if grep -q keep "$POPCORN/context-store.log" 2>/dev/null; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-21 context-store.log should remain in subagent mode"
+fi
+
+# DM-22: session close runs close-check; --force skips
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-DM-22 — open
+Close block
+EOF
+run_session close
+assert_exit "DM-22 close blocked when close-check fails" 1 "$LAST_RC"
+run_session close --force
+assert_exit "DM-22 close --force succeeds" 0 "$LAST_RC"
+if [ -f "$POPCORN/$TEAM/.closed.json" ] && jq -e '.close_check_skipped == true' "$POPCORN/$TEAM/.closed.json" >/dev/null 2>&1; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-22 .closed.json missing or close_check_skipped not true"
+fi
+
+# DM-23: task-claim optional expected revision (CAS)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session task-claim 1 alice driver 0
+assert_exit "DM-23a first claim OK" 0 "$LAST_RC"
+run_session task-claim 1 bob navigator 0
+assert_exit "DM-23b stale expected revision rejected" 2 "$LAST_RC"
+
+# DM-24: subagent navigator waiting_on_driver must cursor-ack task chat
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session chat T1 driver note "line for nav"
+write_state "expert" "navigator" "waiting_on_driver" "1" "" "wait" true "risk_check" "published"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"popcorn-xp:expert"}'
+assert_exit "DM-24 nav chat drift blocks" 2 "$LAST_RC"
+assert_stderr_contains "DM-24 mentions cursor-ack" "cursor-ack" "$LAST_STDERR"
+run_session cursor-ack expert T1 "$(wc -l < "$POPCORN/$TEAM/tasks/T1/back-forth.md" | tr -d ' ')"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"popcorn-xp:expert"}'
+assert_exit "DM-24 after ack allows idle" 0 "$LAST_RC"
+
+# DM-25: SubagentStop warns when compact-pending exists (no OBJECTION)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+jq -n '{phase:"driving"}' > "$POPCORN/$TEAM/.compact-pending-Explore.json"
+run_hook_stdin "check-advice-on-subagent-stop.sh" '{"hook_event_name":"SubagentStop","agent_type":"Explore"}'
+assert_exit "DM-25 SubagentStop compact warn exit 0" 0 "$LAST_RC"
+assert_stdout_contains "DM-25 compaction context" "Compaction pending" "$LAST_STDOUT"
+
+# DM-26: task-revision reads meta; events.jsonl receives task_claim
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 7
+run_session task-claim 7 zoe driver
+run_session task-revision 7
+if [ "$LAST_STDOUT" = "1" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-26 task-revision expected 1 got ${LAST_STDOUT:-empty}"
+fi
+if [ -f "$POPCORN/$TEAM/events.jsonl" ] && grep -q '"event":"task_claim"' "$POPCORN/$TEAM/events.jsonl"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-26 events.jsonl should log task_claim"
+fi
+
+# DM-27: subagent session close requires RETRO.md (≥5 lines); --force skips
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session close
+assert_exit "DM-27a close fails without RETRO.md" 1 "$LAST_RC"
+assert_stderr_contains "DM-27a stderr mentions RETRO.md" "RETRO.md" "$LAST_STDERR"
+
+printf '# R\n1\n2\n3\n' > "$POPCORN/$TEAM/RETRO.md"
+run_session close
+assert_exit "DM-27b close fails stub RETRO.md" 1 "$LAST_RC"
+
+printf '# R\n1\n2\n3\n4\n5\n' > "$POPCORN/$TEAM/RETRO.md"
+run_session close
+assert_exit "DM-27c close OK with substantive RETRO.md" 0 "$LAST_RC"
 
 # ============================================================
 # Results
