@@ -14,9 +14,14 @@ set -euo pipefail
 # 5. Working state:
 #    5a. Explicit waiting states (waiting_on_driver, waiting_on_verification) → allow
 #    5b. Navigator drift (navigator, navigating phase) → require READY artifact
-#    5d. Checkpoint check (driver with uncheckpointed edits) → block with checkpoint nudge
+#    5d. Checkpoint check (driver with uncheckpointed edits) → team: context-store only
+#    5e-adv. Advisor review → team: context-store; subagent: task chat vs .review-cursor-*
 #    5e. Advice check (any agent with unresolved advice) → block with advice summary
 #    5c. Generic working → nudge "go find work"
+#
+# Subagent mode: Phases 1–4 unchanged. Working-phase nudges skip context-store (5d/team 5e-adv).
+# Navigators in waiting_on_driver must cursor-ack task chat (meta cursors) before idling.
+# Unregistered agents (no agent-state file or empty role+phase) exit 0 — TeammateIdle is not the primary subagent transport.
 #
 # No-op when no active popcorn-xp session.
 
@@ -24,6 +29,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/session-common.sh"
 source "$SCRIPT_DIR/context-store-log.sh"
 px_load_session || exit 0
+
+SUBAGENT_MODE=0
+px_is_subagent_mode && SUBAGENT_MODE=1
+
+_px_task_slug() {
+  local raw="${1:-}"
+  raw="${raw#T}"
+  raw="${raw#t}"
+  printf 'T%s' "$raw"
+}
 
 # Local helper: emit advice block message and exit 2 if any unresolved items exist.
 _px_advice_block() {
@@ -104,6 +119,17 @@ if [ "$PHASE" = "bench" ]; then
   exit 0
 fi
 
+# Subagent: no registered state — do not apply teammate idle nudges (lead/subagent workers may idle harmlessly)
+if [ "$SUBAGENT_MODE" -eq 1 ]; then
+  if [ -z "$AGENT_SHORT" ]; then
+    exit 0
+  fi
+  _state_path=$(px_state_file "$AGENT_SHORT")
+  if [ ! -f "$_state_path" ] || { [ -z "$ROLE" ] && [ -z "$PHASE" ]; }; then
+    exit 0
+  fi
+fi
+
 # Phase 5a: explicit waiting states (check navigator READY requirement first)
 IN_WAITING_STATE=0
 if [ "$PHASE" = "waiting_on_driver" ] || [ "$PHASE" = "waiting_on_verification" ]; then
@@ -114,6 +140,21 @@ if [ "$PHASE" = "waiting_on_driver" ] || [ "$PHASE" = "waiting_on_verification" 
     echo "Popcorn XP: Before you idle as navigator on task ${TASK_ID:-current}, publish your READY artifact (${KIND_LABEL}) and set state. Use: .popcorn-xp/$TEAM/session ready ${AGENT_SHORT:-agent} ${TASK_ID:-current} ${KIND_LABEL} 'What you checked and what the driver should watch.'" >&2
     exit 2
   fi
+  # Subagent: navigator waiting on driver must catch up on task chat (per-agent line cursor in meta.json)
+  if [ "$SUBAGENT_MODE" -eq 1 ] && [ "$ROLE" = "navigator" ] && [ "$PHASE" = "waiting_on_driver" ] && [ -n "$TASK_ID" ]; then
+    _ts=$(_px_task_slug "$TASK_ID")
+    _bf="$TEAM_DIR/tasks/$_ts/back-forth.md"
+    _meta="$TEAM_DIR/tasks/$_ts/meta.json"
+    if [ -f "$_bf" ] && [ -f "$_meta" ]; then
+      _total=$(wc -l < "$_bf" | tr -d ' ')
+      _cur=$(jq -r --arg a "$AGENT_SHORT" '(.cursors // {})[$a] // 0' "$_meta" 2>/dev/null || echo 0)
+      [[ "$_cur" =~ ^[0-9]+$ ]] || _cur=0
+      if [ "$_total" -gt "$_cur" ]; then
+        echo "Popcorn XP (subagent): Task $_ts chat has lines not covered by your cursor ($_cur / $_total). Read .popcorn-xp/$TEAM/tasks/$_ts/back-forth.md and run: .popcorn-xp/$TEAM/session cursor-ack ${AGENT_SHORT:-agent} $_ts <last_line_seen>" >&2
+        exit 2
+      fi
+    fi
+  fi
 fi
 
 # Phase 5b: navigator drift — require a concrete artifact
@@ -122,25 +163,44 @@ if [ "$ROLE" = "navigator" ] && [ "$PHASE" = "navigating" ]; then
   exit 2
 fi
 
-# Phase 5d: checkpoint check (driver with uncheckpointed edits)
-if [ "$ROLE" = "driver" ] || [ "$PHASE" = "driving" ]; then
-  LOG_FILE=$(cs_log_file)
-  CURSOR_FILE=$(cs_checkpoint_cursor_file "$TEAM_DIR")
-  COUNT=$(cs_edit_count_since_cursor "$LOG_FILE" "$CURSOR_FILE")
-  if [ "$COUNT" -gt 0 ]; then
-    echo "Popcorn XP: You have $COUNT file edit(s) since your last checkpoint. Send a checkpoint to your navigator and log it: .popcorn-xp/$TEAM/session log 'what you did'" >&2
-    exit 2
+# Phase 5d: checkpoint check (driver with uncheckpointed edits) — team / context-store only
+if [ "$SUBAGENT_MODE" -eq 0 ]; then
+  if [ "$ROLE" = "driver" ] || [ "$PHASE" = "driving" ]; then
+    LOG_FILE=$(cs_log_file)
+    CURSOR_FILE=$(cs_checkpoint_cursor_file "$TEAM_DIR")
+    COUNT=$(cs_edit_count_since_cursor "$LOG_FILE" "$CURSOR_FILE")
+    if [ "$COUNT" -gt 0 ]; then
+      echo "Popcorn XP: You have $COUNT file edit(s) since your last checkpoint. Send a checkpoint to your navigator and log it: .popcorn-xp/$TEAM/session log 'what you did'" >&2
+      exit 2
+    fi
   fi
 fi
 
-# Phase 5e-adv: advisor review cursor check
+# Phase 5e-adv: advisor review — team uses context-store; subagent uses task chat line count
 if [ "$ROLE" = "advisor" ]; then
-  LOG_FILE=$(cs_log_file)
-  REVIEW_CURSOR_FILE=$(cs_review_cursor_file "$TEAM_DIR" "$AGENT_SHORT")
-  REVIEW_COUNT=$(cs_edit_count_since_review_cursor "$LOG_FILE" "$REVIEW_CURSOR_FILE")
-  if [ "$REVIEW_COUNT" -gt 0 ]; then
-    echo "Popcorn XP: $REVIEW_COUNT new edit(s) since your last review. Read .popcorn-xp/context-store.log, check the affected files, and advise. Log your review: .popcorn-xp/$TEAM/session review $AGENT_SHORT" >&2
-    exit 2
+  if [ "$SUBAGENT_MODE" -eq 1 ] && [ -n "$TASK_ID" ]; then
+    _ts=$(_px_task_slug "$TASK_ID")
+    _bf="$TEAM_DIR/tasks/$_ts/back-forth.md"
+    if [ -f "$_bf" ]; then
+      _total=$(wc -l < "$_bf" | tr -d ' ')
+      _rc=0
+      if [ -f "$TEAM_DIR/.review-cursor-$AGENT_SHORT" ]; then
+        _rraw=$(tr -d '[:space:]' < "$TEAM_DIR/.review-cursor-$AGENT_SHORT" || true)
+        [[ "$_rraw" =~ ^[0-9]+$ ]] && _rc=$_rraw
+      fi
+      if [ "$_total" -gt "$_rc" ]; then
+        echo "Popcorn XP (subagent): Task $_ts chat has lines not covered by your review cursor ($_rc / $_total). Read .popcorn-xp/$TEAM/tasks/$_ts/back-forth.md and run: .popcorn-xp/$TEAM/session review $AGENT_SHORT" >&2
+        exit 2
+      fi
+    fi
+  elif [ "$SUBAGENT_MODE" -eq 0 ]; then
+    LOG_FILE=$(cs_log_file)
+    REVIEW_CURSOR_FILE=$(cs_review_cursor_file "$TEAM_DIR" "$AGENT_SHORT")
+    REVIEW_COUNT=$(cs_edit_count_since_review_cursor "$LOG_FILE" "$REVIEW_CURSOR_FILE")
+    if [ "$REVIEW_COUNT" -gt 0 ]; then
+      echo "Popcorn XP: $REVIEW_COUNT new edit(s) since your last review. Read .popcorn-xp/context-store.log, check the affected files, and advise. Log your review: .popcorn-xp/$TEAM/session review $AGENT_SHORT" >&2
+      exit 2
+    fi
   fi
 fi
 

@@ -12,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/session-common.sh"
 px_load_session || exit 0
+px_is_subagent_mode && exit 0
 
 source "$SCRIPT_DIR/context-store-log.sh"
 

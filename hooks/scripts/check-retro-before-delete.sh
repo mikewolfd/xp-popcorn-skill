@@ -6,6 +6,11 @@ set -euo pipefail
 # or doesn't have meaningful content (at least 5 lines). The retro happens BEFORE the summary,
 # BEFORE shutdown, BEFORE cleanup — it's mandatory.
 # No-op when no active popcorn-xp session directory exists.
+# Subagent mode: no-op — closeout uses session close-check / session close (which enforces RETRO.md ≥5 lines), not TeamDelete.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=session-common.sh
+source "$SCRIPT_DIR/session-common.sh"
 
 POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
 TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
@@ -13,6 +18,9 @@ TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
 
 TEAM_DIR="$POPCORN_DIR/$TEAM"
 [ ! -d "$TEAM_DIR" ] && exit 0
+
+px_load_session || exit 0
+px_is_subagent_mode && exit 0
 
 # Check if RETRO.md exists
 if [ ! -f "$TEAM_DIR/RETRO.md" ]; then

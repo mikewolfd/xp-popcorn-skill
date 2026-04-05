@@ -14,6 +14,22 @@ px_load_session() {
   return 0
 }
 
+# px_runtime_mode — "team" (default) or "subagent"; reads $TEAM_DIR/.runtime-mode
+px_runtime_mode() {
+  local f="$TEAM_DIR/.runtime-mode" m
+  [ ! -f "$f" ] && { echo "team"; return 0; }
+  m=$(tr '[:upper:]' '[:lower:]' < "$f" | tr -d '[:space:]')
+  if [ "$m" = "subagent" ]; then
+    echo "subagent"
+  else
+    echo "team"
+  fi
+}
+
+px_is_subagent_mode() {
+  [ "$(px_runtime_mode)" = "subagent" ]
+}
+
 px_normalize_agent() {
   local raw="${1:-}"
   if [ -z "$raw" ] || [ "$raw" = "null" ] || [ "$raw" = "unknown" ]; then

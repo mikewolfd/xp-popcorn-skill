@@ -4,6 +4,11 @@ set -euo pipefail
 # session — Popcorn XP session helper.
 # Teammates call this to append entries to LOG.md, ADVICE.md, and manage agent state.
 # Resolves the active team from .popcorn-xp/.active-team.
+# Subagent mode: task bus under tasks/T{n}/, claim/close-check/close; see docs/dual-mode-proposal.md
+
+SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=../hooks/scripts/session-common.sh
+source "$SCRIPT_ROOT/hooks/scripts/session-common.sh"
 
 POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
 TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
@@ -12,9 +17,62 @@ TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
 DIR="$POPCORN_DIR/$TEAM"
 STATE_DIR="$DIR/agent-state"
 mkdir -p "$STATE_DIR"
+TEAM_DIR="$DIR"
+export TEAM_DIR
+px_load_session || true
 
 state_file() { echo "$STATE_DIR/$1.json"; }
 checkpoint_cursor_file() { echo "$DIR/.checkpoint-cursor"; }
+SESSION_LOCK="$DIR/.px-session-lock"
+ACTIVE_DRIVER_FILE="$DIR/.active-driver.json"
+
+normalize_task_slug() {
+  local raw="${1:?}"
+  raw="${raw#T}"
+  raw="${raw#t}"
+  printf 'T%s' "$raw"
+}
+
+task_dir() { echo "$DIR/tasks/$(normalize_task_slug "$1")"; }
+
+px_session_acquire_lock() {
+  local i=0
+  while [ "$i" -lt 80 ]; do
+    if mkdir "$SESSION_LOCK" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  echo "session: could not acquire session lock (try again)" >&2
+  return 1
+}
+
+px_session_release_lock() {
+  rmdir "$SESSION_LOCK" 2>/dev/null || true
+}
+
+# Machine-facing audit stream (dual-mode-proposal.md — optional events.jsonl).
+px_event_log() {
+  local kind="${1:?}"
+  # Default must be "${2:-"{}"}" — "${2:-{}}" wrongly appends "}" when $2 is set (bash parses :-{ as default word).
+  local payload="${2:-"{}"}"
+  # Use --arg + fromjson so the payload survives shell quoting (avoid flaky --argjson on expanded JSON strings).
+  if [ -n "${POPCORN_XP_EVENT_LOG_DEBUG:-}" ]; then
+    jq -nc \
+      --arg event "$kind" \
+      --arg team "$TEAM" \
+      --arg raw "$payload" \
+      '{event: $event, team: $team, recorded_at: (now | todate), payload: ($raw | fromjson)}' >> "$DIR/events.jsonl" \
+      || echo "session: px_event_log failed (event=$kind)" >&2
+  else
+    jq -nc \
+      --arg event "$kind" \
+      --arg team "$TEAM" \
+      --arg raw "$payload" \
+      '{event: $event, team: $team, recorded_at: (now | todate), payload: ($raw | fromjson)}' >> "$DIR/events.jsonl" 2>/dev/null || true
+  fi
+}
 
 ensure_state() {
   local file
@@ -48,18 +106,31 @@ cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
 case "$cmd" in
   log)
     printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"
-    if [ -f "$POPCORN_DIR/context-store.log" ]; then
-      wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$(checkpoint_cursor_file)"
-    else
-      echo 0 > "$(checkpoint_cursor_file)"
+    if [ "$(px_runtime_mode)" = "team" ]; then
+      if [ -f "$POPCORN_DIR/context-store.log" ]; then
+        wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$(checkpoint_cursor_file)"
+      else
+        echo 0 > "$(checkpoint_cursor_file)"
+      fi
     fi
     ;;
   review)
     AGENT="${1:?}"
-    if [ -f "$POPCORN_DIR/context-store.log" ]; then
-      wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$DIR/.review-cursor-${AGENT}"
+    if [ "$(px_runtime_mode)" = "subagent" ]; then
+      TASK_ID=$(jq -r '.task_id // empty' "$(state_file "$AGENT")" 2>/dev/null || true)
+      if [ -n "$TASK_ID" ]; then
+        TS=$(normalize_task_slug "$TASK_ID")
+        BF="$DIR/tasks/$TS/back-forth.md"
+        if [ -f "$BF" ]; then
+          wc -l < "$BF" | tr -d ' ' > "$DIR/.review-cursor-${AGENT}"
+        fi
+      fi
     else
-      echo 0 > "$DIR/.review-cursor-${AGENT}"
+      if [ -f "$POPCORN_DIR/context-store.log" ]; then
+        wc -l < "$POPCORN_DIR/context-store.log" | tr -d ' ' > "$DIR/.review-cursor-${AGENT}"
+      else
+        echo 0 > "$DIR/.review-cursor-${AGENT}"
+      fi
     fi
     ;;
   advice)
@@ -171,4 +242,631 @@ case "$cmd" in
   retro-request) touch "$DIR/.retro-requested" ;;
   retro) AGENT="${1:?}"; shift; printf '%s\n' "$*" > "$DIR/.retro-$AGENT.md" ;;
   shutdown) touch "$DIR/.shutdown" ;;
+  mode)
+    if [ $# -eq 0 ]; then
+      px_runtime_mode
+    else
+      M="${1:?}"
+      M=$(printf '%s' "$M" | tr '[:upper:]' '[:lower:]')
+      case "$M" in
+        team) printf '%s\n' team > "$DIR/.runtime-mode" ;;
+        subagent) printf '%s\n' subagent > "$DIR/.runtime-mode" ;;
+        *)
+          echo "session mode: expected team or subagent" >&2
+          exit 2
+          ;;
+      esac
+    fi
+    ;;
+  task-init)
+    TID="${1:?}"
+    TS=$(normalize_task_slug "$TID")
+    TD="$DIR/tasks/$TS"
+    mkdir -p "$TD"
+    META="$TD/meta.json"
+    if [ ! -f "$META" ]; then
+      jq -n \
+        --arg tid "$TS" \
+        --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+        '{
+          task_id: $tid,
+          status: "open",
+          driver: "",
+          navigator: "",
+          advisor: "",
+          advisor_session_default: true,
+          cursors: {},
+          revision: 0,
+          lease_holder: "",
+          lease_epoch: 0,
+          updated_at: $updated_at
+        }' > "$META"
+    fi
+    if [ ! -f "$TD/back-forth.md" ]; then
+      printf '# Task %s — tactical chat\n\nTyped advice belongs in ADVICE.md; use this file for discussion and coordination.\n' "$TS" > "$TD/back-forth.md"
+    fi
+    ;;
+  task-claim)
+    TID="${1:?}"; AGENT="${2:?}"; ROLE="${3:?}"; shift 3
+    EXPECTED_REV=""
+    if [ $# -ge 1 ] && [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+      EXPECTED_REV="$1"
+      shift
+    fi
+    ROLE=$(printf '%s' "$ROLE" | tr '[:upper:]' '[:lower:]')
+    case "$ROLE" in
+      driver|navigator|advisor) ;;
+      *)
+        echo "session task-claim: role must be driver, navigator, or advisor" >&2
+        exit 2
+        ;;
+    esac
+    TS=$(normalize_task_slug "$TID")
+    TD=$(task_dir "$TID")
+    META="$TD/meta.json"
+    [ ! -f "$META" ] && { echo "session task-claim: run task-init $TID first" >&2; exit 2; }
+    _st=$(jq -r '.status // ""' "$META")
+    if [ "$_st" = "done" ] || [ "$_st" = "abandoned" ]; then
+      echo "session task-claim: task $TS is $_st" >&2
+      exit 2
+    fi
+    if [ -f "$DIR/.shutdown" ]; then
+      echo "session task-claim: session is shutting down" >&2
+      exit 2
+    fi
+    px_session_acquire_lock || exit 2
+    _st=$(jq -r '.status // ""' "$META")
+    if [ "$_st" = "done" ] || [ "$_st" = "abandoned" ]; then
+      echo "session task-claim: task $TS is $_st" >&2
+      px_session_release_lock
+      exit 2
+    fi
+    cur_rev=$(jq -r '.revision // 0' "$META")
+    if [ -n "$EXPECTED_REV" ] && [ "$cur_rev" != "$EXPECTED_REV" ]; then
+      echo "session task-claim: revision mismatch (meta has $cur_rev, expected $EXPECTED_REV) — re-read and retry" >&2
+      px_session_release_lock
+      exit 2
+    fi
+    # Concurrent work: agent cannot hold the same role on another unfinished task
+    if [ -d "$DIR/tasks" ]; then
+      while IFS= read -r other; do
+        [ -f "$other" ] || continue
+        [ "$other" = "$META" ] && continue
+        od=$(jq -r '.driver // ""' "$other")
+        on=$(jq -r '.navigator // ""' "$other")
+        oa=$(jq -r '.advisor // ""' "$other")
+        ost=$(jq -r '.status // ""' "$other")
+        case "$ost" in
+          done|abandoned) continue ;;
+        esac
+        olabel=$(basename "$(dirname "$other")")
+        if [ "$ROLE" = "driver" ] && [ -n "$od" ] && [ "$od" = "$AGENT" ]; then
+          echo "session task-claim: $AGENT already holds driver on $olabel" >&2
+          px_session_release_lock
+          exit 2
+        fi
+        if [ "$ROLE" = "navigator" ] && [ -n "$on" ] && [ "$on" = "$AGENT" ]; then
+          echo "session task-claim: $AGENT already holds navigator on $olabel" >&2
+          px_session_release_lock
+          exit 2
+        fi
+        if [ "$ROLE" = "advisor" ] && [ -n "$oa" ] && [ "$oa" = "$AGENT" ]; then
+          echo "session task-claim: $AGENT already holds advisor on $olabel" >&2
+          px_session_release_lock
+          exit 2
+        fi
+      done < <(find "$DIR/tasks" -mindepth 2 -maxdepth 2 -name meta.json 2>/dev/null)
+    fi
+    cur_d=$(jq -r '.driver // ""' "$META")
+    cur_n=$(jq -r '.navigator // ""' "$META")
+    cur_a=$(jq -r '.advisor // ""' "$META")
+    if [ "$ROLE" = "driver" ] && [ -n "$cur_d" ] && [ "$cur_d" != "$AGENT" ]; then
+      echo "session task-claim: driver already set ($cur_d)" >&2
+      px_session_release_lock
+      exit 2
+    fi
+    if [ "$ROLE" = "navigator" ] && [ -n "$cur_n" ] && [ "$cur_n" != "$AGENT" ]; then
+      echo "session task-claim: navigator already set ($cur_n)" >&2
+      px_session_release_lock
+      exit 2
+    fi
+    if [ "$ROLE" = "advisor" ] && [ -n "$cur_a" ] && [ "$cur_a" != "$AGENT" ]; then
+      echo "session task-claim: advisor already set ($cur_a)" >&2
+      px_session_release_lock
+      exit 2
+    fi
+    # Single active driver across session
+    if [ "$ROLE" = "driver" ]; then
+      if [ -f "$ACTIVE_DRIVER_FILE" ]; then
+        ex_task=$(jq -r '.task_id // ""' "$ACTIVE_DRIVER_FILE")
+        ex_ag=$(jq -r '.agent // ""' "$ACTIVE_DRIVER_FILE")
+        if [ -n "$ex_ag" ] && [ "$ex_task" != "$TS" ]; then
+          echo "session task-claim: another driver is active on $ex_task ($ex_ag)" >&2
+          px_session_release_lock
+          exit 2
+        fi
+      fi
+    fi
+    # Rotation: same agent must not drive consecutive tasks (when 2+ agent-state files exist)
+    if [ "$ROLE" = "driver" ]; then
+      teammate_count=$(find "$STATE_DIR" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+      if [ "${teammate_count:-0}" -ge 2 ] && [ -f "$DIR/LOG.md" ] && grep -q "^## Task" "$DIR/LOG.md"; then
+        last_driver=$(grep "^## Task" "$DIR/LOG.md" | tail -1 | sed 's/.*Driver @\([^,]*\).*/\1/' | tr -d ' ')
+        if [ -n "$last_driver" ] && [ "$last_driver" = "$AGENT" ]; then
+          echo "session task-claim: rotation required — $AGENT drove the last task" >&2
+          px_session_release_lock
+          exit 2
+        fi
+      fi
+    fi
+    tmp="$META.tmp.$$"
+    jq \
+      --arg role "$ROLE" \
+      --arg agent "$AGENT" \
+      --arg ts "$TS" \
+      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      'if $role == "driver" then .driver = $agent
+       elif $role == "navigator" then .navigator = $agent
+       else .advisor = $agent end
+       | .status = "in_progress"
+       | .revision = ((.revision // 0) + 1)
+       | .lease_holder = ""
+       | .lease_epoch = 0
+       | .updated_at = $updated_at' "$META" > "$tmp" && mv "$tmp" "$META"
+    if [ "$ROLE" = "driver" ]; then
+      jq -n --arg task_id "$TS" --arg agent "$AGENT" '{task_id: $task_id, agent: $agent}' > "$ACTIVE_DRIVER_FILE"
+    fi
+    px_event_log task_claim "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg r "$ROLE" --argjson rev "$cur_rev" '{task:$t, agent:$a, role:$r, prev_revision:$rev}')"
+    px_session_release_lock
+    ;;
+  task-release)
+    TID="${1:?}"; AGENT="${2:?}"
+    TS=$(normalize_task_slug "$TID")
+    TD=$(task_dir "$TID")
+    META="$TD/meta.json"
+    [ ! -f "$META" ] && exit 0
+    px_session_acquire_lock || exit 2
+    tmp="$META.tmp.$$"
+    jq \
+      --arg agent "$AGENT" \
+      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      'if .driver == $agent then .driver = "" else . end
+       | if .navigator == $agent then .navigator = "" else . end
+       | if .advisor == $agent then .advisor = "" else . end
+       | if .lease_holder == $agent then .lease_holder = "" | .lease_epoch = 0 else . end
+       | if ((.driver // "") == "") and ((.navigator // "") == "") and ((.advisor // "") == "")
+            and (.status != "done" and .status != "abandoned") then .status = "open" else . end
+       | .revision = ((.revision // 0) + 1)
+       | .updated_at = $updated_at' "$META" > "$tmp" && mv "$tmp" "$META"
+    cur_d=$(jq -r '.driver // ""' "$META")
+    if [ -z "$cur_d" ]; then
+      if [ -f "$ACTIVE_DRIVER_FILE" ]; then
+        at=$(jq -r '.task_id // ""' "$ACTIVE_DRIVER_FILE")
+        aa=$(jq -r '.agent // ""' "$ACTIVE_DRIVER_FILE")
+        if [ "$at" = "$TS" ] && [ "$aa" = "$AGENT" ]; then
+          rm -f "$ACTIVE_DRIVER_FILE"
+        fi
+      fi
+    fi
+    px_event_log task_release "$(jq -nc --arg t "$TS" --arg a "$AGENT" '{task:$t, agent:$a}')"
+    px_session_release_lock
+    ;;
+  task-complete)
+    TID="${1:?}"; AGENT="${2:?}"; shift 2
+    OUTCOME="${1:?}"; shift
+    NOTE="${*:-}"
+    TS=$(normalize_task_slug "$TID")
+    TD=$(task_dir "$TID")
+    META="$TD/meta.json"
+    [ ! -f "$META" ] && { echo "session task-complete: unknown task $TS" >&2; exit 2; }
+    _stc=$(jq -r '.status // ""' "$META")
+    if [ "$_stc" = "abandoned" ]; then
+      echo "session task-complete: task $TS is abandoned" >&2
+      exit 2
+    fi
+    if ! env CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}" bash "$SCRIPT_ROOT/hooks/scripts/check-advice-on-complete.sh" < /dev/null; then
+      exit 2
+    fi
+    px_session_acquire_lock || exit 2
+    tmp="$META.tmp.$$"
+    jq \
+      --arg agent "$AGENT" \
+      --arg outcome "$OUTCOME" \
+      --arg note "$NOTE" \
+      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      '.status = "done"
+       | .completed_by = $agent
+       | .outcome = $outcome
+       | .completion_note = $note
+       | .driver = ""
+       | .navigator = ""
+       | .advisor = ""
+       | .lease_holder = ""
+       | .lease_epoch = 0
+       | .revision = ((.revision // 0) + 1)
+       | .updated_at = $updated_at' "$META" > "$tmp" && mv "$tmp" "$META"
+    if [ -f "$ACTIVE_DRIVER_FILE" ]; then
+      at=$(jq -r '.task_id // ""' "$ACTIVE_DRIVER_FILE")
+      if [ "$at" = "$TS" ]; then
+        rm -f "$ACTIVE_DRIVER_FILE"
+      fi
+    fi
+    px_event_log task_complete "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg o "$OUTCOME" '{task:$t, agent:$a, outcome:$o}')"
+    px_session_release_lock
+    printf '\n### Task complete\nTask %s by @%s — %s %s\n' "$TS" "$AGENT" "$OUTCOME" "$NOTE" >> "$DIR/LOG.md"
+    ;;
+  task-abandon)
+    TID="${1:?}"; shift
+    NOTE="${*:-abandoned}"
+    TS=$(normalize_task_slug "$TID")
+    TD=$(task_dir "$TID")
+    META="$TD/meta.json"
+    [ ! -f "$META" ] && { echo "session task-abandon: unknown task $TS" >&2; exit 2; }
+    px_session_acquire_lock || exit 2
+    tmp="$META.tmp.$$"
+    jq \
+      --arg note "$NOTE" \
+      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      '.status = "abandoned"
+       | .driver = ""
+       | .navigator = ""
+       | .advisor = ""
+       | .lease_holder = ""
+       | .lease_epoch = 0
+       | .abandon_note = $note
+       | .revision = ((.revision // 0) + 1)
+       | .updated_at = $updated_at' "$META" > "$tmp" && mv "$tmp" "$META"
+    if [ -f "$ACTIVE_DRIVER_FILE" ]; then
+      at=$(jq -r '.task_id // ""' "$ACTIVE_DRIVER_FILE")
+      if [ "$at" = "$TS" ]; then
+        rm -f "$ACTIVE_DRIVER_FILE"
+      fi
+    fi
+    px_event_log task_abandon "$(jq -nc --arg t "$TS" --arg n "$NOTE" '{task:$t, note:$n}')"
+    px_session_release_lock
+    printf '\n### Task abandoned\nTask %s — %s\n' "$TS" "$NOTE" >> "$DIR/LOG.md"
+    ;;
+  task-revision)
+    TID="${1:?}"
+    TS=$(normalize_task_slug "$TID")
+    META="$DIR/tasks/$TS/meta.json"
+    [ ! -f "$META" ] && { echo 0; exit 0; }
+    jq -r '.revision // 0' "$META"
+    ;;
+  task-advisor-scope)
+    TID="${1:?}"; VAL="${2:?}"
+    TS=$(normalize_task_slug "$TID")
+    META="$DIR/tasks/$TS/meta.json"
+    [ ! -f "$META" ] && { echo "session task-advisor-scope: run task-init first" >&2; exit 2; }
+    case "$(printf '%s' "$VAL" | tr '[:upper:]' '[:lower:]')" in
+      true|1|yes) ADJ=true ;;
+      false|0|no) ADJ=false ;;
+      *)
+        echo "session task-advisor-scope: expected true or false (session-scoped advisor default vs task override)" >&2
+        exit 2
+        ;;
+    esac
+    px_session_acquire_lock || exit 2
+    tmp="$META.tmp.$$"
+    jq \
+      --argjson flag "$ADJ" \
+      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      '.advisor_session_default = $flag
+       | .revision = ((.revision // 0) + 1)
+       | .updated_at = $updated_at' "$META" > "$tmp" && mv "$tmp" "$META"
+    px_session_release_lock
+    ;;
+  health)
+    # Lead-side diagnostics: task bus cursors, READY gaps, advice summary (subagent-focused).
+    STRICT=0
+    if [ "${1:-}" = "--strict" ]; then
+      STRICT=1
+      shift
+    fi
+    fail=0
+    echo "=== Popcorn XP session health: $TEAM ==="
+    echo "Runtime mode: $(px_runtime_mode)"
+    ADVICE="$DIR/ADVICE.md"
+    echo ""
+    echo "--- Advice (unresolved) ---"
+    if [ ! -f "$ADVICE" ]; then
+      echo "(no ADVICE.md)"
+    else
+      had=0
+      while IFS=' ' read -r TYPE count; do
+        [ -z "$TYPE" ] && continue
+        had=1
+        echo "  $TYPE: $count open"
+        if [ "$STRICT" -eq 1 ] && [ "$TYPE" = "OBJECTION" ] && [ "${count:-0}" -gt 0 ]; then
+          fail=1
+        fi
+      done < <(px_unresolved_advice "$ADVICE")
+      if [ "$had" -eq 0 ]; then
+        echo "  (none)"
+      fi
+    fi
+    echo ""
+    echo "--- Active driver lock ---"
+    if [ -f "$ACTIVE_DRIVER_FILE" ]; then
+      jq . "$ACTIVE_DRIVER_FILE" 2>/dev/null || cat "$ACTIVE_DRIVER_FILE"
+    else
+      echo "  (none)"
+    fi
+    echo ""
+    echo "--- Task bus ---"
+    if [ ! -d "$DIR/tasks" ]; then
+      echo "  (no tasks/ directory — run session task-init)"
+    else
+      found=0
+      while IFS= read -r meta; do
+        [ -f "$meta" ] || continue
+        found=1
+        tid=$(jq -r '.task_id // ""' "$meta")
+        st=$(jq -r '.status // ""' "$meta")
+        dr=$(jq -r '.driver // ""' "$meta")
+        nv=$(jq -r '.navigator // ""' "$meta")
+        adv=$(jq -r '.advisor // ""' "$meta")
+        rev=$(jq -r '.revision // 0' "$meta")
+        lh=$(jq -r '.lease_holder // ""' "$meta")
+        le=$(jq -r '.lease_epoch // 0' "$meta")
+        ads=$(jq -r '.advisor_session_default // true' "$meta")
+        echo "  Task $tid status=$st rev=$rev lease=${lh}@${le} advisor_session_default=$ads driver=$dr navigator=$nv advisor=$adv"
+        tdir=$(dirname "$meta")
+        bf="$tdir/back-forth.md"
+        if [ -f "$bf" ]; then
+          total=$(wc -l < "$bf" | tr -d ' ')
+          echo "    back-forth.md: $total lines"
+          jq -r '.cursors // {} | to_entries[] | "    cursor \(.key): line \(.value)"' "$meta" 2>/dev/null || true
+          while IFS= read -r ag; do
+            [ -z "$ag" ] && continue
+            cur=$(jq -r --arg a "$ag" '(.cursors // {})[$a] // 0' "$meta")
+            if [ "$cur" -lt "$total" ]; then
+              echo "    (unread) $ag: cursor $cur < EOF line $total"
+            fi
+          done < <(jq -r '.cursors // {} | keys[]' "$meta" 2>/dev/null || true)
+        fi
+      done < <(find "$DIR/tasks" -mindepth 2 -maxdepth 2 -name meta.json 2>/dev/null | sort)
+      if [ "$found" -eq 0 ]; then
+        echo "  (no task metadata yet)"
+      fi
+    fi
+    echo ""
+    echo "--- Agent state (navigator READY) ---"
+    if [ ! -d "$STATE_DIR" ] || [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ]; then
+      echo "  (no agent-state files)"
+    else
+      for sf in "$STATE_DIR"/*.json; do
+        [ -f "$sf" ] || continue
+        ag=$(jq -r '.agent // empty' "$sf")
+        role=$(jq -r '.role // ""' "$sf")
+        phase=$(jq -r '.phase // ""' "$sf")
+        tid=$(jq -r '.task_id // ""' "$sf")
+        nr=$(jq -r '.navigator_ready // false' "$sf")
+        if [ "$role" = "navigator" ] && [ "$phase" = "navigating" ] && [ "$nr" != "true" ] && [ -n "$tid" ]; then
+          TS=$(normalize_task_slug "$tid")
+          if compgen -G "$DIR/navigator-ready-*-${TS}.md" >/dev/null 2>&1; then
+            echo "  @$ag: navigating $TS — READY file present"
+          else
+            echo "  WARN: @$ag navigating $TS but no navigator-ready-*-${TS}.md"
+            [ "$STRICT" -eq 1 ] && fail=1
+          fi
+        fi
+      done
+    fi
+    echo ""
+    echo "--- Advisor review cursors (subagent) ---"
+    if [ "$(px_runtime_mode)" = "subagent" ] && [ -d "$STATE_DIR" ]; then
+      for sf in "$STATE_DIR"/*.json; do
+        [ -f "$sf" ] || continue
+        role=$(jq -r '.role // ""' "$sf")
+        [ "$role" = "advisor" ] || continue
+        ag=$(jq -r '.agent // empty' "$sf")
+        tid=$(jq -r '.task_id // ""' "$sf")
+        [ -n "$tid" ] || continue
+        TS=$(normalize_task_slug "$tid")
+        bf="$DIR/tasks/$TS/back-forth.md"
+        rc=0
+        if [ -f "$DIR/.review-cursor-$ag" ]; then
+          rraw=$(tr -d '[:space:]' < "$DIR/.review-cursor-$ag" || true)
+          [[ "$rraw" =~ ^[0-9]+$ ]] && rc=$rraw
+        fi
+        if [ -f "$bf" ]; then
+          total=$(wc -l < "$bf" | tr -d ' ')
+          if [ "$total" -gt "$rc" ]; then
+            echo "  @$ag task $TS: review cursor $rc, chat has $total lines"
+            if [ "$STRICT" -eq 1 ]; then
+              fail=1
+            fi
+          fi
+        fi
+      done
+    else
+      echo "  (team mode or no advisors — use context-store.log for edit awareness)"
+    fi
+    echo ""
+    if [ "$fail" -ne 0 ]; then
+      echo "health: --strict failures — fix above before close or handoff." >&2
+      exit 1
+    fi
+    if [ "$STRICT" -eq 1 ]; then
+      echo "health: OK (--strict)"
+    else
+      echo "health: report complete (add --strict to exit nonzero on OBJECTIONs, missing READY, or advisor chat drift)"
+    fi
+    ;;
+  close-check)
+    # Subagent closeout contract (dual-mode-proposal.md): OBJECTIONs, locks, task claims,
+    # retros or handoffs when retro-requested, compaction handoffs when compact-stop markers exist.
+    ADVICE="$DIR/ADVICE.md"
+    fail=0
+    if [ -f "$ADVICE" ]; then
+      unresolved=$(px_unresolved_advice "$ADVICE" OBJECTION | awk '{print $2}')
+      if [ -n "$unresolved" ] && [ "$unresolved" -gt 0 ]; then
+        echo "close-check: $unresolved unresolved OBJECTION(s) in ADVICE.md" >&2
+        fail=1
+      fi
+    fi
+    if [ -f "$ACTIVE_DRIVER_FILE" ]; then
+      echo "close-check: active driver lock still present ($(cat "$ACTIVE_DRIVER_FILE"))" >&2
+      fail=1
+    fi
+    # Mid-compaction: finish or clear pending before close
+    if compgen -G "$DIR/.compact-pending-*.json" >/dev/null 2>&1; then
+      echo "close-check: compaction pending (.compact-pending-*.json) — wait for PostCompact or clear manually" >&2
+      fail=1
+    fi
+    # Task bus: no open claims (in_progress or roles held on non-terminal tasks)
+    if [ -d "$DIR/tasks" ]; then
+      while IFS= read -r meta; do
+        [ -f "$meta" ] || continue
+        st=$(jq -r '.status // ""' "$meta")
+        dr=$(jq -r '.driver // ""' "$meta")
+        nv=$(jq -r '.navigator // ""' "$meta")
+        ad=$(jq -r '.advisor // ""' "$meta")
+        label=$(basename "$(dirname "$meta")")
+        case "$st" in
+          done|abandoned) continue ;;
+        esac
+        if [ "$st" = "in_progress" ] || [ -n "$dr" ] || [ -n "$nv" ] || [ -n "$ad" ]; then
+          echo "close-check: task $label still active (status=$st driver=$dr navigator=$nv advisor=$ad) — use task-release, task-complete, or task-abandon" >&2
+          fail=1
+        fi
+      done < <(find "$DIR/tasks" -mindepth 2 -maxdepth 2 -name meta.json 2>/dev/null)
+    fi
+    # Retro round: each registered teammate needs .retro-{agent}.md (>=2 lines) OR handoff-{agent}.md (>=5 lines)
+    if [ -f "$DIR/.retro-requested" ]; then
+      if [ -d "$STATE_DIR" ]; then
+        for sf in "$STATE_DIR"/*.json; do
+          [ -f "$sf" ] || continue
+          ag=$(jq -r '.agent // empty' "$sf")
+          [ -z "$ag" ] && continue
+          retro_f="$DIR/.retro-$ag.md"
+          handoff_f="$DIR/handoff-$ag.md"
+          retro_ok=0
+          if [ -f "$retro_f" ]; then
+            rl=$(wc -l < "$retro_f" | tr -d ' ')
+            [ "${rl:-0}" -ge 2 ] && retro_ok=1
+          fi
+          handoff_ok=0
+          if [ -f "$handoff_f" ]; then
+            hl=$(wc -l < "$handoff_f" | tr -d ' ')
+            [ "${hl:-0}" -ge 5 ] && handoff_ok=1
+          fi
+          if [ "$retro_ok" -eq 0 ] && [ "$handoff_ok" -eq 0 ]; then
+            echo "close-check: retro requested but missing .retro-$ag.md (2+ lines) or handoff-$ag.md (5+ lines)" >&2
+            fail=1
+          fi
+        done
+      fi
+    fi
+    # Post-compact stop markers require a captured handoff file
+    for cf in "$DIR"/.compact-stop-*.json; do
+      [ -f "$cf" ] || continue
+      base=$(basename "$cf")
+      ag="${base#.compact-stop-}"
+      ag="${ag%.json}"
+      hf="$DIR/handoff-$ag.md"
+      if [ ! -f "$hf" ]; then
+        echo "close-check: .compact-stop-$ag.json exists but handoff-$ag.md missing" >&2
+        fail=1
+      else
+        hl=$(wc -l < "$hf" | tr -d ' ')
+        if [ "${hl:-0}" -lt 5 ]; then
+          echo "close-check: handoff-$ag.md must have at least 5 lines after compaction" >&2
+          fail=1
+        fi
+      fi
+    done
+    if [ "$fail" -ne 0 ]; then
+      exit 1
+    fi
+    echo "close-check: OK"
+    ;;
+  close)
+    FORCE=0
+    if [ "${1:-}" = "--force" ]; then
+      FORCE=1
+      shift
+    fi
+    if [ "$FORCE" -eq 0 ]; then
+      if ! env CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}" bash "$SCRIPT_ROOT/bin/session" close-check; then
+        echo "session close: close-check failed (use: session close --force to skip)" >&2
+        exit 1
+      fi
+    fi
+    # Subagent: same RETRO.md bar as check-retro-before-delete.sh for team TeamDelete (≥5 lines).
+    if [ "$FORCE" -eq 0 ] && [ "$(px_runtime_mode)" = "subagent" ]; then
+      if [ ! -f "$DIR/RETRO.md" ]; then
+        echo "session close: missing .popcorn-xp/$TEAM/RETRO.md — append this session's retrospective (accumulated file), then retry" >&2
+        exit 1
+      fi
+      retro_lines=$(wc -l < "$DIR/RETRO.md" | tr -d ' ')
+      if [ "${retro_lines:-0}" -lt 5 ]; then
+        echo "session close: RETRO.md must have at least 5 lines of real retrospective content (not a stub)" >&2
+        exit 1
+      fi
+    fi
+    px_session_acquire_lock || exit 2
+    FORCED_JSON=false
+    [ "$FORCE" -eq 1 ] && FORCED_JSON=true
+    jq -n \
+      --arg closed_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      --arg mode "$(px_runtime_mode)" \
+      --argjson forced "$FORCED_JSON" \
+      '{closed_at: $closed_at, runtime_mode: $mode, close_check_skipped: $forced}' > "$DIR/.closed.json"
+    px_event_log session_close "$(jq -nc --arg m "$(px_runtime_mode)" --argjson f "$FORCED_JSON" '{runtime_mode:$m, forced:$f}')"
+    px_session_release_lock
+    ;;
+  chat)
+    TID="${1:?}"; FROM="${2:?}"; KIND="${3:?}"; shift 3
+    MSG="${*:?(message required)}"
+    TS=$(normalize_task_slug "$TID")
+    BF="$DIR/tasks/$TS/back-forth.md"
+    META="$DIR/tasks/$TS/meta.json"
+    [ ! -f "$BF" ] && { echo "session chat: run task-init $TID first" >&2; exit 2; }
+    stamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    {
+      printf '\n### %s | from=%s | kind=%s\n%s\n' "$stamp" "$FROM" "$KIND" "$MSG"
+    } >> "$BF"
+    px_event_log chat "$(jq -nc --arg t "$TS" --arg f "$FROM" --arg k "$KIND" --arg m "$MSG" '{task:$t, from:$f, kind:$k, message:$m}')"
+    ;;
+  chat-read)
+    TID="${1:?}"
+    CUR="${2:-0}"
+    TS=$(normalize_task_slug "$TID")
+    BF="$DIR/tasks/$TS/back-forth.md"
+    [ ! -f "$BF" ] && { echo "session chat-read: no chat for $TS" >&2; exit 1; }
+    total=$(wc -l < "$BF" | tr -d ' ')
+    if [ "$CUR" -ge "$total" ]; then
+      echo "0"
+      exit 0
+    fi
+    tail -n +$((CUR + 1)) "$BF"
+    echo "---"
+    echo "$total"
+    ;;
+  cursor-get)
+    AGENT="${1:?}"; TID="${2:?}"
+    TS=$(normalize_task_slug "$TID")
+    META="$DIR/tasks/$TS/meta.json"
+    [ ! -f "$META" ] && { echo 0; exit 0; }
+    jq -r --arg a "$AGENT" '(.cursors // {})[$a] // 0' "$META"
+    ;;
+  cursor-ack)
+    AGENT="${1:?}"; TID="${2:?}"; LINE="${3:?}"
+    TS=$(normalize_task_slug "$TID")
+    TD="$DIR/tasks/$TS"
+    META="$TD/meta.json"
+    [ ! -f "$META" ] && { echo "session cursor-ack: run task-init first" >&2; exit 2; }
+    px_session_acquire_lock || exit 2
+    tmp="$META.tmp.$$"
+    jq \
+      --arg a "$AGENT" \
+      --argjson line "$LINE" \
+      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      '.cursors = ((.cursors // {}) + {($a): $line})
+       | .updated_at = $updated_at' "$META" > "$tmp" && mv "$tmp" "$META"
+    px_event_log cursor_ack "$(jq -nc --arg t "$TS" --arg a "$AGENT" --argjson line "$LINE" '{task:$t, agent:$a, line:$line}')"
+    px_session_release_lock
+    ;;
 esac
