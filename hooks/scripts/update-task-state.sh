@@ -61,9 +61,17 @@ if [ "$STATUS" = "in_progress" ] || { [ -n "$OWNER" ] && [ -z "$STATUS" ]; }; th
   fi
 elif [ "$STATUS" = "completed" ] || [ "$STATUS" = "deleted" ]; then
   if [ -f "$(px_state_file "$AGENT_SHORT")" ]; then
+    CURRENT_ROLE=$(jq -r '.role // ""' "$(px_state_file "$AGENT_SHORT")" 2>/dev/null || true)
+    case "$CURRENT_ROLE" in
+      advisor) NEXT_ROLE="advisor" ;;
+      navigator) NEXT_ROLE="navigator" ;;
+      driver|"") NEXT_ROLE="navigator" ;;
+      *) NEXT_ROLE="navigator" ;;
+    esac
     px_update_state "$AGENT_SHORT" "" \
+      --arg role "$NEXT_ROLE" \
       '.phase = "completed"
-       | .role = "navigator"
+       | .role = $role
        | .blocked_on = ""
        | .next_action = "Read the latest snapshot and advise the next driver."
        | .navigator_ready = false

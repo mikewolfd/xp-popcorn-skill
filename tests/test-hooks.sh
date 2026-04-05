@@ -462,12 +462,12 @@ run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H2 waiting navigator without READY blocks" 2 "$LAST_RC"
 assert_stderr_contains "H2 waiting navigator without READY mentions READY" "READY artifact" "$LAST_STDERR"
 
-# Phase 1 (shutdown): .shutdown exists — force-stops
+# Phase 1 (shutdown): .shutdown exists — reminds agent to approve shutdown_request from lead
 setup_session
 touch "$POPCORN/$TEAM/.shutdown"
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
-assert_exit "H2 shutdown allows idle" 0 "$LAST_RC"
-assert_stdout_contains "H2 shutdown force-stop JSON" '"continue"' "$LAST_STDOUT"
+assert_exit "H2 shutdown blocks" 2 "$LAST_RC"
+assert_stderr_contains "H2 shutdown reminder message" "shutdown_request" "$LAST_STDERR"
 
 # Retro pending overrides shutdown: agent must write retro before being stopped
 setup_session
@@ -477,14 +477,14 @@ run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H2 retro-pending overrides shutdown" 2 "$LAST_RC"
 assert_stderr_contains "H2 retro-pending nudge despite shutdown" "Retro time" "$LAST_STDERR"
 
-# Shutdown proceeds after retro is written
+# Shutdown proceeds after retro is written — still reminds to approve shutdown_request
 setup_session
 touch "$POPCORN/$TEAM/.shutdown"
 touch "$POPCORN/$TEAM/.retro-requested"
 touch "$POPCORN/$TEAM/.retro-craftsman.md"
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
-assert_exit "H2 shutdown after retro done" 0 "$LAST_RC"
-assert_stdout_contains "H2 shutdown after retro JSON" '"continue"' "$LAST_STDOUT"
+assert_exit "H2 shutdown after retro done" 2 "$LAST_RC"
+assert_stderr_contains "H2 shutdown after retro reminder" "shutdown_request" "$LAST_STDERR"
 
 # Shutdown with unresolved OBJECTION — blocks (V11)
 setup_session
@@ -499,7 +499,7 @@ assert_exit "H2 shutdown OBJECTION blocks" 2 "$LAST_RC"
 assert_stderr_contains "H2 shutdown OBJECTION message" "OBJECTION" "$LAST_STDERR"
 assert_stderr_not_contains "H2 shutdown OBJECTION no JSON" '{"' "$LAST_STDERR"
 
-# Shutdown with resolved OBJECTION — force-stops normally
+# Shutdown with resolved OBJECTION — reminds to approve shutdown_request
 setup_session
 touch "$POPCORN/$TEAM/.shutdown"
 cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
@@ -511,8 +511,8 @@ Resolved before shutdown
 Fixed it
 EOF
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
-assert_exit "H2 shutdown resolved OBJECTION proceeds" 0 "$LAST_RC"
-assert_stdout_contains "H2 shutdown resolved OBJECTION JSON" '"continue"' "$LAST_STDOUT"
+assert_exit "H2 shutdown resolved OBJECTION proceeds" 2 "$LAST_RC"
+assert_stderr_contains "H2 shutdown resolved OBJECTION reminder" "shutdown_request" "$LAST_STDERR"
 
 # Compaction path: pre/post hooks persist state, idle requires handoff, then retires teammate
 setup_session
@@ -1087,6 +1087,25 @@ else
   ERRORS="${ERRORS}\n  FAIL: V72 — canonical advice should append to ADVICE.md"
 fi
 
+# V90: session advice records optional author attribution
+run_session advice FYI FYI-7-02 alice 'Attributed advice still works'
+assert_exit "V90 advice with author allowed" 0 "$LAST_RC"
+if grep -qF '### FYI FYI-7-02 — open (by alice)' "$POPCORN/$TEAM/ADVICE.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V90 — advice author should be recorded in ADVICE.md"
+fi
+
+run_session advice FYI FYI-7-03 'Unattributed advice still works'
+assert_exit "V90 advice without author allowed" 0 "$LAST_RC"
+if grep -qF '### FYI FYI-7-03 — open' "$POPCORN/$TEAM/ADVICE.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V90 — advice without author should still append to ADVICE.md"
+fi
+
 # ============================================================
 # Context Store tests
 # ============================================================
@@ -1278,6 +1297,36 @@ run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"T2-nav","status":"in_progress","description":"Navigate T2 — verify the finished drive"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V70: nav task claim allowed" 0 "$LAST_RC"
 assert_stdout_empty "V70: nav task claim should not emit stdout" "$LAST_STDOUT"
+
+# V86: Prior navigator role does not bypass rotation on a non-nav claim
+setup_session
+write_state "craftsman" "navigator" "completed" "T2" "" ""
+write_state "expert" "navigator" "completed" "T2" "" ""
+run_session task T2 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"99","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V86: navigator role still blocked on non-nav claim" 2 "$LAST_RC"
+assert_stderr_contains "V86: rotation message" "Rotation" "$LAST_STDERR"
+
+# V86b: Driver role is still blocked by rotation guard (no false positive)
+setup_session
+write_state "craftsman" "driver" "completed" "T2" "" ""
+write_state "expert" "navigator" "completed" "T2" "" ""
+run_session task T2 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"99","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V86b: driver role still blocked by rotation" 2 "$LAST_RC"
+assert_stderr_contains "V86b: rotation message" "Rotation" "$LAST_STDERR"
+
+# V86c: Prior advisor role does not bypass rotation on a non-nav claim
+setup_session
+write_state "craftsman" "advisor" "completed" "T2" "" ""
+write_state "expert" "navigator" "completed" "T2" "" ""
+run_session task T2 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"99","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V86c: advisor role still blocked on non-nav claim" 2 "$LAST_RC"
+assert_stderr_contains "V86c: rotation message" "Rotation" "$LAST_STDERR"
 
 # V71: fallback task headers seed the rotation anchor when the current task skipped `session task`
 setup_session
@@ -1516,8 +1565,8 @@ setup_session
 write_state "craftsman" "driver" "driving" "3" "" "finish implementation"
 touch "$POPCORN/$TEAM/.shutdown"
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
-assert_exit "V35 shutdown exits 0" 0 "$LAST_RC"
-assert_stdout_contains "V35 shutdown force-stop JSON" '"continue"' "$LAST_STDOUT"
+assert_exit "V35 shutdown exits 2" 2 "$LAST_RC"
+assert_stderr_contains "V35 shutdown reminder message" "shutdown_request" "$LAST_STDERR"
 STATE_PHASE_V35=$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo "missing")
 if [ "$STATE_PHASE_V35" = "shutdown" ]; then
   PASS=$((PASS + 1))
@@ -1690,6 +1739,111 @@ printf '12:00:00  %-10s %-28s %-40s %s\n' "EDIT" "popcorn-xp:expert" "src/bar.ts
 checkpoint_now
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "V81c driver not affected by advisor check" 0 "$LAST_RC"
+
+# ============================================================
+# V89: session ready preserves existing role (does not hardcode navigator)
+# ============================================================
+
+echo "--- V89: session ready preserves advisor role ---"
+
+setup_session
+write_state "craftsman" "advisor" "working" "9" "" "reviewing edits"
+run_session ready craftsman 9 correctness_review 'Checked invariants and edge cases.'
+V89_ROLE=$(jq -r '.role' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V89_ROLE" = "advisor" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V89 — session ready should preserve advisor role (got: $V89_ROLE)"
+fi
+V89_PHASE=$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V89_PHASE" = "waiting_on_driver" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V89 — session ready should set phase to waiting_on_driver (got: $V89_PHASE)"
+fi
+
+# V89b: session ready defaults to navigator when role is empty
+setup_session
+write_state "craftsman" "" "" "" "" ""
+run_session ready craftsman 9 risk_check 'Default role check.'
+V89B_ROLE=$(jq -r '.role' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V89B_ROLE" = "navigator" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V89b — session ready should default to navigator when no role set (got: $V89B_ROLE)"
+fi
+
+# V89c: session ready converts a completed driver into navigator for rotation
+setup_session
+write_state "craftsman" "driver" "completed" "9" "" "handing off"
+run_session ready craftsman 9 risk_check 'Handoff to the next driver.'
+V89C_ROLE=$(jq -r '.role' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V89C_ROLE" = "navigator" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V89c — session ready should convert a completed driver to navigator (got: $V89C_ROLE)"
+fi
+
+# V89d: rotated navigator cannot edit after publishing READY
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT"'/v89d-rotated.ts"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V89d: rotated navigator edit blocked" 2 "$LAST_RC"
+assert_stderr_contains "V89d: rotated navigator message" "not driver" "$LAST_STDERR"
+
+# ============================================================
+# V92: update-task-state.sh preserves role on task completion
+# ============================================================
+
+echo "--- V92: update-task-state preserves advisor role on completion ---"
+
+setup_session
+write_state "craftsman" "advisor" "working" "9" "" "finishing review"
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"9","status":"completed"},"agent_type":"popcorn-xp:craftsman"}'
+V92_ROLE=$(jq -r '.role' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V92_ROLE" = "advisor" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V92 — update-task-state should preserve advisor role on completion (got: $V92_ROLE)"
+fi
+V92_PHASE=$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V92_PHASE" = "completed" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V92 — update-task-state should set phase to completed (got: $V92_PHASE)"
+fi
+
+# V92b: update-task-state defaults to navigator on completion when role is empty
+setup_session
+write_state "craftsman" "" "" "" "" ""
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"9","status":"completed"},"agent_type":"popcorn-xp:craftsman"}'
+V92B_ROLE=$(jq -r '.role' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V92B_ROLE" = "navigator" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V92b — update-task-state should default to navigator when no role set (got: $V92B_ROLE)"
+fi
+
+# V92c: update-task-state converts a completed driver into navigator
+setup_session
+write_state "craftsman" "driver" "driving" "9" "" "finishing task"
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"9","status":"completed"},"agent_type":"popcorn-xp:craftsman"}'
+V92C_ROLE=$(jq -r '.role' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)
+if [ "$V92C_ROLE" = "navigator" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V92c — update-task-state should convert a completed driver to navigator (got: $V92C_ROLE)"
+fi
 
 # ============================================================
 # Results

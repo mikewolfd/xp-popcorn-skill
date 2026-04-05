@@ -48,7 +48,7 @@ A four-phase mechanical shutdown, mediated by signal files and `enforce-no-idle.
 4. Agents write retros via `session retro` → creates .retro-{agent}.md
 5. Agents SendMessage lead to confirm retro submitted
 6. Lead calls `session shutdown`           → creates .shutdown
-7. enforce-no-idle sees shutdown            → force-stops agents via {"continue": false}
+7. Lead SendMessages shutdown_request        → agents approve, terminating their sessions
 8. Lead writes RETRO.md
 9. check-retro-before-delete gates cleanup → blocks TeamDelete until RETRO.md exists
 10. Lead calls TeamDelete
@@ -118,7 +118,7 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 
 | Script | Purpose | Behavior |
 |--------|---------|----------|
-| `context-store-mark-dirty.sh` | Records edit events and shared file state | Appends every in-project edit to `context-store.log`, marks the file dirty in `context-store.json`, warns on soft locks, and nudges for checkpoints after 3+ edits since `.checkpoint-cursor`. |
+| `context-store-mark-dirty.sh` | Records edit events and shared file state | Appends every in-project edit to `context-store.log`, warns on soft locks, and nudges for checkpoints after 3+ edits since `.checkpoint-cursor`. |
 
 #### PreToolUse — Read
 
@@ -136,7 +136,7 @@ All hooks are registered in `hooks/hooks.json`. Every hook checks for `.popcorn-
 
 | Script | Purpose | Behavior |
 |--------|---------|----------|
-| `cleanup-context-store.sh` | Clears shared context-store artifacts | Removes `context-store.json`, `context-store.log`, and the lock file after TeamDelete succeeds. |
+| `cleanup-context-store.sh` | Clears shared context-store artifacts | Removes `context-store.log` after TeamDelete succeeds. |
 
 #### TaskCompleted
 
@@ -171,7 +171,7 @@ The core enforcement hook. Checked in priority order:
 | Phase | Condition | Action |
 |-------|-----------|--------|
 | 1. Retro pending | `.retro-requested` exists, `.retro-{agent}.md` missing | Nudge retro (exit 2) |
-| 2. Shutdown | `.shutdown` exists, retro done or never requested | Force-stop via `{"continue": false}` (exit 0) |
+| 2. Shutdown | `.shutdown` exists, retro done or never requested | Remind agent to approve shutdown_request from lead (exit 2) |
 | 3. Retro done | Both exist, no `.shutdown` | Allow idle (exit 0) |
 | 4. Compacted | `.compact-stop-{agent}.json` exists | Require a handoff, then force-stop via `{"continue": false}` (exit 0) |
 | 5. Waiting | Agent state is `waiting_on_driver` or `waiting_on_verification` and READY is published | Allow idle (exit 0) |
@@ -220,7 +220,7 @@ The only interface teammates use for session file writes. Commands:
 | Command | What it does |
 |---------|-------------|
 | `session log "message"` | Appends checkpoint to `LOG.md` and advances `.checkpoint-cursor` to the current `context-store.log` line count. |
-| `session advice TYPE ID "description"` | Appends advice entry to ADVICE.md (idempotent — skips if ID exists). |
+| `session advice TYPE ID [AUTHOR] "description"` | Appends advice entry to ADVICE.md (idempotent — skips if ID exists). |
 | `session resolve ID OUTCOME "detail"` | Appends resolution entry to ADVICE.md. |
 | `session task ID DRIVER NAV` | Appends task header to LOG.md. |
 | `session state AGENT ROLE PHASE TASK_ID BLOCKED_ON NEXT_ACTION` | Writes explicit per-agent state to `agent-state/{agent}.json`. |
@@ -267,25 +267,13 @@ REJECTED is a first-class outcome. A driver who rejects an OBJECTION with sound 
 
 ## Context Store
 
-`context-store.json` at `.popcorn-xp/context-store.json` enables cross-agent file awareness.
+`context-store.log` at `.popcorn-xp/context-store.log` is the source of truth for cross-agent file awareness. There is no separate JSON cache.
 
 Two hooks maintain it:
-- `context-store-check.sh` (PreToolUse Read) — reads from the store, injects metadata
-- `context-store-mark-dirty.sh` (PreToolUse Edit/Write) — logs every in-project edit, marks files dirty, detects soft locks, and emits checkpoint nudges
+- `context-store-check.sh` (PreToolUse Read) — scans `context-store.log` for the latest EDIT on the file and injects metadata when another agent was the last editor
+- `context-store-mark-dirty.sh` (PreToolUse Edit/Write) — appends every in-project edit to `context-store.log`, emits soft-lock warnings, and nudges for checkpoints after 3+ edits since `.checkpoint-cursor`
 
-Each file entry tracks:
-
-```json
-{
-  "path/to/file": {
-    "dirty": true,
-    "edited_by": "popcorn-xp:expert",
-    "edited_at": "2026-04-03T14:32:00Z"
-  }
-}
-```
-
-The soft lock is informational, not blocking. When agent A reads a file marked dirty by agent B, the hook injects a warning but allows the read. Edits are stricter: if an agent edits outside its declared task write set, `context-store-mark-dirty.sh` blocks the edit until file ownership is clarified. Uses `lockf` for mutual exclusion on macOS.
+The soft lock is informational, not blocking. When agent A reads a file marked dirty by agent B, the hook injects a warning but allows the read. Edits are stricter: if an agent edits outside its declared task write set, `context-store-mark-dirty.sh` blocks the edit until file ownership is clarified. The log is the only store; there is no separate cache or locking layer.
 
 `context-store.log` records all read/edit events with timestamps, agent names, and file paths. It is also the authoritative event stream for checkpoint reminders: `session log` stores the current line number in `.checkpoint-cursor`, and later hooks count only `EDIT` events after that cursor.
 

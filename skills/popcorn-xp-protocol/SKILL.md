@@ -46,7 +46,7 @@ Strong opinions, loosely held. The driver has their own approach and should defe
 
 **Writing to ADVICE.md:**
 After sending advice or a resolution via SendMessage, log it with the session script:
-- Advice: `Bash: .popcorn-xp/{team-name}/session advice TYPE ID "description"`
+- Advice: `Bash: .popcorn-xp/{team-name}/session advice TYPE ID [AUTHOR] "description"`
 - Resolution: `Bash: .popcorn-xp/{team-name}/session resolve ID OUTCOME "detail"`
 
 **Tracking your phase:**
@@ -207,9 +207,10 @@ ADVICE.md is an append-only ledger. Use the `session` script — never edit the 
 
 **Advice entry** (created by `session advice`):
 ```markdown
-### SMELL SML-3-01 — open
+### SMELL SML-3-01 — open (by alice)
 Issue description here
 ```
+If no author is supplied, omit the parenthetical.
 
 **Resolution entry** (created by `session resolve`):
 ```markdown

@@ -66,19 +66,10 @@ cs_file_state() {
   short_file="${short_file#/}"
 
   # Log format: TIME  EDIT  AGENT  SHORT_FILE  (detail)
-  # Use awk to find last EDIT line for this exact file path
-  local agent ts
-  while IFS= read -r line; do
-    local ev file_field
-    ev=$(echo "$line" | awk '{print $2}')
-    file_field=$(echo "$line" | awk '{print $4}')
-    if [ "$ev" = "EDIT" ] && [ "$file_field" = "$short_file" ]; then
-      agent=$(echo "$line" | awk '{print $3}')
-      ts=$(echo "$line" | awk '{print $1}')
-    fi
-  done < "$logfile"
-
-  [ -n "$agent" ] && echo "$agent $ts"
+  # Single awk pass: find last EDIT line for this exact file path
+  local result
+  result=$(awk -v file="$short_file" '$2 == "EDIT" && $4 == file { a=$3; t=$1 } END { if(a) print a,t }' "$logfile")
+  [ -n "$result" ] && echo "$result"
   return 0
 }
 

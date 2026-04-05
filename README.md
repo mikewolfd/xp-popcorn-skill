@@ -351,18 +351,15 @@ Created → Delivered → Persisted → Read → Considered → Resolved
 
 Four types of hooks enforce coordination state:
 
-**Advice Lifecycle** — Three hooks ensure advice is surfaced and engaged with:
+**Advice Lifecycle** — Two hooks ensure advice is surfaced and engaged with:
 
 - **TaskCompleted** — fires when a teammate marks a task done. This is the primary enforcement point. The hook reads ADVICE.md and:
   - Blocks on open OBJECTIONs (must fix or reject with reason)
-  - Blocks on unacknowledged SMELLs (must engage — agree or explain why it's fine)
-  - Warns on open STEERs and FYIs (reminds, doesn't block)
+  - Reminds on open SMELLs, STEERs, and FYIs (read them and decide; they do not block)
 
 - **TeammateIdle** — fires when a teammate goes idle between turns. The hook reads ADVICE.md and reminds the agent of all open items, prompting them to check the file and resume active work. Agents should not stay idle — the hook nudges them back into reviewing, reading ahead, or investigating.
 
-- **SubagentStop** — backup enforcement. Blocks on open OBJECTIONs if the agent tries to stop entirely (not just go idle). Belt and suspenders for the TaskCompleted hook.
-
-All three are no-ops when `.popcorn-xp/ADVICE.md` doesn't exist — no active session means no enforcement.
+Both are no-ops when `.popcorn-xp/ADVICE.md` doesn't exist — no active session means no enforcement.
 
 **Context Store (Soft Lock)** — Two hooks track file edits and warn of conflicts:
 
@@ -373,12 +370,12 @@ The context store creates a shared index of file activity — who read what, whe
 
 The enforcement gradient:
 
-| Type | TaskCompleted | TeammateIdle | SubagentStop |
-|------|--------------|-------------|-------------|
-| OBJECTION | Block | Remind | Block |
-| SMELL | Remind | Remind | — |
-| STEER | Remind | Remind | — |
-| FYI | Remind | Remind | — |
+| Type | TaskCompleted | TeammateIdle |
+|------|--------------|-------------|
+| OBJECTION | Block | Remind |
+| SMELL | Remind | Remind |
+| STEER | Remind | Remind |
+| FYI | Remind | Remind |
 
 This ensures that even low-severity advice gets surfaced. An FYI doesn't block your task, but the TeammateIdle hook will keep reminding you it's there until you mark it as noted. The cost of resolving an FYI is one line in ADVICE.md. The cost of ignoring it might be missing context that matters three tasks later.
 
@@ -460,11 +457,10 @@ popcorn-xp/
 ├── references/
 │   └── protocol.md           # Teammate instructions, prompt templates, advice format
 ├── hooks/
-│   ├── hooks.json            # Advice lifecycle hooks (TaskCompleted, TeammateIdle, SubagentStop)
+│   ├── hooks.json            # Advice lifecycle hooks (TaskCompleted, TeammateIdle)
 │   └── scripts/
-│       ├── check-advice-on-complete.sh  # TaskCompleted: blocks on OBJECTIONs, warns on rest
-│       ├── check-objections.sh          # SubagentStop: backup block on OBJECTIONs
-│       └── remind-unread-advice.sh      # TeammateIdle: reminds of all open advice items
+│       ├── check-advice-on-complete.sh  # TaskCompleted: blocks on OBJECTIONs, reminds on rest
+│       └── enforce-no-idle.sh           # TeammateIdle: reminds of all open advice items
 ├── research/                  # Architecture research (not loaded at runtime)
 │   ├── agent-teams.md
 │   ├── agent-types.md
@@ -475,7 +471,7 @@ popcorn-xp/
 └── .gitignore
 ```
 
-At runtime, `SKILL.md` is loaded by Claude Code via skill auto-discovery. The lead includes `references/protocol.md` in teammate prompts. The `hooks/hooks.json` registers three hooks (TaskCompleted, TeammateIdle, SubagentStop) that enforce the advice lifecycle — all are no-ops when no `.popcorn-xp/ADVICE.md` exists.
+At runtime, `SKILL.md` is loaded by Claude Code via skill auto-discovery. The lead includes `references/protocol.md` in teammate prompts. The `hooks/hooks.json` registers the two advice lifecycle hooks (TaskCompleted, TeammateIdle) that enforce the advice lifecycle — both are no-ops when no `.popcorn-xp/ADVICE.md` exists.
 
 ## Limitations
 

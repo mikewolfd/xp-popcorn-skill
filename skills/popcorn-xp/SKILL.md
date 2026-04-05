@@ -488,7 +488,7 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
    The `enforce-no-idle.sh` hook will nudge any idle teammate automatically. After retro-request, wait for all `.retro-*.md` files before writing RETRO.md. The FileChanged hook will notify you as each one arrives.
 
    If an agent sends their retro text via SendMessage instead of running the session script themselves, record it on their behalf: `.popcorn-xp/{team-name}/session retro {agent} '{text}'`. This creates the `.retro-{agent}.md` file so the shutdown lifecycle proceeds normally.
-5. **Shut down all teammates — mechanically.** Run the shutdown subcommand, then let the hook do the work:
+5. **Shut down all teammates — explicitly.** Run the shutdown subcommand, then send a shutdown_request to each teammate:
 
    **Important:** Send a retro request to each agent BEFORE issuing shutdown. The retro-pending phase in `enforce-no-idle.sh` takes priority over shutdown, ensuring agents can write their retro even after `.shutdown` is set. But sending the retro request first gives agents a turn to write while still fully active.
 
@@ -496,7 +496,14 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
    .popcorn-xp/{team-name}/session shutdown
    ```
 
-   On each teammate's next idle, `enforce-no-idle.sh` will force-stop them with `{"continue": false}`. You do not need to send shutdown_request messages. Proceed to TeamDelete once idle notifications stop appearing.
+   Then send an explicit shutdown_request to each teammate (the hook alone is not sufficient — `{"continue": false}` does not reliably stop agents):
+
+   ```
+   SendMessage(to: "craftsman", message: {"type": "shutdown_request"})
+   SendMessage(to: "expert", message: {"type": "shutdown_request"})
+   ```
+
+   Agents will approve the shutdown_request, which terminates their session. The `enforce-no-idle.sh` hook will also remind any idle agent to approve a pending shutdown_request. Proceed to TeamDelete once all teammates have shut down.
 6. **Write the retro file.** After teammates shut down, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
 7. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
 8. After teammates have shut down (or after 3 failed shutdown attempts):
@@ -568,11 +575,10 @@ In research and analysis sessions (no code being written), expect fewer OBJECTIO
 
 Advice is sent via SendMessage (real-time) and appended to `.popcorn-xp/ADVICE.md` (persistent record).
 
-Three hooks support the advice lifecycle:
+Two hooks support the advice lifecycle:
 
 - **TaskCompleted** — blocks on open OBJECTIONs, reminds of other open advice
 - **TeammateIdle** — reminds the agent of open advice items when they go idle
-- **SubagentStop** — backup block on open OBJECTIONs
 
 ## Session Files
 

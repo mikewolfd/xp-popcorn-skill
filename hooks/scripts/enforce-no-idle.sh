@@ -63,7 +63,9 @@ if [ -f "$TEAM_DIR/.retro-requested" ] && [ -n "$AGENT_SHORT" ] && [ ! -f "$TEAM
   exit 2
 fi
 
-# Phase 2: Shutdown — block on unresolved OBJECTIONs, then force-stop
+# Phase 2: Shutdown — block on unresolved OBJECTIONs, then remind agent to approve shutdown_request
+# Note: {"continue": false} does not reliably stop agents. The lead must send an explicit
+# shutdown_request message to each teammate; agents approve it to terminate their session.
 if [ -f "$TEAM_DIR/.shutdown" ]; then
   ADVICE="$TEAM_DIR/ADVICE.md"
   if [ -f "$ADVICE" ]; then
@@ -77,8 +79,8 @@ if [ -f "$TEAM_DIR/.shutdown" ]; then
   fi
   px_update_state "$AGENT_SHORT" "$TASK_ID" \
     '.phase = "shutdown" | .next_action = "" | .blocked_on = ""'
-  echo '{"continue": false, "stopReason": "Session complete — lead initiated shutdown"}'
-  exit 0
+  echo "Popcorn XP: Shutdown in progress. Approve the shutdown_request from the lead." >&2
+  exit 2
 fi
 
 # Phase 3: Retro submitted, no shutdown yet — allow idle

@@ -78,8 +78,18 @@ case "$cmd" in
       echo "session advice: ID '$ID' must match ${PREFIX}-{task}-{seq} (e.g. ${PREFIX}-3-01)" >&2
       exit 2
     fi
+    AUTHOR=""
+    if [ $# -ge 2 ]; then
+      AUTHOR="$1"
+      shift
+    fi
+    DETAIL="${*:?(description required)}"
     grep -qF "### $T $ID" "$DIR/ADVICE.md" 2>/dev/null && exit 0
-    printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$*" >> "$DIR/ADVICE.md"
+    if [ -n "$AUTHOR" ]; then
+      printf '\n### %s %s — open (by %s)\n%s\n' "$T" "$ID" "$AUTHOR" "$DETAIL" >> "$DIR/ADVICE.md"
+    else
+      printf '\n### %s %s — open\n%s\n' "$T" "$ID" "$DETAIL" >> "$DIR/ADVICE.md"
+    fi
     ;;
   resolve)
     ID="${1:?}"; O="${2:?}"; shift 2
@@ -113,9 +123,14 @@ case "$cmd" in
     AGENT="${1:?}"; TASK_ID="${2:?}"; KIND="${3:?}"; shift 3
     DETAIL="${*:?(detail required)}"
     printf '## READY — %s\n\n### Task\n%s\n\n### Artifact Type\n%s\n\n### Notes\n%s\n' "$AGENT" "$TASK_ID" "$KIND" "$DETAIL" > "$DIR/navigator-ready-$AGENT-T$TASK_ID.md"
+    CURRENT_ROLE=$(jq -r '.role // ""' "$(state_file "$AGENT")" 2>/dev/null || true)
+    READY_ROLE="navigator"
+    if [ "$CURRENT_ROLE" = "advisor" ]; then
+      READY_ROLE="advisor"
+    fi
     merge_state "$AGENT" "$TASK_ID" --arg agent "$AGENT" --arg task_id "$TASK_ID" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-      --arg kind "$KIND" --arg detail "$DETAIL" '.agent = $agent
-        | .role = "navigator"
+      --arg kind "$KIND" --arg detail "$DETAIL" --arg role "$READY_ROLE" '.agent = $agent
+        | .role = $role
         | .phase = "waiting_on_driver"
         | .task_id = $task_id
         | .blocked_on = "driver checkpoint"

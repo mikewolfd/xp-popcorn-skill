@@ -86,7 +86,7 @@ All agents in `agents/` share the same structure: YAML frontmatter with `name`, 
 
 Four-phase lifecycle enforced by `enforce-no-idle.sh` reading signal files:
 1. **Retro pending** (`.retro-requested`, no `.retro-{agent}.md`) — nudge retro submission (takes priority over shutdown so agents can write retros before being stopped)
-2. **Shutdown** (`.shutdown` exists, retro done or never requested) — force-stop via `{"continue": false}`
+2. **Shutdown** (`.shutdown` exists, retro done or never requested) — remind agent to approve shutdown_request from the lead (exit 2)
 3. **Retro done** (both exist, no `.shutdown`) — allow idle, wait for shutdown
 4. **Working** (default) — nudge agent to find work
 
