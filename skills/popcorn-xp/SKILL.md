@@ -1,6 +1,6 @@
 ---
 name: popcorn-xp
-description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Launches an Agent Teams pair-programming session where autonomous teammates coordinate through direct messaging, typed advice with blocking objections, and role rotation.
+description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Supports two runtime modes — team (Agent Teams + SendMessage) and subagent (lead-orchestrated subagents + file task bus) — with the same lenses, ADVICE.md gates, LOG.md, and rotation rules.
 # disable-model-invocation: true
 ---
 
@@ -24,8 +24,38 @@ Activate when the user explicitly asks for a team-style workflow:
 - "use subagents"
 - "let a team of agents work this"
 - "popcorn this task"
+- "popcorn this task using team mode" / "using subagent mode"
 
 Do not activate for ordinary single-agent coding.
+
+### Runtime mode: `team` vs `subagent`
+
+Pick explicitly from the user's wording (default **team** if they do not say):
+
+| Mode | When to use | Coordination |
+|------|-------------|--------------|
+| **team** | Live pairing, low-latency navigator interruption, native Agent Teams | `TeamCreate`, `TaskUpdate`, `SendMessage`, context-store hooks |
+| **subagent** | Async is OK, durable audit trail, simpler debugging, broad subagent permissions | Lead spawns/resumes subagents; `session task-*`, `tasks/T{n}/back-forth.md`, `SubagentStop` advice gate |
+
+After creating the session directory, set mode once:
+
+```bash
+printf '%s\n' team > ".popcorn-xp/$TEAM/.runtime-mode"      # default if omitted
+# or
+printf '%s\n' subagent > ".popcorn-xp/$TEAM/.runtime-mode"
+```
+
+Or: `.popcorn-xp/$TEAM/session mode team` / `session mode subagent`.
+
+**Subagent mode essentials:**
+
+1. Initialize each logical task folder: `.popcorn-xp/$TEAM/session task-init {n}` (creates `tasks/T{n}/meta.json` and `back-forth.md`).
+2. Claims and rotation are enforced by the shell, not `TaskUpdate`: `session task-claim {n} {agent-short-name} driver|navigator|advisor [expected-revision]` (optional CAS — re-read with `session task-revision {n}` if mismatch), `session task-release`, `session task-complete` / `task-abandon`. Toggle **`session task-advisor-scope {n} true|false`** to mark the task advisor as session-default vs task override (`advisor_session_default` in `meta.json`).
+3. Tactical chat → `session chat {n} {from} {kind} "message"`; read with `session chat-read {n} [start-line]`. Per-agent read cursors in `tasks/T{n}/meta.json`: `session cursor-get {agent} {n}` / `session cursor-ack {agent} {n} {line}` (navigators in `waiting_on_driver` should ack through the latest chat before idling in subagent mode).
+4. Typed advice still goes only to **ADVICE.md** (never rely on chat alone for OBJECTIONs).
+5. Closeout: `session retro-request` → each registered teammate submits **`.retro-{agent}.md`** (2+ lines) *or* a real **`handoff-{agent}.md`** (5+ lines) if they retired without a retro → release task roles (`task-release` / `task-complete`) or **`session task-abandon {id} 'reason'`** for stranded work → **`session close-check`** (OBJECTIONs, no active driver lock, no `tasks/*/meta.json` claims on non-done/abandoned tasks, no `.compact-pending-*`, each `.compact-stop-*` paired with a 5+ line handoff) → append **RETRO.md** (≥5 lines of real content in the accumulated file) → **`session close`** (runs `close-check` again, then enforces **`RETRO.md`** in **`subagent`** mode; **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate) → writes `.closed.json`; session dir kept for audit. Machine-facing **`events.jsonl`** records task/chat/close events (set **`POPCORN_XP_EVENT_LOG_DEBUG`** if append failures should print to stderr).
+6. In subagent mode, `session log` does not advance the context-store checkpoint (that log is team-mode only). Advisors use task chat + `session review` / cursors instead of context-store polling.
+7. Periodically run **`session health`** for a readable snapshot (task bus cursors, unresolved advice, navigator READY gaps, advisor review drift). Use **`session health --strict`** to exit nonzero on open OBJECTIONs, missing READY while `phase=navigating`, or advisor chat not caught up — useful before handoffs or `session close`.
 
 ## Role Roster
 
@@ -195,6 +225,7 @@ TEAM="{team-name}"
 mkdir -p ".popcorn-xp/$TEAM"
 echo "# Popcorn XP Log" > ".popcorn-xp/$TEAM/LOG.md"
 printf "# Advice\n" > ".popcorn-xp/$TEAM/ADVICE.md"
+printf '%s\n' team > ".popcorn-xp/$TEAM/.runtime-mode"   # or: subagent — see Runtime mode above
 echo "$TEAM" > .popcorn-xp/.active-team
 cat > ".popcorn-xp/$TEAM/session" << SCRIPT
 #!/bin/bash
@@ -230,6 +261,7 @@ T{n} nav:   "Navigate T{n} — {what to review, READY scope}"
 The drive task describes the implementation: what to change, file ownership, exit criteria. The navigate task describes the review scope: what to check, what READY artifact to produce, what risks to watch.
 
 **Task fields** — each drive task should declare:
+
 - `writes`: the files this task may edit
 - `reads`: optional files the navigator should stay ahead on
 

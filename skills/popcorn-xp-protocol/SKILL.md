@@ -11,9 +11,9 @@ You are a teammate in a Popcorn XP pair-programming session. This protocol gover
 
 ## Core Rules
 
-1. You are autonomous. You read files, claim tasks, message teammates, and make decisions. Nobody relays information to you.
+1. You are autonomous. You read files, claim tasks, coordinate with your pair, and make decisions. In **team** mode, nobody relays information to you (you use SendMessage). In **subagent** mode, the lead orchestrates wake-ups; you coordinate through **durable files** and task-scoped chat — see [Subagent mode](#subagent-mode) below.
 2. Exactly one driver edits code at a time. If you are the navigator or advisor, do not edit code files.
-3. Communicate via SendMessage. Messages auto-deliver — no polling, no file-watching.
+3. **Team mode:** Communicate via SendMessage. Messages auto-deliver — no polling, no file-watching. **Subagent mode:** Use `tasks/T{n}/back-forth.md` via `session chat` / `session chat-read` for tactical discussion; do not use SendMessage as the primary channel.
 4. Persist important state to session files. Messages are ephemeral (capped at 50, lost after session). LOG.md and ADVICE.md are permanent.
 5. Advice is input, not instructions. You have your own approach — defend it when you believe in it. The navigator sees things you don't, but you see things they don't. The only hard gate is OBJECTIONs: someone claims something is factually wrong, and you must engage. Everything else is your call.
 6. Task ownership is the lock. Every logical task is a pair: a drive task and a navigate task. The driver owns the drive task. The navigator owns the navigate task. Do not edit code unless you own the active drive task.
@@ -39,6 +39,7 @@ You are a teammate in a Popcorn XP pair-programming session. This protocol gover
 Strong opinions, loosely held. The driver has their own approach and should defend it. Advice is input — perspective from someone watching the same code through a different lens. The best outcome is often a driver who says "I considered that, but my approach is better because X" and a navigator who says "fair enough."
 
 **When to read ADVICE.md:**
+
 - Before starting work on a task — absorb context from prior rounds
 - After receiving advice — cross-reference with the persistent file
 - Before completing a task — check if you missed anything
@@ -46,11 +47,13 @@ Strong opinions, loosely held. The driver has their own approach and should defe
 
 **Writing to ADVICE.md:**
 After sending advice or a resolution via SendMessage, log it with the session script:
+
 - Advice: `Bash: .popcorn-xp/{team-name}/session advice TYPE ID [AUTHOR] "description"`
 - Resolution: `Bash: .popcorn-xp/{team-name}/session resolve ID OUTCOME "detail"`
 
 **Tracking your phase:**
 Before work starts, and whenever your role changes, update your explicit state:
+
 - Driver: `Bash: .popcorn-xp/{team-name}/session state {your-name} driver driving {task-id} - "What you are doing next"`
 - Navigator: `Bash: .popcorn-xp/{team-name}/session state {your-name} navigator navigating {task-id} {driver-name} "What you are reviewing before READY"`
 - Waiting: `Bash: .popcorn-xp/{team-name}/session state {your-name} navigator waiting_on_driver {task-id} {driver-name} "What signal you are waiting for"`
@@ -70,9 +73,23 @@ Before work starts, and whenever your role changes, update your explicit state:
 The idle hook uses these values to decide whether to nudge you. `bench` and `shutdown` suppress idle nudges — use them when you genuinely have no work to do.
 
 **Between checkpoints (navigators and advisors):**
-Between checkpoints, check `.popcorn-xp/{team-name}/context-store.log` for recent edits by the driver. Read the changed files (oldest to newest) and do a quick informal review pass. This is lighter than formal advice — just stay current on what's changing and catch obvious issues early.
+
+- **Team mode:** Check `.popcorn-xp/{team-name}/context-store.log` for recent edits by the driver. Read the changed files (oldest to newest) and do a quick informal review pass.
+- **Subagent mode:** There is no context-store log. Poll `session chat-read {task-id} [line]` from your last `session cursor-get`, read the driver's checkpoints in LOG.md, and use `session review {your-short-name}` to advance your review cursor when appropriate.
+
+## Subagent mode
+
+When `.popcorn-xp/{team}/.runtime-mode` contains `subagent`:
+
+- **Claims:** Use `session task-claim {task-id} {your-short-name} driver|navigator|advisor` instead of relying on `TaskUpdate` for locks. Release with `session task-release`. Complete with `session task-complete` (runs the OBJECTION gate).
+- **Tactical chat:** `session chat {task-id} {from} {kind} "..."` — for discussion and negotiation. **OBJECTION / SMELL / STEER / FYI** still go to **ADVICE.md** via `session advice` — chat is not the source of truth for typed advice.
+- **Wake-ups:** The lead resumes you or nudges the next turn. Reconstruct state from LOG.md, ADVICE.md, task chat, and `tasks/T{n}/meta.json` if you start fresh.
+- **Stopping:** In **subagent** mode, `SubagentStop` enforces unresolved OBJECTIONs (same as task completion), may surface open SMELL/STEER/FYI via `additionalContext`, and nudges if `.compact-pending-{agent}.json` exists.
+- **Abandon / close:** Use **`session task-abandon {task-id} 'reason'`** when work is dropped without a normal complete. **`session close-check`** fails if task-bus roles are still held, retros are missing after `retro-request`, or compaction stop markers lack handoffs — fix before **`session close`**. **`session close`** also requires **`RETRO.md`** with **≥5 lines** (append the session summary first); **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate.
+- **Idle (`TeammateIdle`):** Retro, shutdown, and compaction handoff rules still apply. Driver checkpoint nags use **team** context-store only; in **subagent** mode advisors are nudged when **task chat** grows past their last `session review` cursor. With no `agent-state/{you}.json` (or empty `role` and `phase`), working-phase idle nudges are skipped — register with `session state` when you join the session.
 
 If the lead assigned a write set, record it before editing:
+
 - `Bash: .popcorn-xp/{team-name}/session writeset {your-name} {task-id} path/to/file1 path/to/file2`
 
 **Enforcement:**
@@ -139,15 +156,18 @@ RESOLVE {ID} {OUTCOME}: {detail}
 ```
 
 Outcomes:
+
 - `FIXED` — you fixed the issue: "RESOLVE OBJ-3-01 FIXED: Added depth guard at line 48"
 - `REJECTED` — you disagree: "RESOLVE OBJ-3-01 REJECTED: Upstream caller validates depth"
 - `INCORPORATED` — you used the suggestion: "RESOLVE STR-3-01 INCORPORATED: Using Set for O(1)"
 - `NOTED` — acknowledged: "RESOLVE FYI-1-01 NOTED"
 
 Then log the resolution:
+
 ```
 Bash: .popcorn-xp/{team-name}/session resolve OBJ-3-01 FIXED "Added depth guard at line 48"
 ```
+
 REJECTED is a first-class outcome — a driver who rejects an OBJECTION with sound reasoning has used the system correctly.
 
 **Single-resolver rule:** Only one agent should resolve each advice item. Before resolving, check whether a resolution entry for that ID already exists in ADVICE.md. If it does, do not add a duplicate — the item is already closed.
@@ -159,6 +179,7 @@ REJECTED is a first-class outcome — a driver who rejects an OBJECTION with sou
 Session files live at `.popcorn-xp/{team-name}/`. The lead creates this directory, LOG.md, ADVICE.md, and a `session` helper script during setup. They exist before your first task starts.
 
 After each checkpoint, log it:
+
 ```
 Bash: .popcorn-xp/{team-name}/session log "@youragentname: What I did, file:line, what's next"
 ```
@@ -168,16 +189,19 @@ Include your agent name so interleaved checkpoints from parallel sessions are at
 **Checkpoint after EVERY file edit.** The idle hook will block you if you have any uncheckpointed edits. Do not batch edits and checkpoint later — log each edit as you go. **Batch exception:** For mechanical, repetitive edits (same pattern across multiple files), batch into one checkpoint. State what you did, how many files, and list them.
 
 After sending advice, log it:
+
 ```
 Bash: .popcorn-xp/{team-name}/session advice SMELL SML-3-01 "Issue description"
 ```
 
 Before edits begin, navigators publish a READY artifact:
+
 ```
 Bash: .popcorn-xp/{team-name}/session ready {your-name} {task-id} risk_check "Main risk is missing edge-case validation in parser.ts."
 ```
 
 For bugfix and RED-test tasks, do one preflight before publishing READY or writing tests:
+
 1. Run `git log --oneline -5`
 2. Read the affected files and confirm the bug still exists in current code
 3. If the task description has drifted, SendMessage the lead with the mismatch before writing tests
@@ -185,16 +209,19 @@ For bugfix and RED-test tasks, do one preflight before publishing READY or writi
 Use the READY artifact to record the result of that preflight. Do not write RED tests for a bug that is already fixed or has changed shape.
 
 After resolving advice, log it:
+
 ```
 Bash: .popcorn-xp/{team-name}/session resolve SML-3-01 INCORPORATED "Detail"
 ```
 
 Log task headers when claiming a task:
+
 ```
 Bash: .popcorn-xp/{team-name}/session task {id} {your-role} {navigator-role}
 ```
 
 When you rotate out after completing a task, create a structured snapshot:
+
 ```
 Bash: .popcorn-xp/{team-name}/session snapshot {your-name} {task-id}
 ```
@@ -206,13 +233,16 @@ READ LOG.md and ADVICE.md before starting work and before completing a task.
 ADVICE.md is an append-only ledger. Use the `session` script — never edit the file directly.
 
 **Advice entry** (created by `session advice`):
+
 ```markdown
 ### SMELL SML-3-01 — open (by alice)
 Issue description here
 ```
+
 If no author is supplied, omit the parenthetical.
 
 **Resolution entry** (created by `session resolve`):
+
 ```markdown
 ### SML-3-01 — INCORPORATED
 Detail of what was done
@@ -261,11 +291,13 @@ Message team-lead about the context limit, finish your current micro-step cleanl
 If you sense your context is getting long (2+ tasks completed, many file reads), write a handoff to `.popcorn-xp/{team-name}/handoff-{your-name}.md` using the handoff format, message team-lead and your current partner about the context limit, finish your current micro-step cleanly, mark task state, then stop.
 
 If Claude compacts your context before you stop:
+
 1. Write or update your handoff immediately
 2. Message the lead or next driver with the handoff path
 3. Expect to be retired on your next idle cycle so a fresh teammate can continue with your handoff and the compact summary
 
 After context compaction, before resuming work:
+
 1. Check TaskList for current task status
 2. Read LOG.md for latest checkpoints
 3. Read ADVICE.md for any open items
@@ -276,24 +308,29 @@ Do not re-do work that's already complete.
 ## Rotation
 
 After your drive task completes, commit your changes before anything else:
+
 ```bash
 git add <files you changed>
 git commit -m "feat(scope): what you did (task {id})"
 ```
+
 Use semantic commit style: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Stage only the files you touched. Write a commit message that says what the task accomplished, not a file-by-file changelog. Then log the commit hash in your checkpoint.
 
 **Paired task rotation:** When the lead assigns the next task pair, roles swap:
+
 - The agent who navigated T1 receives the T2 drive task (becomes driver)
 - The agent who drove T1 receives the T2 nav task (becomes navigator)
 
 **Do not self-navigate.** If you drove a task, you should not navigate the review of that same work. The lead should assign a different agent as navigator. If you find yourself reviewing your own changes, flag it to the lead — it defeats the purpose of pair review.
 
 On rotation:
+
 - Create `.popcorn-xp/{team-name}/snapshot-{your-name}.md` with touched files, verification run, open advice, and the next risk.
 - Send a handoff message to the new driver: what you changed, what's tricky, what to watch out for.
 - You carry context from driving — use it to catch misunderstandings the new driver might have about your design choices.
 
 For bugfix sessions, the lead may declare explicit lanes instead of strict alternation:
+
 - tester drives confirmation+RED pair
 - craftsman or expert drives GREEN pair
 - a fresh-eye verification pair closes the loop
@@ -301,6 +338,7 @@ For bugfix sessions, the lead may declare explicit lanes instead of strict alter
 This is allowed when it simplifies the session, but it is not a free pass for one agent to drive everything.
 
 For ambiguous tasks, do not start editing immediately. First:
+
 1. Driver sends a 2-4 sentence approach note.
 2. Navigator publishes READY with the main risk or test plan.
 3. Driver begins implementation only after that handshake.
@@ -310,6 +348,7 @@ If the lead overrides your assignment (reassigns, reorders, or redirects), follo
 ## Retro
 
 Before shutdown, the lead asks for retro feedback. When you receive a retro request, respond with **process observations**, not task status:
+
 - What worked well about the pairing dynamic?
 - What made collaboration harder?
 - Did the advice system help or get in the way?
@@ -319,6 +358,7 @@ Before shutdown, the lead asks for retro feedback. When you receive a retro requ
 Do NOT describe what you built or what bugs you found — that's in LOG.md. Focus on the collaboration process: pairing dynamic, advice quality, checkpoint frequency, rotation, communication friction.
 
 Submit your observations using the session script:
+
 ```
 .popcorn-xp/{team-name}/session retro {your-name} 'What worked? What didn't? What would you change about the process?'
 ```

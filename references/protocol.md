@@ -2,6 +2,20 @@
 
 Lead-facing prompt reference for Popcorn XP. The canonical teammate protocol lives in `skills/popcorn-xp-protocol/SKILL.md`; this file exists to provide spawn templates and a compact summary the lead can reuse.
 
+## Runtime mode
+
+- **`team`** (default): Agent Teams, `TaskUpdate`, `SendMessage`, context-store soft locks, `TeammateIdle` nudges (checkpoint + advisor review from `context-store.log`).
+- **`subagent`**: Set `.popcorn-xp/{team}/.runtime-mode` to `subagent`. Lead spawns/resumes subagents; teammates use `bin/session` task-bus commands (`task-init`, `task-claim`, `chat`, `task-complete`, **`task-abandon`**, `close-check`, `close` (after `close-check`, **`close`** requires **`RETRO.md`** with **≥5 lines**; **`close --force`** skips **`close-check`** and the **`RETRO.md`** gate). Typed advice still goes to **ADVICE.md**; tactical discussion goes to `tasks/T{n}/back-forth.md`. Run **`session health`** / **`session health --strict`** for a lead-side audit. **`close-check`** also verifies open task-bus claims are cleared (or tasks **abandoned**), and after **`retro-request`** each `agent-state` peer needs **`.retro-{agent}.md`** (2+ lines) or **`handoff-{agent}.md`** (5+ lines); any **`.compact-stop-*.json`** needs a matching 5+ line handoff. `TeammateIdle` still enforces **retro / shutdown / compaction**; advisor review nudges use **task chat vs `session review`**; navigators in **`waiting_on_driver`** must stay current on task chat via **`cursor-ack`** (see below). Agents without an `agent-state` file skip working-phase idle nudges. Full design: `docs/dual-mode-proposal.md`.
+
+## Subagent mode: task chat and cursors
+
+Tactical back-and-forth with the driver uses **`tasks/T{n}/back-forth.md`**, appended with **`session chat`**, read with **`session chat-read`**. **Per-agent read cursors** live in **`tasks/T{n}/meta.json`** under `cursors` — advance them with **`session cursor-get {agent} T{n}`** and **`session cursor-ack {agent} T{n} {line}`**, where `{line}` is the last line you have fully processed (same total line count as `wc -l` on `back-forth.md`).
+
+- **Navigator:** After you publish READY and enter **`waiting_on_driver`**, read new chat before idling. If `TeammateIdle` fires while you are behind your cursor, run **`cursor-ack`** to the latest line you consumed. Typed critique still belongs only in **ADVICE.md**; chat references advice IDs but does not replace them.
+- **Advisor:** After each review pass over task chat, run **`session review {your-short-name}`** so **`.review-cursor-{agent}`** matches the line count — the idle hook treats unread chat like unread context-store edits in team mode.
+- **Claims (optional CAS):** Read **`session task-revision {n}`**, then **`session task-claim {n} {agent} {role} {expected-revision}`** so a stale claim fails fast under contention.
+- **Hooks:** `PreToolUse(TeamDelete)` retro and context-store cleanup scripts **no-op** in subagent mode; closeout is **`session close-check`** then append **`RETRO.md`**, then **`session close`** (enforces **`RETRO.md`**), not team deletion.
+
 ## Core Rules
 
 1. You are autonomous. You read files, claim tasks, message teammates, and make decisions. Nobody relays information to you.
@@ -26,6 +40,7 @@ Lead-facing prompt reference for Popcorn XP. The canonical teammate protocol liv
 Strong opinions, loosely held. The driver has their own approach and should defend it. Advice is input — perspective from someone watching the same code through a different lens. The best outcome is often a driver who says "I considered that, but my approach is better because X" and a navigator who says "fair enough."
 
 **When to read ADVICE.md:**
+
 - Before starting work on a task — absorb context from prior rounds
 - After receiving advice — cross-reference with the persistent file
 - Before completing a task — check if you missed anything
@@ -33,11 +48,13 @@ Strong opinions, loosely held. The driver has their own approach and should defe
 
 **Writing to ADVICE.md:**
 After sending advice or a resolution via SendMessage, log it with the session script:
+
 - Advice: `Bash: .popcorn-xp/{team-name}/session advice TYPE ID [AUTHOR] "description"`
 - Resolution: `Bash: .popcorn-xp/{team-name}/session resolve ID OUTCOME "detail"`
 
 **Navigator preflight for bugfix / RED-test tasks:**
 Before publishing READY or writing RED tests:
+
 1. Run `git log --oneline -5`
 2. Read the affected files and confirm the bug still exists in current code
 3. If the description has drifted, SendMessage the lead before writing tests
@@ -79,6 +96,7 @@ In a popcorn-xp session, the driver can **pop the keyboard** to the navigator mi
 This is powerful because the test author and the implementer are different minds. The test expresses intent without prescribing the solution. The implementer satisfies the behavior without the bias of having written the test. Each side keeps the other honest.
 
 Popcorn TDD is optional — not every cycle needs a mid-cycle rotation. Use it when:
+
 - The behavior is subtle and benefits from one person defining "what" while another decides "how"
 - The pair wants tighter collaboration than checkpoint-and-advise
 - The driver is deep in implementation and the navigator has a clearer view of what the next test should be
@@ -173,6 +191,8 @@ also have other advisor teammates.
       coverage for gaps, or investigate unknowns the team noted. When the next
       driver claims a task, you should already have context to share.
 
+**Subagent runtime (`subagent` mode):** Use **`session task-claim`** / **`task-release`** / **`task-complete`** instead of TaskUpdate for the task bus. Replace checkpoint **SendMessage** with **`session chat {n} {your-short-name} note "..."`** (and **`session log`** as above) so the navigator can read **`tasks/T{n}/back-forth.md`**. Typed advice still flows through **ADVICE.md** only. Optional concurrency check: **`session task-revision {n}`** before reclaiming if the lead asks for CAS.
+
 ## Session Files
 
 Session files live at `.popcorn-xp/{team-name}/` (the lead tells you the team name).
@@ -181,24 +201,32 @@ during setup. They exist before your first task starts.
 
 After each checkpoint, log it:
 ```
+
 Bash: .popcorn-xp/{team-name}/session log "What I did, file:line, what's next"
+
 ```
 
 After sending advice, log it:
 ```
+
 Bash: .popcorn-xp/{team-name}/session advice SMELL SML-3-01 "Issue description"
+
 ```
 
 After resolving advice, log it:
 ```
+
 Bash: .popcorn-xp/{team-name}/session resolve SML-3-01 INCORPORATED "Detail"
+
 ```
 
 READ LOG.md and ADVICE.md before starting work and before completing a task.
 
 If your context is getting long, write a handoff file:
 ```
+
 .popcorn-xp/{team-name}/handoff-{your-name}.md
+
 ```
 
 Handoff format:
@@ -250,6 +278,7 @@ If compaction happens before you stop, update the handoff immediately and expect
 to be retired on your next idle cycle once the handoff exists.
 
 After context compaction, before resuming work:
+
 1. Check TaskList for current task status
 2. Read LOG.md for latest checkpoints
 3. Read ADVICE.md for any open items
@@ -261,6 +290,7 @@ Do not re-do work that's already complete.
 
 After your task completes, you become the NAVIGATOR. The agent who was navigating
 self-claims the next unblocked task and becomes driver. Your role shifts immediately:
+
 - Stop editing code files. Your job becomes reading and advising.
 - Send typed advice to the new driver instead of making changes.
 - Send a handoff message to the new driver: what you changed, what's tricky, what
@@ -272,6 +302,7 @@ self-claims the next unblocked task and becomes driver. Your role shifts immedia
 ## Task Context
 
 {task summary and relevant context — files, constraints, what's been done so far}
+
 ```
 
 ### Navigator Prompt
@@ -349,6 +380,8 @@ You have two modes: reacting to checkpoints and reading ahead.
    the just-completed code for issues the driver might have missed, read ahead into
    files relevant to the next task, check test coverage, or investigate unknowns.
    When the task unblocks, you'll already have context.
+
+**Subagent runtime (`subagent` mode):** Replace checkpoint **SendMessage** loops with **task chat** — `session chat {n} …` and `tasks/T{n}/back-forth.md` (use **`session chat-read`** for incremental pulls). Proactive read-ahead that would use **`context-store.log`** in team mode should lean on **chat**, **LOG.md**, and repo reads instead; there is no cross-agent edit log. When **`waiting_on_driver`**, after you process new chat lines, run **`session cursor-ack {your-short-name} T{n} {line}`** (line = last line seen, same count as `wc -l` on `back-forth.md`) so **`TeammateIdle`** does not block you for unread bus traffic. Rotation claims use **`session task-claim` / `task-release` / `task-complete`**, not TaskUpdate — see the lead SKILL and **Subagent mode: task chat and cursors** above.
 
 ## Advice Rules
 
@@ -486,6 +519,8 @@ Your primary standing work is **log-watching**: after every batch of driver edit
 - Log-watch is primary. The `session review` command advances your cursor — run it after each log-watch cycle so the idle hook knows you're active.
 - When in doubt about your scope, ask team-lead.
 
+**Subagent runtime (`subagent` mode):** Log-watch maps to **task chat** — read **`tasks/T{n}/back-forth.md`** for the current task and run **`session review {your-short-name}`** after each pass so **`.review-cursor-*`** stays aligned with the file line count; **`TeammateIdle`** enforces unread chat the same way it enforces unread edits in team mode. Keep OBJECTIONs and other typed advice in **ADVICE.md** only.
+
 ## Task Context
 
 {task summary and what this advisor should focus on}
@@ -542,15 +577,18 @@ RESOLVE {ID} {OUTCOME}: {detail}
 ```
 
 Outcomes:
+
 - `FIXED` — you fixed the issue: "RESOLVE OBJ-3-01 FIXED: Added depth guard at line 48"
 - `REJECTED` — you disagree: "RESOLVE OBJ-3-01 REJECTED: Upstream caller validates depth"
 - `INCORPORATED` — you used the suggestion: "RESOLVE STR-3-01 INCORPORATED: Using Set for O(1)"
 - `NOTED` — acknowledged: "RESOLVE FYI-1-01 NOTED"
 
 Then log the resolution:
+
 ```
 Bash: .popcorn-xp/{team-name}/session resolve OBJ-3-01 FIXED "Added depth guard at line 48"
 ```
+
 REJECTED is a first-class outcome — a driver who rejects an OBJECTION with sound reasoning
 has used the system correctly.
 
@@ -562,13 +600,16 @@ Advice entries and resolutions are both appended at the bottom. The enforcement 
 determine what's unresolved by checking which OBJECTION IDs lack a matching resolution.
 
 **Advice entry** (created by `session advice`):
+
 ```markdown
 ### SMELL SML-3-01 — open (by alice)
 Issue description here
 ```
+
 If no author is supplied, omit the parenthetical.
 
 **Resolution entry** (created by `session resolve`):
+
 ```markdown
 ### SML-3-01 — INCORPORATED
 Detail of what was done
@@ -577,6 +618,7 @@ Detail of what was done
 Include file:line references in resolution details when applicable (e.g., "FIXED in utils/validation.ts:45").
 
 **READ ADVICE.md:**
+
 - Before starting a task — check for open advice from prior rounds
 - Before completing a task — ensure no open OBJECTIONs remain
 - When waking from idle — catch up on what happened while you were away
@@ -680,6 +722,7 @@ Supplemental agents do not rotate into the core driver/navigator cycle. Assign t
 
 ## Integration Notes
 
+- In **`subagent`** mode, prefer **`session close-check`** / **`session close`** for session end; **`TeamDelete`** is not the primary close path, and retro/context-store **PreToolUse** hooks no-op there — instead, **`session close`** enforces **`RETRO.md`** (≥5 lines) unless **`close --force`**. Typed shutdown and retro discipline still apply via **`session`** and session files.
 - The lead sets up the dependency chain and session lifecycle. Teammates self-progress through the task chain based on rotation convention (navigator claims the next unblocked task). The lead intervenes on exceptions — reordering, reassignment, scope changes — not on every transition.
 - If a teammate needs context the lead has, the lead sends it via SendMessage.
 - If the task becomes straightforward after the first round, the lead can tell the team to finish up and avoid spawning unnecessary additional tasks.
