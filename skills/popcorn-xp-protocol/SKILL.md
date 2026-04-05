@@ -25,7 +25,7 @@ You are a teammate in a Popcorn XP pair-programming session. This protocol gover
 12. Commit before you rotate. When your drive task is done, `git add` and `git commit` your changes before handing off. The next driver should start from a clean working tree, not uncommitted diffs.
 13. Navigators publish a READY artifact before implementation starts. Choose one: risk check, test plan, spec check, or review note. Once published, move into `waiting_on_driver` until the next checkpoint or objection.
 14. Respect the task write set. If the lead assigned a file ownership list, do not edit outside it without explicit reassignment.
-15. Navigator completes after driver. When the driver marks their drive task complete, the navigator does a final verification pass, then completes their navigate task. If verification reveals issues, send advice (OBJECTIONs if warranted) before completing.
+15. Navigator completes after driver. When you finish your drive task, run tests, then call `TaskUpdate(status=completed)` after `session log` once tests pass — do not wait for the navigator. The navigator then does a final verification pass and completes their navigate task. If verification reveals issues, send advice (OBJECTIONs if warranted) before completing.
 16. Check before editing shared files. Before editing any file that other agents may have touched, run `git log --oneline -5 {file}` to see recent changes. If another agent committed changes you haven't seen, read the file fresh before editing. Do not edit based on stale context.
 
 ## Important Notes
@@ -54,6 +54,23 @@ Before work starts, and whenever your role changes, update your explicit state:
 - Driver: `Bash: .popcorn-xp/{team-name}/session state {your-name} driver driving {task-id} - "What you are doing next"`
 - Navigator: `Bash: .popcorn-xp/{team-name}/session state {your-name} navigator navigating {task-id} {driver-name} "What you are reviewing before READY"`
 - Waiting: `Bash: .popcorn-xp/{team-name}/session state {your-name} navigator waiting_on_driver {task-id} {driver-name} "What signal you are waiting for"`
+
+**Valid phase values:**
+
+| Phase | Who uses it | Meaning |
+|-------|------------|---------|
+| `driving` | Driver | Actively editing code on the current task |
+| `navigating` | Navigator | Reviewing work before publishing READY |
+| `waiting_on_driver` | Navigator | READY published; waiting for driver checkpoint |
+| `waiting_on_verification` | Driver | Task done; waiting for navigator's final review |
+| `completed` | Either | Task pair finished, no active work |
+| `bench` | Either | No remaining tasks; waiting for new assignment |
+| `shutdown` | Either | Retro submitted, session closing |
+
+The idle hook uses these values to decide whether to nudge you. `bench` and `shutdown` suppress idle nudges — use them when you genuinely have no work to do.
+
+**Between checkpoints (navigators and advisors):**
+Between checkpoints, check `.popcorn-xp/{team-name}/context-store.log` for recent edits by the driver. Read the changed files (oldest to newest) and do a quick informal review pass. This is lighter than formal advice — just stay current on what's changing and catch obvious issues early.
 
 If the lead assigned a write set, record it before editing:
 - `Bash: .popcorn-xp/{team-name}/session writeset {your-name} {task-id} path/to/file1 path/to/file2`
@@ -109,6 +126,7 @@ FYI FYI-{task}-{seq}: {observation}
 - `SML-{task_id}-{seq}` — e.g., SML-3-01
 - `STR-{task_id}-{seq}` — e.g., STR-3-02
 - `FYI-{task_id}-{seq}` — e.g., FYI-3-01
+- The session helper enforces this format. Informal IDs like `O1` or `S1` are rejected before they reach ADVICE.md.
 
 Sequence numbers are per-task, starting at 01.
 
@@ -132,6 +150,8 @@ Bash: .popcorn-xp/{team-name}/session resolve OBJ-3-01 FIXED "Added depth guard 
 ```
 REJECTED is a first-class outcome — a driver who rejects an OBJECTION with sound reasoning has used the system correctly.
 
+**Single-resolver rule:** Only one agent should resolve each advice item. Before resolving, check whether a resolution entry for that ID already exists in ADVICE.md. If it does, do not add a duplicate — the item is already closed.
+
 **Task completion requirement:** When completing a task with resolved OBJECTIONs, your completion message must explicitly confirm each one. Include a line for each: `OBJ-{id}: {outcome} ({summary})`. Example: "Task 3 complete. OBJ-3-01: FIXED (added depth guard at line 48). OBJ-3-02: REJECTED (upstream validates depth)." This makes the resolution visible in the completion message, not just buried in ADVICE.md.
 
 ## Session Files
@@ -140,12 +160,12 @@ Session files live at `.popcorn-xp/{team-name}/`. The lead creates this director
 
 After each checkpoint, log it:
 ```
-Bash: .popcorn-xp/{team-name}/session log "What I did, file:line, what's next"
+Bash: .popcorn-xp/{team-name}/session log "@youragentname: What I did, file:line, what's next"
 ```
 
-One edit = one checkpoint = one log entry. **Batch exception:** For mechanical,
-repetitive edits (same pattern across multiple files), batch into one checkpoint.
-State what you did, how many files, and list them.
+Include your agent name so interleaved checkpoints from parallel sessions are attributable.
+
+**Checkpoint after EVERY file edit.** The idle hook will block you if you have any uncheckpointed edits. Do not batch edits and checkpoint later — log each edit as you go. **Batch exception:** For mechanical, repetitive edits (same pattern across multiple files), batch into one checkpoint. State what you did, how many files, and list them.
 
 After sending advice, log it:
 ```
@@ -264,6 +284,8 @@ Use semantic commit style: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. S
 **Paired task rotation:** When the lead assigns the next task pair, roles swap:
 - The agent who navigated T1 receives the T2 drive task (becomes driver)
 - The agent who drove T1 receives the T2 nav task (becomes navigator)
+
+**Do not self-navigate.** If you drove a task, you should not navigate the review of that same work. The lead should assign a different agent as navigator. If you find yourself reviewing your own changes, flag it to the lead — it defeats the purpose of pair review.
 
 On rotation:
 - Create `.popcorn-xp/{team-name}/snapshot-{your-name}.md` with touched files, verification run, open advice, and the next risk.

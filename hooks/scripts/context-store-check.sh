@@ -2,19 +2,16 @@
 set -euo pipefail
 
 # context-store-check.sh
-# PreToolUse hook on Read: checks the shared context store.
+# PreToolUse hook on Read: checks context-store.log for cross-agent edits.
 # ONLY emits additionalContext when ALL of these are true:
-# 1. File is marked dirty (dirty=true)
-# 2. Current agent is different from the agent that edited it (edited_by != AGENT)
+# 1. Another agent has an EDIT event for this file in the log
+# 2. Current agent is different from that editor
 # Otherwise exits silently (exit 0, no output).
 # No-op when no active popcorn-xp session.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/session-common.sh"
 px_load_session || exit 0
-
-STORE="$POPCORN_DIR/context-store.json"
-[ ! -f "$STORE" ] && exit 0
 
 source "$SCRIPT_DIR/context-store-log.sh"
 
@@ -37,18 +34,15 @@ fi
 
 AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null || true)")
 
-# Read-only access, no lock needed
-ENTRY=$(jq -r --arg path "$FILE_PATH" '.[$path] // empty' "$STORE" 2>/dev/null || true)
-[ -z "$ENTRY" ] && exit 0
+# Derive state from log — no JSON store needed
+STATE=$(cs_file_state "$FILE_PATH")
+[ -z "$STATE" ] && exit 0
 
-DIRTY=$(echo "$ENTRY" | jq -r '.dirty // false')
-EDITED_BY=$(echo "$ENTRY" | jq -r '.edited_by // empty')
-EDITED_AT=$(echo "$ENTRY" | jq -r '.edited_at // empty')
+EDITED_BY=$(echo "$STATE" | awk '{print $1}')
+EDITED_AT=$(echo "$STATE" | awk '{print $2}')
 
-# Only emit context if BOTH conditions are true:
-# 1. File is marked dirty
-# 2. Current agent is different from editor (cross-agent dirty)
-if [ "$DIRTY" = "true" ] && [ -n "$EDITED_BY" ] && [ "$EDITED_BY" != "$AGENT" ]; then
+# Only emit context if current agent differs from last editor
+if [ -n "$EDITED_BY" ] && [ "$EDITED_BY" != "$AGENT" ]; then
   MSG="[context-store] WARNING: $FILE_PATH was edited by $EDITED_BY at $EDITED_AT and has uncommitted changes. Coordinate with your teammate before making changes."
   cs_log "READ" "$AGENT" "$FILE_PATH" "cache hit, DIRTY by ${EDITED_BY}"
   jq -n --arg ctx "$MSG" '{additionalContext: $ctx}'

@@ -50,16 +50,13 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 
 The context store enables cross-agent awareness of file edits during pair programming:
 
-**Store Location**: `.popcorn-xp/context-store.json` (shared across agents during session)
+**Store Location**: `.popcorn-xp/context-store.log` (append-only log; no JSON store)
 
-**Tracking**: Each file entry records:
-- `dirty`: Boolean; `true` if the file has been edited by any agent
-- `edited_by`: Agent name of the current editor
-- `edited_at`: Timestamp of most recent edit
+**Tracking**: All state derived from the log. Each EDIT event records the agent name, file path, and timestamp. The last EDIT event for a given file determines the current editor.
 
-**Soft Lock Behavior**: When an agent reads a file marked dirty by a different agent, the context store check hook injects a warning. Clean reads and same-agent reads produce no output.
+**Soft Lock Behavior**: When an agent reads a file that was last edited by a different agent, the context store check hook injects a warning. Files with no EDIT in the log, and same-agent edits, produce no output.
 
-**Event Log**: `.popcorn-xp/context-store.log` records edit events with agent names, file paths, and lock status. Used by `enforce-no-idle.sh` for checkpoint counting.
+**Event Log**: `.popcorn-xp/context-store.log` records edit and read events with agent names, file paths, and lock status. Used by `enforce-no-idle.sh` for checkpoint counting and by context-store hooks for soft lock detection.
 
 ### Session Files (Runtime)
 

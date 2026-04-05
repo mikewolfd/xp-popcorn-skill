@@ -9,8 +9,6 @@ POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
 [ -d "$POPCORN_DIR" ] || exit 0
 
 rm -f \
-  "$POPCORN_DIR/context-store.json" \
-  "$POPCORN_DIR/context-store.log" \
-  "$POPCORN_DIR/context-store.json.lock"
+  "$POPCORN_DIR/context-store.log"
 
 exit 0

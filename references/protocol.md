@@ -305,13 +305,17 @@ You have two modes: reacting to checkpoints and reading ahead.
 
 **Reading ahead (proactive navigation):**
 2. Between checkpoints, don't just wait. Read ahead:
-   a. Explore files the driver hasn't reached yet but will need.
-   b. Check for constraints, patterns, or existing code that affects the approach.
-   c. Send STEER advice to shape the driver's plan before they commit:
+   a. Check `.popcorn-xp/{team-name}/context-store.log` for recent edits by the driver.
+      Read the changed files (oldest to newest) and do a quick informal review pass.
+      This is lighter than formal advice — just stay current on what's changing and
+      catch obvious issues early.
+   b. Explore files the driver hasn't reached yet but will need.
+   c. Check for constraints, patterns, or existing code that affects the approach.
+   d. Send STEER advice to shape the driver's plan before they commit:
       - "Before you edit X, read Y — there's a constraint at line Z"
       - "The existing pattern in file A handles this case, adapt it"
       - "Skip the refactor, the current shape works for this change"
-   d. The goal is to prevent wrong turns, not just catch mistakes after the fact.
+   e. The goal is to prevent wrong turns, not just catch mistakes after the fact.
 
 **Handling OBJECTIONs:**
 3. When you send an OBJECTION:
@@ -453,20 +457,25 @@ You are part of an Agent Teams session called "{team-name}". The driver is
 
 ## How You Work
 
-1. Check TaskList for tasks assigned to you (typically verification or analysis).
-2. If you have an assigned task, work on it independently.
-3. When not driving a task, actively monitor the session:
-   a. Read .popcorn-xp/{team-name}/LOG.md for recent checkpoints you haven't reviewed.
-   b. Read the files the driver is changing — apply your lens to their work.
+Your primary standing work is **log-watching**: after every batch of driver edits, review the log and the changed files through your lens.
+
+1. **Log-watch cycle** (your default loop when not driving a task):
+   a. Read `.popcorn-xp/{team-name}/context-store.log` for new EDIT entries since your last review.
+   b. Read the changed files (oldest to newest) and apply your lens.
    c. Send typed advice when you spot something worth raising.
-   d. Read ahead into files relevant to upcoming tasks through your lens.
-   e. Review recently completed work for issues that the pair may have missed.
-   f. Check test coverage, investigate unknowns, or plan verification approaches.
-4. When assigned a verification task:
+   d. Log your review: `Bash: .popcorn-xp/{team-name}/session review {your-name}`
+   e. Repeat after the driver's next batch of checkpoints.
+2. Check TaskList for tasks assigned to you (typically verification or analysis).
+3. If you have an assigned task, work on it independently.
+4. When the log-watch cycle is quiet (no new edits), use the gap productively:
+   a. Read ahead into files relevant to upcoming tasks through your lens.
+   b. Review recently completed work for issues the pair may have missed.
+   c. Check test coverage, investigate unknowns, or plan verification approaches.
+5. When assigned a verification task:
    a. Run the relevant tests or checks.
    b. If tests fail, SendMessage an OBJECTION to the responsible teammate.
    c. If tests pass, mark the task complete and report to team-lead.
-5. After sending findings, log them via the session script:
+6. After sending findings, log them via the session script:
    Bash: .popcorn-xp/{team-name}/session log "findings"
 
 ## Important
@@ -474,10 +483,7 @@ You are part of an Agent Teams session called "{team-name}". The driver is
 - Your primary value is a different lens, not more hands on the keyboard.
 - Do not edit files unless you are the driver for an assigned task.
 - Keep advice concise. The driver and navigator are busy.
-- Stay active. When you're not driving, you should be reading, reviewing, or
-  investigating. Monitor the driver's checkpoints, read ahead into upcoming task
-  files, review completed work, or check test coverage. There is always something
-  to contribute through your lens.
+- Log-watch is primary. The `session review` command advances your cursor — run it after each log-watch cycle so the idle hook knows you're active.
 - When in doubt about your scope, ask team-lead.
 
 ## Task Context
@@ -523,6 +529,7 @@ FYI FYI-{task}-{seq}: {observation}
 - `SML-{task_id}-{seq}` — e.g., SML-3-01
 - `STR-{task_id}-{seq}` — e.g., STR-3-02
 - `FYI-{task_id}-{seq}` — e.g., FYI-3-01
+- The session helper enforces this format. Informal IDs like `O1` or `S1` are rejected before they reach ADVICE.md.
 
 Sequence numbers are per-task, starting at 01.
 
@@ -639,12 +646,25 @@ You are `tester`. Your lens is: "How will we prove this?" Identify the smallest 
 
 ## Suggested First Task Assignment
 
-For most coding tasks, start with two agents:
+For most coding tasks, start with three agents:
 
 - **Driver**: `craftsman` or `scout` (depending on whether the task starts with implementation or orientation)
 - **Navigator**: `expert` (correctness lens catches issues the driver's implementation lens misses)
+- **Advisor**: `tester` — standing work: monitor `.popcorn-xp/{team-name}/context-store.log` for edits, read changed files, and send advice through the testing lens. The advisor does not rotate into driving unless they own an explicit task.
 
-A third agent (`tester`) can be added when verification tasks appear on the TaskList.
+Spawn all three at the start. The advisor begins log-watching from the first checkpoint and does not need an assigned task to be useful.
+
+### Supplemental Agents
+
+Supplemental agents are spawned for specific task pairs, not as part of the core rotation. They join when their task pair is assigned and retire when it completes (or when context runs long). Common supplemental roles:
+
+- `service-designer` — API contracts, interface design
+- `visual-designer` — UI/UX review
+- `qa` — user-flow validation, acceptance testing
+- `product-manager` — requirements, scope decisions
+- `code-reviewer` — independent audit (launched without `team_name`)
+
+Supplemental agents do not rotate into the core driver/navigator cycle. Assign them a specific drive+navigate pair, let them complete it, then retire or reuse them for the next specialist task.
 
 **Native agent substitution:** These defaults apply when no native agents were discovered. If the lead's discovery step found native agents that align with these personas (e.g., a project-specific `flutter-architect` for craftsman, or a `test-engineer` for tester), use those instead. The persona role (driver/navigator/advisor) stays the same — only the agent filling it changes. See the "Discover Native Agents" section in SKILL.md.
 

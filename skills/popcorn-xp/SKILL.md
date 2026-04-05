@@ -13,6 +13,8 @@ description: Use when the user explicitly asks for a multi-agent coding session 
 
 Launch an XP pair-programming session. You (the lead) set up the team and step back. Teammates pair-program directly with each other via SendMessage. One driver edits, one navigator steers, they swap roles between tasks. Advice has teeth — OBJECTIONs block task completion.
 
+**Your lens as lead:** Is the team working effectively? You are not a driver. You set tasks, enforce pairing, relay findings, and intervene on exceptions. Your job is to keep the pair dynamic healthy — rotation, advice flow, checkpoint cadence — not to do the work yourself.
+
 ## Trigger
 
 Activate when the user explicitly asks for a team-style workflow:
@@ -27,18 +29,23 @@ Do not activate for ordinary single-agent coding.
 
 ## Role Roster
 
-The plugin ships with agent definitions in `agents/` that can be used as teammates. Pick 2-3 agents that match the task. Default to the core four for coding tasks; add specialists when the task calls for them.
+The plugin ships with agent definitions in `agents/` that can be used as teammates. The default team is **3 core members**: a driver, a navigator, and an advisor. Add specialists for specific tasks; they are supplemental, not part of the rotation.
 
 **Core roles (coding tasks):**
 
-| Agent | Lens |
-|-------|------|
-| `popcorn-xp:scout` | "Are we solving the right problem?" |
-| `popcorn-xp:craftsman` | "Is this clean and readable?" |
-| `popcorn-xp:expert` | "Does this actually work in edge cases?" |
-| `popcorn-xp:tester` | "How will we prove this works?" |
+| Agent | Lens | Standing work |
+|-------|------|--------------|
+| `popcorn-xp:craftsman` | "Is this clean and readable?" | Drive and navigate in rotation |
+| `popcorn-xp:expert` | "Does this actually work in edge cases?" | Drive and navigate in rotation |
+| `popcorn-xp:tester` | "How will we prove this works?" | Advisor: monitor context-store.log, review edits through the testing lens, send advice |
 
-**Specialist roles (when needed):**
+The **navigator's** standing work is **read-ahead**: stay one step ahead of the driver — read files the driver hasn't reached yet, check constraints and patterns, publish a READY artifact before implementation starts.
+
+The **advisor's** standing work is **log-watching**: read `.popcorn-xp/{team-name}/context-store.log` after every batch of edits, read the changed files through your lens, and send advice. The advisor does not rotate into driving unless they own an explicit task.
+
+The `scout` agent is for orientation-first sessions where the first task is "map the codebase" rather than "implement X."
+
+**Supplemental roles (task-scoped, not part of core rotation):**
 
 | Agent | Lens |
 |-------|------|
@@ -117,6 +124,8 @@ Build a mental model of:
 - What could go wrong
 - How to verify success
 
+State the session goal to the user in one sentence before decomposing: "This session's goal: {what success looks like}." This anchors scope decisions — when a task comes up mid-session, check: does it serve the goal? If not, defer it.
+
 Break the work into 5-8 concrete tasks (run the decomposition checklist in Step 3 on each one).
 
 ### 2. Create the Team
@@ -157,15 +166,15 @@ Read the frontmatter (`name`, `description`) of each discovered file. Also revie
 > | tester | `popcorn-xp:tester`, `test-engineer` (native) |
 > | code-reviewer | `popcorn-xp:code-reviewer`, `code-reviewer` (native) |
 >
-> Which roles do you want on the team, and which agent for each? You don't need all of them — I'll spawn the first pair to start and bring others in as the work demands.
+> Which roles do you want on the team, and which agent for each? I'll spawn the initial three (driver, navigator, advisor) at the start and bring in supplemental specialists as specific tasks require them.
 
 Wait for the user to confirm before proceeding. The user picks:
 
-- Which personas to include (typically 2-3 to start)
+- Which personas to include (driver, navigator, advisor at minimum; add supplemental specialists as needed)
 - Which agent fills each slot (native or default)
 - They can also request agents not in the list by name
 
-Not every selected agent is spawned immediately. The lead spawns the initial driver/navigator pair for the first task and brings additional teammates in as tasks require them. The full roster is the **bench** — agents the session may use — not a list of agents to launch all at once.
+Not every selected agent is spawned immediately. The lead spawns the initial three-agent team (driver, navigator, advisor) for the first task and brings supplemental specialists in as tasks require them. The full roster is the **bench** — agents the session may use — not a list of agents to launch all at once.
 
 Store the confirmed roster. Note which personas are filled by native agents — this feeds the retro.
 
@@ -210,6 +219,7 @@ Every logical task becomes a **pair**: a drive task and a navigate task. This is
 
 ```
 T{n} drive: "{what to implement}"
+             Done when: {one sentence describing how to verify the task is complete}
 T{n} nav:   "Navigate T{n} — {what to review, READY scope}"
 ```
 
@@ -239,12 +249,15 @@ The navigate task completes AFTER the drive task. This gives the navigator a ver
 
 ```
 T1 drive: "Add maxDepth parameter to parseBlock()"
+           Done when: parseBlock accepts maxDepth and existing callers pass it through.
 T1 nav:   "Navigate T1 — review signature threading, check callers"
 
 T2 drive: "Implement depth-exceeded error path" — blocked by T1-drive
+           Done when: parseBlock throws DepthExceeded when maxDepth is exceeded.
 T2 nav:   "Navigate T2 — review error semantics, check test coverage"
 
 T3 drive: "Add unit tests for valid/invalid depths" — blocked by T2-drive
+           Done when: tests cover valid maxDepth, zero, negative, and exceeded cases; all pass.
 T3 nav:   "Navigate T3 — verify edge cases, check assertion quality"
 ```
 
@@ -282,6 +295,7 @@ T1 and T2 run in parallel (disjoint files). Each has its own navigator. T3 depen
 3. **The verb test.** Each task should have one primary verb: implement, test, refactor, validate, review.
 4. **The 15-minute test.** If a human pair would spend more than 15 minutes, it's too big.
 5. **The description length test.** More than 3-4 sentences to explain = too broad.
+6. **The done test.** Can you state in one sentence how to verify this task is complete? If not, the task is underspecified. Write it as `Done when: {criterion}` in the drive task description.
 
 **Split by observable behavior, not by implementation step.** "Implement the happy path" and "implement error handling" are better splits than "write the function" and "wire it up."
 
@@ -336,7 +350,9 @@ The reviewer's findings are relayed by the lead as OBJECTIONs or SMELLs to the r
 
 ### 4. Spawn Teammates
 
-Spawn the initial driver/navigator pair from the roster confirmed in Step 2. You don't need to launch the entire bench — bring additional teammates in as tasks demand them. The first pair should cover the first task; pull from the bench when subsequent tasks need a different lens or when rotation calls for a fresh agent.
+Spawn the initial three-agent team from the roster confirmed in Step 2: one driver, one navigator, and one advisor. All three start simultaneously. The driver and navigator cover the first task pair; the advisor begins log-watching immediately and sends advice from the first checkpoint onward.
+
+You don't need to launch the entire bench on the first task — supplemental specialists join when their task pair is assigned. Pull from the bench when the work calls for a different lens or when rotation calls for a fresh agent.
 
 **Always pass `model: "{model}"` when spawning teammates** (using the model chosen in Step 2), including native agents. Native agent definitions may inherit a different model from their definition file — the explicit `model` parameter overrides that.
 
@@ -429,6 +445,7 @@ You receive messages from teammates automatically. Your role during execution:
 - **Navigator completes after driver.** When a driver marks their drive task complete, SendMessage the navigator to verify and complete their nav task. The navigator's final action is a verification pass on the finished work. If the navigator finds issues during verification, they send advice (which may include OBJECTIONs that reopen the drive task).
 - **Use bugfix lanes when the work is naturally asymmetric.** For bug-driven sessions, prefer `confirm -> RED -> GREEN -> verify` over forcing strict alternation on every pair. Typical split: tester drives confirmation+RED pair, craftsman drives GREEN pair, then a fresh-eye verification pair closes the loop.
 - **Steer when needed.** If a teammate is going in the wrong direction, SendMessage with guidance.
+- **Unblock, don't observe.** Your job is to remove impediments, not watch progress. When a teammate is stuck, diagnose why and act: split the task, send missing context, reassign, or clarify. Ask yourself: does this task still serve the session goal? If not, defer it.
 - **Relay user input.** If the user provides new instructions, SendMessage to the relevant teammate.
 - **No idle agents.** If a teammate is not driving, they should be navigating, reviewing, reading ahead, or planning. Require navigators to publish a READY artifact before edits start: risk check, test plan, spec check, or review note. After that, they may enter `waiting_on_driver` explicitly; "silent and maybe thinking" is not a valid state.
 - **Handle escalations.** If the navigator sends an ESCALATION message (the approach is fundamentally wrong), pause the current task, evaluate the concern, and decide whether to redirect, reset, or continue.
@@ -438,7 +455,8 @@ You receive messages from teammates automatically. Your role during execution:
   - **NITs/OBSERVATIONs**: log via session script, don't interrupt the driver
   - The code-reviewer never messages teammates directly — you are the relay.
   - **When relaying findings to ADVICE.md**, assign standard IDs using the current task number: `OBJ-{task}-{seq}` for blockers, `SML-{task}-{seq}` for warnings. Do not relay the reviewer's internal IDs (e.g. `REV-W1`) — translate them. Example: `session advice OBJECTION OBJ-6-01 "LayoutContainer has no useDroppable"`.
-  - **Schema violations:** If the project defines schemas (JSON Schema, TypeScript types, Zod, etc.), recommend the team add programmatic validation tests rather than relying on code reviewers to catch structural violations.
+- **Schema violations:** If the project defines schemas (JSON Schema, TypeScript types, Zod, etc.), recommend the team add programmatic validation tests rather than relying on code reviewers to catch structural violations.
+- **Keep advisors mechanically active.** If you spawn a long-lived advisor or review-only teammate, schedule a `/loop 3m` prompt that rereads `context-store.log` and the latest touched files. That makes periodic review mechanical instead of depending on the agent to self-start.
   **Note:** The Agent tool may auto-inherit team_name from the lead's session. The
   code-reviewer functions correctly despite this — it does not use SendMessage,
   TaskUpdate, or team coordination tools. Its independence is behavioral (enforced
@@ -495,6 +513,8 @@ Write `.popcorn-xp/{team-name}/RETRO.md` after every session. This file accumula
 # Popcorn XP Retro
 
 ## Session: {date} — {task summary}
+
+Session goal: {goal}. Met: yes/no.
 
 ### Team
 - Driver(s): {who drove which tasks}

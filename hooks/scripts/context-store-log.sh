@@ -31,6 +31,57 @@ cs_checkpoint_cursor_file() {
   echo "$team_dir/.checkpoint-cursor"
 }
 
+cs_review_cursor_file() {
+  local team_dir="${1:?}" agent="${2:?}"
+  echo "$team_dir/.review-cursor-${agent}"
+}
+
+cs_edit_count_since_review_cursor() {
+  local logfile="${1:?}" cursor_file="${2:?}"
+  local cursor=0
+  if [ -f "$cursor_file" ]; then
+    cursor=$(cat "$cursor_file" 2>/dev/null || echo 0)
+    [[ "$cursor" =~ ^[0-9]+$ ]] || cursor=0
+  fi
+
+  [ -f "$logfile" ] || {
+    echo 0
+    return 0
+  }
+
+  awk -v cursor="$cursor" 'NR > cursor && $2 == "EDIT" { count++ } END { print count + 0 }' "$logfile"
+}
+
+# cs_file_state FILE_PATH
+# Returns the last EDIT event for FILE_PATH from context-store.log.
+# Outputs "AGENT TIMESTAMP" (space-separated) if an EDIT was found, nothing if not.
+# FILE_PATH may be absolute; normalized the same way cs_log() does.
+cs_file_state() {
+  local file_path="${1:?}"
+  local logfile
+  logfile=$(cs_log_file)
+  [ -f "$logfile" ] || return 0
+
+  local short_file="${file_path#"${CLAUDE_PROJECT_DIR:-}"}"
+  short_file="${short_file#/}"
+
+  # Log format: TIME  EDIT  AGENT  SHORT_FILE  (detail)
+  # Use awk to find last EDIT line for this exact file path
+  local agent ts
+  while IFS= read -r line; do
+    local ev file_field
+    ev=$(echo "$line" | awk '{print $2}')
+    file_field=$(echo "$line" | awk '{print $4}')
+    if [ "$ev" = "EDIT" ] && [ "$file_field" = "$short_file" ]; then
+      agent=$(echo "$line" | awk '{print $3}')
+      ts=$(echo "$line" | awk '{print $1}')
+    fi
+  done < "$logfile"
+
+  [ -n "$agent" ] && echo "$agent $ts"
+  return 0
+}
+
 cs_edit_count_since_cursor() {
   local logfile="${1:?}" cursor_file="${2:?}"
   local cursor=0

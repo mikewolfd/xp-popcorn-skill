@@ -14,9 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/session-common.sh"
 px_load_session || exit 0
 
-STORE="$POPCORN_DIR/context-store.json"
-[ ! -f "$STORE" ] && echo '{}' > "$STORE"
-
 source "$SCRIPT_DIR/context-store-log.sh"
 
 INPUT=$(cat)
@@ -38,7 +35,6 @@ fi
 
 AGENT=$(px_normalize_agent "$(echo "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null || true)")
 AGENT_SHORT=$(px_short_agent "$AGENT")
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 LOG_FILE=$(cs_log_file)
 CURSOR_FILE=$(cs_checkpoint_cursor_file "$TEAM_DIR")
 
@@ -47,34 +43,61 @@ if [ "$AGENT" != "lead" ] && [ "$AGENT" != "unknown" ] && px_has_write_set "$AGE
   exit 2
 fi
 
-# Read existing entry in one jq call
-ENTRY_JSON=$(jq -r --arg path "$FILE_PATH" \
-  'if has($path) then .[$path] | "\(.dirty // false)\t\(.edited_by // "")\t\(.edited_at // "")" else "MISSING" end' \
-  "$STORE" 2>/dev/null || echo "MISSING")
-
-EXISTING_DIRTY="false"
-EXISTING_EDITOR=""
-EXISTING_EDITED_AT=""
-if [ "$ENTRY_JSON" != "MISSING" ]; then
-  EXISTING_DIRTY=$(echo "$ENTRY_JSON" | cut -f1)
-  EXISTING_EDITOR=$(echo "$ENTRY_JSON" | cut -f2)
-  EXISTING_EDITED_AT=$(echo "$ENTRY_JSON" | cut -f3)
+# Role guard: navigators and advisors must not edit code files — send advice instead.
+# Fail open: lead/unknown agents have no role state and are always allowed.
+if [ "$AGENT" != "lead" ] && [ "$AGENT" != "unknown" ]; then
+  AGENT_ROLE=$(px_state_field "$AGENT_SHORT" "role")
+  if [ "$AGENT_ROLE" = "navigator" ] || [ "$AGENT_ROLE" = "advisor" ]; then
+    echo "Popcorn XP: $AGENT_SHORT is $AGENT_ROLE, not driver. Send advice via SendMessage instead of editing directly. If you need to drive, claim a drive task first." >&2
+    exit 2
+  fi
 fi
 
+# One-driver-at-a-time guard: block if another agent is already in phase=driving.
+# Only applies when the editing agent is also driving.
+# V61: If the other driver's state is stale (>10 min), downgrade hard block to warning.
+AGENT_PHASE=$(px_state_field "$AGENT_SHORT" "phase")
+STALE_DRIVER_MSG=""
+if [ "$AGENT" != "lead" ] && [ "$AGENT" != "unknown" ] && [ "$AGENT_PHASE" = "driving" ] && [ -d "$STATE_DIR" ]; then
+  for state_file in "$STATE_DIR"/*.json; do
+    [ -f "$state_file" ] || continue
+    other_agent=$(jq -r '.agent // empty' "$state_file" 2>/dev/null || true)
+    [ -z "$other_agent" ] && continue
+    [ "$other_agent" = "$AGENT_SHORT" ] && continue
+    other_phase=$(jq -r '.phase // empty' "$state_file" 2>/dev/null || true)
+    if [ "$other_phase" = "driving" ]; then
+      other_updated_at=$(jq -r '.updated_at // empty' "$state_file" 2>/dev/null || true)
+      age=0
+      if [ -n "$other_updated_at" ]; then
+        now_epoch=$(date -u +%s)
+        updated_epoch=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$other_updated_at" +%s 2>/dev/null || true)
+        # If parsing fails, treat as fresh (age=0) — conservative: keep hard block
+        if [ -n "$updated_epoch" ] && [ "$updated_epoch" -gt 0 ] 2>/dev/null; then
+          age=$((now_epoch - updated_epoch))
+        fi
+      fi
+      if [ "$age" -gt 600 ]; then
+        STALE_DRIVER_MSG="${STALE_DRIVER_MSG:+$STALE_DRIVER_MSG$'\n\n'}Popcorn XP: ⚠ $other_agent appears to be driving but their state is $((age / 60)) min old (possible crash). Proceeding cautiously — verify with the lead."
+      else
+        echo "Popcorn XP: $other_agent is already driving. Only one agent may drive at a time. Wait for $other_agent to complete or hand off before editing." >&2
+        exit 2
+      fi
+    fi
+  done
+fi
+
+# Derive last editor from log — no JSON store needed
+EXISTING_STATE=$(cs_file_state "$FILE_PATH")
+EXISTING_EDITOR=$(echo "$EXISTING_STATE" | awk '{print $1}')
+EXISTING_EDITED_AT=$(echo "$EXISTING_STATE" | awk '{print $2}')
+
 SOFT_LOCK_MSG=""
-if [ "$EXISTING_DIRTY" = "true" ] && [ -n "$EXISTING_EDITOR" ] && [ "$EXISTING_EDITOR" != "$AGENT" ]; then
-  SOFT_LOCK_MSG="[context-store] SOFT LOCK: $EXISTING_EDITOR is actively editing this file (since $EXISTING_EDITED_AT). Consider messaging them about your intended changes instead of editing directly to avoid conflicts."
+if [ -n "$EXISTING_EDITOR" ] && [ "$EXISTING_EDITOR" != "$AGENT" ]; then
+  SOFT_LOCK_MSG="⚠ SOFT LOCK: $EXISTING_EDITOR is actively editing this file (since $EXISTING_EDITED_AT). Consider messaging them about your intended changes instead of editing directly to avoid conflicts."
   cs_log "EDIT" "$AGENT" "$FILE_PATH" "SOFT LOCK — $EXISTING_EDITOR active"
 else
   cs_log "EDIT" "$AGENT" "$FILE_PATH" "marked dirty"
 fi
-
-# Mark dirty atomically — pass all values as positional args to avoid quoting issues
-lockf "$STORE.lock" bash -c '
-  jq --arg path "$1" --arg agent "$2" --arg ts "$3" \
-    ".[\$path] = ((.[\$path] // {}) + {dirty: true, edited_by: \$agent, edited_at: \$ts})" \
-    "$4" > "$4.tmp" && mv "$4.tmp" "$4"
-' _ "$FILE_PATH" "$AGENT" "$TIMESTAMP" "$STORE"
 
 # Emit soft lock warning and/or checkpoint reminder
 EDIT_COUNT=$(cs_edit_count_since_cursor "$LOG_FILE" "$CURSOR_FILE")
@@ -83,13 +106,12 @@ if [ "$EDIT_COUNT" -ge 3 ]; then
   CHECKPOINT_MSG="Popcorn XP: You have $EDIT_COUNT file edits since your last checkpoint. Send a checkpoint to your navigator and log it: .popcorn-xp/$TEAM/session log 'what you did'"
 fi
 
-if [ -n "$SOFT_LOCK_MSG" ] || [ -n "$CHECKPOINT_MSG" ]; then
-  CTX="$SOFT_LOCK_MSG"
-  if [ -n "$CTX" ] && [ -n "$CHECKPOINT_MSG" ]; then
-    CTX="$CTX"$'\n\n'"$CHECKPOINT_MSG"
-  elif [ -z "$CTX" ]; then
-    CTX="$CHECKPOINT_MSG"
-  fi
+if [ -n "$STALE_DRIVER_MSG" ] || [ -n "$SOFT_LOCK_MSG" ] || [ -n "$CHECKPOINT_MSG" ]; then
+  CTX=""
+  for msg in "$STALE_DRIVER_MSG" "$SOFT_LOCK_MSG" "$CHECKPOINT_MSG"; do
+    [ -z "$msg" ] && continue
+    if [ -z "$CTX" ]; then CTX="$msg"; else CTX="$CTX"$'\n\n'"$msg"; fi
+  done
   jq -n --arg ctx "$CTX" '{additionalContext: $ctx}'
 fi
 

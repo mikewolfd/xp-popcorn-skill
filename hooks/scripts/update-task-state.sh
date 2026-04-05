@@ -25,6 +25,7 @@ px_is_teammate "$AGENT" || exit 0
 
 AGENT_SHORT=$(px_short_agent "$AGENT")
 mkdir -p "$STATE_DIR"
+LOG_FILE="$TEAM_DIR/LOG.md"
 
 if [ "$STATUS" = "in_progress" ] || { [ -n "$OWNER" ] && [ -z "$STATUS" ]; }; then
   PHASE="driving"
@@ -34,24 +35,33 @@ if [ "$STATUS" = "in_progress" ] || { [ -n "$OWNER" ] && [ -z "$STATUS" ]; }; th
     NEXT_ACTION="Start the claimed task or hand it off before claiming another."
   fi
 
+  # V68: Only update state if the agent already has a state file (registered via session state).
+  # Skip unknown/external agents that never registered with this session.
+  if [ ! -f "$(px_state_file "$AGENT_SHORT")" ]; then
+    exit 0
+  fi
+
   px_update_state "$AGENT_SHORT" "$TASK_ID" \
     --arg agent "$AGENT_SHORT" \
     --arg task_id "$TASK_ID" \
     --arg role "driver" \
     --arg phase "$PHASE" \
     --arg next_action "$NEXT_ACTION" \
-    --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     '.agent = $agent
      | .task_id = $task_id
      | .role = $role
      | .phase = $phase
      | .blocked_on = ""
-     | .next_action = $next_action
-     | .updated_at = $updated_at'
+     | .next_action = $next_action'
+
+  # Seed a fallback task anchor when this task skipped `session task`.
+  # Older task headers do not help the rotation guard for the current claim.
+  if [ ! -f "$LOG_FILE" ] || ! grep -qF "## Task $TASK_ID " "$LOG_FILE"; then
+    printf '\n## Task %s (auto) — Driver @%s, Navigator @unknown\n' "$TASK_ID" "$AGENT_SHORT" >> "$LOG_FILE"
+  fi
 elif [ "$STATUS" = "completed" ] || [ "$STATUS" = "deleted" ]; then
   if [ -f "$(px_state_file "$AGENT_SHORT")" ]; then
     px_update_state "$AGENT_SHORT" "" \
-      --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
       '.phase = "completed"
        | .role = "navigator"
        | .blocked_on = ""
@@ -59,7 +69,7 @@ elif [ "$STATUS" = "completed" ] || [ "$STATUS" = "deleted" ]; then
        | .navigator_ready = false
        | .navigator_artifact_kind = ""
        | .navigator_artifact_status = ""
-       | .updated_at = $updated_at'
+       | .write_set = []'
   fi
 fi
 

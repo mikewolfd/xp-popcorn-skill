@@ -9,7 +9,9 @@ set -euo pipefail
 #    (takes priority over shutdown so agents can write retros before being stopped)
 # 2. Shutdown: .shutdown exists → block on unresolved OBJECTIONs, then force-stop
 # 3. Retro done: .retro-requested + .retro-{agent}.md exist, no .shutdown → allow idle
-# 4. Phase 5 working state:
+# 4. Compaction: compact-stop file exists → require handoff, then retire
+#    4b. Bench: phase="bench" → allow idle (agent has no tasks)
+# 5. Working state:
 #    5a. Explicit waiting states (waiting_on_driver, waiting_on_verification) → allow
 #    5b. Navigator drift (navigator, navigating phase) → require READY artifact
 #    5d. Checkpoint check (driver with uncheckpointed edits) → block with checkpoint nudge
@@ -22,6 +24,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/session-common.sh"
 source "$SCRIPT_DIR/context-store-log.sh"
 px_load_session || exit 0
+
+# Local helper: emit advice block message and exit 2 if any unresolved items exist.
+_px_advice_block() {
+  local advice_path="${1:?}"
+  local total=0 summary="" TYPE count
+  while IFS=' ' read -r TYPE count; do
+    [ -n "$TYPE" ] || continue
+    total=$((total + count))
+    [ -n "$summary" ] && summary="$summary, "
+    summary="${summary}${count} ${TYPE}(s)"
+  done < <(px_unresolved_advice "$advice_path")
+  if [ "$total" -gt 0 ]; then
+    echo "Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work." >&2
+    exit 2
+  fi
+}
 
 # Read teammate_name from stdin (TeammateIdle input)
 INPUT=$(cat)
@@ -40,8 +58,8 @@ COMPACT_STOP_FILE=$(px_compact_stop_file "$AGENT_SHORT")
 HANDOFF_FILE="$TEAM_DIR/handoff-$AGENT_SHORT.md"
 
 # Phase 1: Retro pending — nudge retro before shutdown can take effect
-if [ -f "$TEAM_DIR/.retro-requested" ] && [ -n "$AGENT" ] && [ ! -f "$TEAM_DIR/.retro-$AGENT.md" ]; then
-  echo "Popcorn XP: Retro time. Submit your process observations now: .popcorn-xp/$TEAM/session retro $AGENT 'What worked? What didn't? What would you change about the process?'" >&2
+if [ -f "$TEAM_DIR/.retro-requested" ] && [ -n "$AGENT_SHORT" ] && [ ! -f "$TEAM_DIR/.retro-$AGENT_SHORT.md" ]; then
+  echo "Popcorn XP: Retro time. Submit your process observations now: .popcorn-xp/$TEAM/session retro $AGENT_SHORT 'What worked? What didn't? What would you change about the process?'" >&2
   exit 2
 fi
 
@@ -57,6 +75,8 @@ if [ -f "$TEAM_DIR/.shutdown" ]; then
       fi
     done
   fi
+  px_update_state "$AGENT_SHORT" "$TASK_ID" \
+    '.phase = "shutdown" | .next_action = "" | .blocked_on = ""'
   echo '{"continue": false, "stopReason": "Session complete — lead initiated shutdown"}'
   exit 0
 fi
@@ -74,6 +94,11 @@ if [ -f "$COMPACT_STOP_FILE" ]; then
   fi
   rm -f "$COMPACT_STOP_FILE"
   echo '{"continue": false, "stopReason": "Context compacted — handoff captured; continue with a fresh teammate if more work is needed"}'
+  exit 0
+fi
+
+# Phase 4b: bench — agent has no tasks, allow idle
+if [ "$PHASE" = "bench" ]; then
   exit 0
 fi
 
@@ -106,62 +131,28 @@ if [ "$ROLE" = "driver" ] || [ "$PHASE" = "driving" ]; then
   fi
 fi
 
+# Phase 5e-adv: advisor review cursor check
+if [ "$ROLE" = "advisor" ]; then
+  LOG_FILE=$(cs_log_file)
+  REVIEW_CURSOR_FILE=$(cs_review_cursor_file "$TEAM_DIR" "$AGENT_SHORT")
+  REVIEW_COUNT=$(cs_edit_count_since_review_cursor "$LOG_FILE" "$REVIEW_CURSOR_FILE")
+  if [ "$REVIEW_COUNT" -gt 0 ]; then
+    echo "Popcorn XP: $REVIEW_COUNT new edit(s) since your last review. Read .popcorn-xp/context-store.log, check the affected files, and advise. Log your review: .popcorn-xp/$TEAM/session review $AGENT_SHORT" >&2
+    exit 2
+  fi
+fi
+
 # Phase 5e: advice check (any agent with unresolved advice)
+# waiting_on_driver: skip unless there are open OBJECTIONs (non-OBJECTIONs can wait for driver)
 ADVICE="$TEAM_DIR/ADVICE.md"
 if [ -f "$ADVICE" ]; then
-  # Skip OBJECTION-specific check if in waiting_on_driver with no OBJECTIONs (they can wait for driver)
   if [ "$IN_WAITING_STATE" = "1" ] && [ "$PHASE" = "waiting_on_driver" ]; then
-    open_obj_ids=$(grep -oE '### OBJECTION ([^ ]+) — open' "$ADVICE" | sed 's/### OBJECTION \([^ ]*\) — open/\1/' || true)
-    if [ -z "$open_obj_ids" ]; then
-      # No OBJECTIONs, waiting_on_driver can proceed to 5a exit
-      :
-    else
-      # Has OBJECTIONs, must resolve
-      total=0
-      summary=""
-      for TYPE in "OBJECTION" "SMELL" "STEER" "FYI"; do
-        open_ids=$(grep -oE "### $TYPE ([^ ]+) — open" "$ADVICE" | sed 's/### [^ ]* \([^ ]*\) — open/\1/' || true)
-        count=0
-        for id in $open_ids; do
-          if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
-            count=$((count + 1))
-          fi
-        done
-        if [ "$count" -gt 0 ]; then
-          total=$((total + count))
-          [ -n "$summary" ] && summary="$summary, "
-          summary="${summary}${count} ${TYPE}(s)"
-        fi
-      done
-
-      if [ "$total" -gt 0 ]; then
-        echo "Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work." >&2
-        exit 2
-      fi
+    obj_count=$(px_unresolved_advice "$ADVICE" OBJECTION | awk '{print $2}')
+    if [ -n "$obj_count" ] && [ "$obj_count" -gt 0 ]; then
+      _px_advice_block "$ADVICE"
     fi
   else
-    # Not in waiting_on_driver, check all advice items
-    total=0
-    summary=""
-    for TYPE in "OBJECTION" "SMELL" "STEER" "FYI"; do
-      open_ids=$(grep -oE "### $TYPE ([^ ]+) — open" "$ADVICE" | sed 's/### [^ ]* \([^ ]*\) — open/\1/' || true)
-      count=0
-      for id in $open_ids; do
-        if ! grep -iqE "^### $id — (FIXED|REJECTED|INCORPORATED|NOTED)" "$ADVICE"; then
-          count=$((count + 1))
-        fi
-      done
-      if [ "$count" -gt 0 ]; then
-        total=$((total + count))
-        [ -n "$summary" ] && summary="$summary, "
-        summary="${summary}${count} ${TYPE}(s)"
-      fi
-    done
-
-    if [ "$total" -gt 0 ]; then
-      echo "Popcorn XP: ${total} unresolved advice item(s) in .popcorn-xp/$TEAM/ADVICE.md (${summary}). OBJECTIONs must be resolved before task completion. SMELLs, STEERs, and FYIs are your call — resolve if you can, but don't let them hold up good work." >&2
-      exit 2
-    fi
+    _px_advice_block "$ADVICE"
   fi
 fi
 

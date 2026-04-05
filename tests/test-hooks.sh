@@ -269,12 +269,10 @@ run_hook "check-retro-before-delete.sh"
 assert_exit "H5 retro real allows" 0 "$LAST_RC"
 
 # cleanup-context-store.sh removes store artifacts after team delete
-echo '{}' > "$POPCORN/context-store.json"
-echo '12:00:00 READ popcorn-xp:scout file.txt new entry' > "$POPCORN/context-store.log"
-touch "$POPCORN/context-store.json.lock"
+echo '12:00:00  EDIT       popcorn-xp:scout             file.txt                                 (marked dirty)' > "$POPCORN/context-store.log"
 run_hook "cleanup-context-store.sh"
 assert_exit "H5 cleanup context store exits 0" 0 "$LAST_RC"
-if [ ! -f "$POPCORN/context-store.json" ] && [ ! -f "$POPCORN/context-store.log" ] && [ ! -f "$POPCORN/context-store.json.lock" ]; then
+if [ ! -f "$POPCORN/context-store.log" ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
@@ -424,6 +422,21 @@ touch "$POPCORN/$TEAM/.retro-requested"
 printf 'It went well\n' > "$POPCORN/$TEAM/.retro-craftsman.md"
 run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
 assert_exit "H2 retro done allows idle" 0 "$LAST_RC"
+
+# V56: Retro pending with prefixed teammate_name — must nudge (uses AGENT_SHORT, not raw name)
+setup_session
+touch "$POPCORN/$TEAM/.retro-requested"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"popcorn-xp:craftsman"}'
+assert_exit "H2 retro pending prefixed blocks" 2 "$LAST_RC"
+assert_stderr_contains "H2 retro pending prefixed mentions retro" "retro" "$LAST_STDERR"
+assert_stderr_contains "H2 retro pending prefixed mentions short name" "craftsman" "$LAST_STDERR"
+
+# V56: Retro done with prefixed teammate_name — retro file uses short name, must allow idle
+setup_session
+touch "$POPCORN/$TEAM/.retro-requested"
+printf 'It went well\n' > "$POPCORN/$TEAM/.retro-craftsman.md"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"popcorn-xp:craftsman"}'
+assert_exit "H2 retro done prefixed allows idle" 0 "$LAST_RC"
 
 # Explicit waiting state allows idle once READY is published
 setup_session
@@ -678,6 +691,137 @@ assert_exit "R3 enforce checkpoint shows count" 2 "$LAST_RC"
 assert_stderr_contains "R3 enforce checkpoint has count" "4 file edit" "$LAST_STDERR"
 
 # ============================================================
+# V50: one-driver-at-a-time enforcement in context-store-mark-dirty.sh
+# ============================================================
+echo "--- V50: one-driver-at-a-time enforcement ---"
+
+# No other driver: edit proceeds normally
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-solo.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V50 solo driver allowed" 0 "$LAST_RC"
+
+# Another agent in phase=driving: block
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+write_state "expert" "driver" "driving" "5" "" "Also driving"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-conflict.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V50 concurrent driver blocked" 2 "$LAST_RC"
+assert_stderr_contains "V50 concurrent driver names other agent" "expert" "$LAST_STDERR"
+
+# Another agent in phase=completed: allow (non-driving phase does not block)
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+write_state "expert" "driver" "completed" "5" "" "Done"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-completed.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V50 completed phase does not block" 0 "$LAST_RC"
+
+# Another agent in phase=bench: allow
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+write_state "expert" "driver" "bench" "-" "" "No tasks"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-bench.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V50 bench phase does not block" 0 "$LAST_RC"
+
+# Another agent in phase=handoff_pending: allow
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+write_state "expert" "driver" "handoff_pending" "5" "" "Writing handoff"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-handoff.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V50 handoff_pending does not block" 0 "$LAST_RC"
+
+# lead agent is exempt even if another driver is active
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-lead.ts"'"},"agent_type":"lead"}'
+assert_exit "V50 lead exempt from one-driver guard" 0 "$LAST_RC"
+
+# Navigator editing while another agent drives: block (V80 role guard)
+setup_session
+write_state "craftsman" "navigator" "waiting_on_driver" "5" "" "Watching driver"
+write_state "expert" "driver" "driving" "5" "" "Active driver"
+run_hook_stdin "context-store-mark-dirty.sh" '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v50-nav-edit.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V50 navigator editing is blocked by role guard" 2 "$LAST_RC"
+assert_stderr_contains "V50 navigator edit blocked message" "navigator" "$LAST_STDERR"
+
+# ============================================================
+# V61: stale-driver TTL downgrade
+# ============================================================
+echo "--- V61: stale-driver TTL downgrade ---"
+
+# Stale driver (updated_at > 10 min ago): downgrade hard block to additionalContext warning
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+# Write expert state with an updated_at far in the past (1970 = definitely stale)
+jq -n '{agent:"expert",role:"driver",phase:"driving",task_id:"5",blocked_on:"",next_action:"",navigator_ready:false,navigator_artifact_kind:"",navigator_artifact_status:"",write_set:[],updated_at:"2020-01-01T00:00:00Z"}' \
+  > "$POPCORN/$TEAM/agent-state/expert.json"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v61-stale.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V61 stale driver allows edit (exit 0)" 0 "$LAST_RC"
+assert_stdout_contains "V61 stale driver emits additionalContext" "additionalContext" "$LAST_STDOUT"
+assert_stdout_contains "V61 stale driver warning mentions agent" "expert" "$LAST_STDOUT"
+
+# Malformed updated_at: parse fails, conservative fallback keeps hard block
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+jq -n '{agent:"expert",role:"driver",phase:"driving",task_id:"5",blocked_on:"",next_action:"",navigator_ready:false,navigator_artifact_kind:"",navigator_artifact_status:"",write_set:[],updated_at:"not-a-date"}' \
+  > "$POPCORN/$TEAM/agent-state/expert.json"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v61-malformed.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V61 malformed updated_at keeps hard block (exit 2)" 2 "$LAST_RC"
+assert_stderr_contains "V61 malformed date block message" "already driving" "$LAST_STDERR"
+
+# V69: multiple stale drivers — all warnings accumulated, not overwritten
+echo "--- V69: multiple stale drivers accumulated ---"
+
+setup_session
+write_state "craftsman" "driver" "driving" "5" "" "Implement feature"
+# Two stale drivers (both >10 min old)
+jq -n '{agent:"expert",role:"driver",phase:"driving",task_id:"5",blocked_on:"",next_action:"",navigator_ready:false,navigator_artifact_kind:"",navigator_artifact_status:"",write_set:[],updated_at:"2020-01-01T00:00:00Z"}' \
+  > "$POPCORN/$TEAM/agent-state/expert.json"
+jq -n '{agent:"scout",role:"driver",phase:"driving",task_id:"5",blocked_on:"",next_action:"",navigator_ready:false,navigator_artifact_kind:"",navigator_artifact_status:"",write_set:[],updated_at:"2020-01-01T00:00:00Z"}' \
+  > "$POPCORN/$TEAM/agent-state/scout.json"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v69-multi-stale.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V69 multiple stale drivers allows edit (exit 0)" 0 "$LAST_RC"
+assert_stdout_contains "V69 stale msg mentions first agent" "expert" "$LAST_STDOUT"
+assert_stdout_contains "V69 stale msg mentions second agent" "scout" "$LAST_STDOUT"
+
+# ============================================================
+# V45: write set path normalization (relative vs absolute)
+# ============================================================
+echo "--- V45: write set path normalization ---"
+
+# Relative path in write set matches absolute incoming file_path
+setup_session
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["hooks/scripts/foo.sh"]'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V45 relative write set matches absolute path" 0 "$LAST_RC"
+
+# Absolute path in write set still matches absolute incoming path (no regression)
+setup_session
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/hooks/scripts/bar.sh"'"]'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V45 absolute write set matches absolute path" 0 "$LAST_RC"
+
+# File not in write set is still blocked
+setup_session
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["hooks/scripts/foo.sh"]'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V45 file outside write set is blocked" 2 "$LAST_RC"
+assert_stderr_contains "V45 outside write set message" "outside the declared write set" "$LAST_STDERR"
+
+# dot-slash prefix in write set matches absolute path (V45-dot-prefix fix)
+setup_session
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./hooks/scripts/foo.sh"]'
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V45 dot-slash write set matches absolute path" 0 "$LAST_RC"
+
+# ============================================================
 # 11b. Phase 5d: enforce-no-idle.sh checkpoint check (driver with edits)
 # ============================================================
 
@@ -797,7 +941,18 @@ echo "--- R4: session script subcommands ---"
 
 # Use bin/session via CLAUDE_PROJECT_DIR (same mechanism as production)
 setup_session
-run_session() { env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" "$BIN_DIR/session" "$@"; }
+run_session() {
+  local stdout_file stderr_file
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  local rc=0
+  env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" "$BIN_DIR/session" "$@" \
+    >"$stdout_file" 2>"$stderr_file" || rc=$?
+  LAST_STDOUT=$(cat "$stdout_file")
+  LAST_STDERR=$(cat "$stderr_file")
+  LAST_RC=$rc
+  rm -f "$stdout_file" "$stderr_file"
+}
 
 # log records checkpoint and advances cursor to current context-store.log line
 printf '12:00:00  EDIT       popcorn-xp:craftsman         src/example.ts                           (marked dirty)\n' > "$POPCORN/context-store.log"
@@ -855,7 +1010,7 @@ fi
 
 # ready creates navigator-ready artifact and waiting state
 run_session ready expert 7 risk_check 'Watch for missing verification on shutdown path.'
-if [ -f "$POPCORN/$TEAM/navigator-ready-expert.md" ] && \
+if [ -f "$POPCORN/$TEAM/navigator-ready-expert-T7.md" ] && \
    [ "$(jq -r '.navigator_ready' "$POPCORN/$TEAM/agent-state/expert.json" 2>/dev/null || echo false)" = "true" ]; then
   PASS=$((PASS + 1))
 else
@@ -905,6 +1060,33 @@ else
   ERRORS="${ERRORS}\n  FAIL: R4 snapshot should create snapshot-craftsman.md"
 fi
 
+# V72: session advice enforces canonical ID format and type/prefix pairing
+echo "--- V72: session advice validation ---"
+
+setup_session
+run_session advice OBJECTION O1 'Informal IDs should be rejected'
+assert_exit "V72 invalid advice ID blocked" 2 "$LAST_RC"
+assert_stderr_contains "V72 invalid advice mentions canonical format" "OBJ-{task}-{seq}" "$LAST_STDERR"
+if ! grep -q '^### ' "$POPCORN/$TEAM/ADVICE.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V72 — invalid advice ID should not append to ADVICE.md"
+fi
+
+run_session advice SMELL OBJ-7-01 'Prefix must match the advice type'
+assert_exit "V72 mismatched prefix blocked" 2 "$LAST_RC"
+assert_stderr_contains "V72 mismatched prefix mentions prefix" "must match" "$LAST_STDERR"
+
+run_session advice FYI FYI-7-01 'Valid advice ID still works'
+assert_exit "V72 canonical advice allowed" 0 "$LAST_RC"
+if grep -q '^### FYI FYI-7-01 — open' "$POPCORN/$TEAM/ADVICE.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V72 — canonical advice should append to ADVICE.md"
+fi
+
 # ============================================================
 # Context Store tests
 # ============================================================
@@ -912,50 +1094,52 @@ fi
 echo "--- Context Store tests (narrowed to dirty cross-agent reads) ---"
 
 setup_session
-CS_STORE="$POPCORN/context-store.json"
+CS_LOG="$POPCORN/context-store.log"
 CS_FOO="$TMPDIR_ROOT/foo.txt"
+CS_FOO_SHORT="${CS_FOO#"$TMPDIR_ROOT/"}"
 CS_BAR="$TMPDIR_ROOT/bar.txt"
+CS_BAR_SHORT="${CS_BAR#"$TMPDIR_ROOT/"}"
 
-# CS1: check returns nothing when store doesn't exist
+# CS1: check returns nothing when log doesn't exist
+rm -f "$CS_LOG"
 run_hook_stdin "context-store-check.sh" \
   '{"tool_input":{"file_path":"'"$CS_FOO"'"},"agent_type":"popcorn-xp:scout"}'
-assert_exit "CS1: check no store" 0 "$LAST_RC"
-assert_stdout_empty "CS1: check no store stdout" "$LAST_STDOUT"
+assert_exit "CS1: check no log" 0 "$LAST_RC"
+assert_stdout_empty "CS1: check no log stdout" "$LAST_STDOUT"
 
-# CS2: check on unknown file returns nothing silently
-echo '{}' > "$CS_STORE"
+# CS2: check on file with no EDIT in log returns nothing silently
+printf '' > "$CS_LOG"
 run_hook_stdin "context-store-check.sh" \
   '{"tool_input":{"file_path":"'"$CS_FOO"'"},"agent_type":"popcorn-xp:scout"}'
 assert_exit "CS2: check unknown file" 0 "$LAST_RC"
 assert_stdout_empty "CS2: check unknown file stdout" "$LAST_STDOUT"
 
-# CS3: check on clean file (dirty=false) returns nothing
-jq --arg p "$CS_FOO" '.[$p] = {dirty: false, read_by: "popcorn-xp:scout", read_at: "2026-01-01T00:00:00Z"}' "$CS_STORE" > "$CS_STORE.tmp" && mv "$CS_STORE.tmp" "$CS_STORE"
+# CS3: check on file with no EDIT (never edited) returns nothing
+# Log has a READ event but no EDIT — treated as clean
+printf '12:00:00  %-10s %-28s %-40s %s\n' "READ" "popcorn-xp:scout" "$CS_FOO_SHORT" "(read)" > "$CS_LOG"
 run_hook_stdin "context-store-check.sh" \
   '{"tool_input":{"file_path":"'"$CS_FOO"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "CS3: check clean file" 0 "$LAST_RC"
 assert_stdout_empty "CS3: clean file no output" "$LAST_STDOUT"
 
-# CS4: check on dirty file with same agent returns nothing
-jq --arg p "$CS_FOO" '.[$p] = {dirty: true, edited_by: "popcorn-xp:scout", edited_at: "2026-01-01T00:00:01Z"}' "$CS_STORE" > "$CS_STORE.tmp" && mv "$CS_STORE.tmp" "$CS_STORE"
+# CS4: check on file edited by same agent returns nothing
+printf '12:00:01  %-10s %-28s %-40s %s\n' "EDIT" "popcorn-xp:scout" "$CS_FOO_SHORT" "(marked dirty)" >> "$CS_LOG"
 run_hook_stdin "context-store-check.sh" \
   '{"tool_input":{"file_path":"'"$CS_FOO"'"},"agent_type":"popcorn-xp:scout"}'
 assert_exit "CS4: same agent dirty file" 0 "$LAST_RC"
 assert_stdout_empty "CS4: same agent no output" "$LAST_STDOUT"
 
-# CS5: check on dirty file with different agent returns additionalContext warning
+# CS5: check on file edited by different agent returns additionalContext warning
 run_hook_stdin "context-store-check.sh" \
   '{"tool_input":{"file_path":"'"$CS_FOO"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "CS5: different agent dirty file" 0 "$LAST_RC"
 assert_stdout_contains "CS5: has additionalContext" "additionalContext" "$LAST_STDOUT"
 assert_stdout_contains "CS5: has WARNING" "WARNING" "$LAST_STDOUT"
 assert_stdout_contains "CS5: mentions editor" "popcorn-xp:scout" "$LAST_STDOUT"
-assert_stdout_contains "CS5: mentions timestamp" "2026-01-01T00:00:01Z" "$LAST_STDOUT"
 
 # CS6: soft lock from mark-dirty (write-side enforcement)
 rm -f "$POPCORN/$TEAM/agent-state/"*.json
-echo '{}' > "$CS_STORE"
-jq --arg p "$CS_BAR" '.[$p] = {dirty: true, edited_by: "popcorn-xp:scout", edited_at: "2026-01-01T00:00:01Z"}' "$CS_STORE" > "$CS_STORE.tmp" && mv "$CS_STORE.tmp" "$CS_STORE"
+printf '12:00:01  %-10s %-28s %-40s %s\n' "EDIT" "popcorn-xp:scout" "$CS_BAR_SHORT" "(marked dirty)" > "$CS_LOG"
 run_hook_stdin "context-store-mark-dirty.sh" \
   '{"tool_input":{"file_path":"'"$CS_BAR"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "CS6: soft lock on mark-dirty" 0 "$LAST_RC"
@@ -963,22 +1147,14 @@ assert_stdout_contains "CS6: soft lock warning" "SOFT LOCK" "$LAST_STDOUT"
 assert_stdout_contains "CS6: mentions active editor" "popcorn-xp:scout" "$LAST_STDOUT"
 
 # CS7: popcorn-xp session paths are skipped
-echo '{}' > "$CS_STORE"
+printf '' > "$CS_LOG"
 run_hook_stdin "context-store-check.sh" \
   '{"tool_input":{"file_path":"'"$POPCORN/$TEAM/ADVICE.md"'"},"agent_type":"popcorn-xp:scout"}'
 assert_exit "CS7: popcorn paths skipped" 0 "$LAST_RC"
 assert_stdout_empty "CS7: popcorn path no output" "$LAST_STDOUT"
 
-CS_HAS_ADVICE=$(jq -r 'has("'"$POPCORN/$TEAM/ADVICE.md"'")' "$CS_STORE" 2>/dev/null || echo "false")
-if [ "$CS_HAS_ADVICE" = "false" ]; then
-  PASS=$((PASS + 1))
-else
-  FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: CS7 — popcorn-xp paths should not be stored"
-fi
-
 # Clean up
-rm -f "$CS_STORE" "$CS_STORE.lock"
+rm -f "$CS_LOG"
 
 # ============================================================
 # ============================================================
@@ -1057,6 +1233,82 @@ setup_session
 run_hook_stdin_file "check-task-claim.sh" "$FIXTURES_DIR/taskupdate-claim-craftsman.json"
 assert_exit "TC9: replay fixture claim allowed" 0 "$LAST_RC"
 
+echo "--- V52: rotation enforcement ---"
+
+# V52-1: No LOG.md — rotation guard is skipped, claim allowed
+setup_session
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V52-1: no LOG.md allows claim" 0 "$LAST_RC"
+
+# V52-2: Agent drove the last task — blocked
+setup_session
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "navigator" "completed" "T1" "" ""
+run_session task T1 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V52-2: consecutive drive blocked" 2 "$LAST_RC"
+assert_stderr_contains "V52-2: mentions rotation" "Rotation" "$LAST_STDERR"
+assert_stderr_contains "V52-2: names agent" "craftsman" "$LAST_STDERR"
+
+# V52-3: Different agent drove the last task — allowed
+setup_session
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "driver" "completed" "T1" "" ""
+run_session task T1 expert craftsman
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V52-3: rotation satisfied allows claim" 0 "$LAST_RC"
+
+# V52-4: Single teammate state file — rotation exempt
+setup_session
+write_state "craftsman" "driver" "completed" "" "" ""
+run_session task T1 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V52-4: single teammate exempt from rotation" 0 "$LAST_RC"
+
+# V70: nav task claims are exempt from the back-to-back rotation guard
+setup_session
+write_state "craftsman" "driver" "completed" "T2" "" ""
+write_state "expert" "navigator" "completed" "T2" "" ""
+run_session task T2 craftsman expert
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"T2-nav","status":"in_progress","description":"Navigate T2 — verify the finished drive"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V70: nav task claim allowed" 0 "$LAST_RC"
+assert_stdout_empty "V70: nav task claim should not emit stdout" "$LAST_STDOUT"
+
+# V71: fallback task headers seed the rotation anchor when the current task skipped `session task`
+setup_session
+write_state "craftsman" "driver" "completed" "T2" "" ""
+write_state "expert" "driver" "completed" "T2" "" ""
+run_session task T2 expert craftsman
+run_session log 'Previous work on T2'
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"T3","owner":"craftsman"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V71: first owner-only claim with older header allowed" 0 "$LAST_RC"
+assert_stdout_empty "V71: first owner-only claim with older header stdout" "$LAST_STDOUT"
+
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"T3","owner":"craftsman"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V71: claim state update succeeds" 0 "$LAST_RC"
+assert_stdout_empty "V71: claim state update stdout" "$LAST_STDOUT"
+
+if grep -qF "## Task T3 (auto) — Driver @craftsman, Navigator @unknown" "$POPCORN/$TEAM/LOG.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V71 — fallback task header should be written to LOG.md"
+fi
+
+write_state "craftsman" "driver" "completed" "T3" "" ""
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"T4","owner":"craftsman"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V71: second claim blocked by rotation after fallback header" 2 "$LAST_RC"
+assert_stdout_empty "V71: second claim blocked stdout" "$LAST_STDOUT"
+assert_stderr_contains "V71: rotation message" "Rotation required" "$LAST_STDERR"
+
 echo "--- Task state tracking: update-task-state.sh ---"
 
 # TR1: no-op without active session
@@ -1077,7 +1329,8 @@ else
   ERRORS="${ERRORS}\n  FAIL: TR2 — teammate state should not be created for lead updates"
 fi
 
-# TR3: in_progress creates driving state
+# TR3: in_progress updates driving state (agent must have pre-existing state file from session state)
+write_state "craftsman" "driver" "claimed" "5" "" "Starting task"
 run_hook_stdin "update-task-state.sh" \
   '{"tool_input":{"taskId":"5","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "TR3: in_progress creates row" 0 "$LAST_RC"
@@ -1111,7 +1364,8 @@ else
   ERRORS="${ERRORS}\n  FAIL: TR4 — completed should set explicit completed state"
 fi
 
-# TR5: owner-only assignment creates claimed state for native teammate
+# TR5: owner-only assignment updates claimed state for native teammate (pre-existing state required)
+write_state "test-engineer" "driver" "claimed" "5" "" "Waiting for assignment"
 run_hook_stdin "update-task-state.sh" \
   '{"tool_input":{"taskId":"6","owner":"tester"},"agent_type":"test-engineer"}'
 assert_exit "TR5: owner-only claim recorded" 0 "$LAST_RC"
@@ -1120,7 +1374,7 @@ if [ "$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/test-engineer.json" 2>/dev/nu
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: TR5 — owner-only claim should create claimed state for native teammate"
+  ERRORS="${ERRORS}\n  FAIL: TR5 — owner-only claim should update claimed state for registered teammate"
 fi
 
 # TR6: later in_progress for same task upgrades claimed -> driving and preserves writeset
@@ -1137,6 +1391,9 @@ else
 fi
 
 # TR7: one agent completion does not affect another agent state
+# (pre-create both agent state files as they would be from prior session state calls)
+write_state "craftsman" "driver" "claimed" "3" "" "Starting task"
+write_state "expert" "driver" "claimed" "4" "" "Starting task"
 run_hook_stdin "update-task-state.sh" \
   '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 run_hook_stdin "update-task-state.sh" \
@@ -1151,6 +1408,288 @@ else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: TR7 — completing craftsman should not affect expert state"
 fi
+
+# V68: State not created for agents with no existing state file
+echo "--- V68: no state created for unregistered agents ---"
+
+# V68-1: in_progress from agent with no pre-existing state file — no file created
+setup_session
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"9","status":"in_progress"},"agent_type":"popcorn-xp:outsider"}'
+assert_exit "V68-1: unregistered agent in_progress exits 0" 0 "$LAST_RC"
+if [ ! -f "$POPCORN/$TEAM/agent-state/outsider.json" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V68-1 — state file should not be created for unregistered agent"
+fi
+
+# V68-2: owner-only claim from agent with no pre-existing state file — no file created
+setup_session
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"9","owner":"outsider"},"agent_type":"popcorn-xp:outsider"}'
+assert_exit "V68-2: unregistered agent owner-only exits 0" 0 "$LAST_RC"
+if [ ! -f "$POPCORN/$TEAM/agent-state/outsider.json" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V68-2 — state file should not be created for unregistered agent on owner-only claim"
+fi
+
+# V68-3: registered agent still gets state created normally
+setup_session
+write_state "craftsman" "driver" "claimed" "9" "" "Start task"
+run_hook_stdin "update-task-state.sh" \
+  '{"tool_input":{"taskId":"9","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V68-3: registered agent in_progress exits 0" 0 "$LAST_RC"
+if [ "$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo missing)" = "driving" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V68-3 — registered agent should still get state updated on in_progress"
+fi
+
+# ============================================================
+# V32: session ready — per-task filename, no overwrite across tasks
+# ============================================================
+
+echo "--- V32: per-task navigator-ready filename ---"
+
+setup_session
+run_session ready craftsman 3 risk_check 'Check edge cases in parser.'
+if [ -f "$POPCORN/$TEAM/navigator-ready-craftsman-T3.md" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V32 — ready should create navigator-ready-{agent}-T{task}.md"
+fi
+
+# Second ready for different task creates a separate file, does not overwrite first
+run_session ready craftsman 5 spec_check 'Check spec coverage for task 5.'
+if [ -f "$POPCORN/$TEAM/navigator-ready-craftsman-T5.md" ] && \
+   [ -f "$POPCORN/$TEAM/navigator-ready-craftsman-T3.md" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V32 — ready for task 5 should not overwrite task 3 artifact"
+fi
+
+# Verify the contents are distinct
+T3_CONTENT=$(cat "$POPCORN/$TEAM/navigator-ready-craftsman-T3.md" 2>/dev/null || echo "")
+T5_CONTENT=$(cat "$POPCORN/$TEAM/navigator-ready-craftsman-T5.md" 2>/dev/null || echo "")
+if echo "$T3_CONTENT" | grep -q "Check edge cases" && echo "$T5_CONTENT" | grep -q "Check spec coverage"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V32 — per-task artifacts should contain their respective notes"
+fi
+
+# ============================================================
+# V36: enforce-no-idle.sh bench phase allows idle
+# ============================================================
+
+echo "--- V36: bench phase allows idle ---"
+
+setup_session
+write_state "craftsman" "driver" "bench" "-" "" "no tasks assigned"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V36 bench phase exits 0" 0 "$LAST_RC"
+
+# Bench agent with unresolved advice is still allowed (bench bypasses advice checks)
+setup_session
+write_state "craftsman" "driver" "bench" "-" "" "no tasks assigned"
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### SMELL SML-V36-01 — open
+Open smell on bench agent
+EOF
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V36 bench bypasses advice check" 0 "$LAST_RC"
+
+# ============================================================
+# V35: shutdown path writes terminal state before force-stop
+# ============================================================
+
+echo "--- V35: shutdown writes terminal state ---"
+
+setup_session
+write_state "craftsman" "driver" "driving" "3" "" "finish implementation"
+touch "$POPCORN/$TEAM/.shutdown"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V35 shutdown exits 0" 0 "$LAST_RC"
+assert_stdout_contains "V35 shutdown force-stop JSON" '"continue"' "$LAST_STDOUT"
+STATE_PHASE_V35=$(jq -r '.phase' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo "missing")
+if [ "$STATE_PHASE_V35" = "shutdown" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V35 — shutdown path should write phase=shutdown to agent state (got: $STATE_PHASE_V35)"
+fi
+NEXT_ACTION_V35=$(jq -r '.next_action' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo "missing")
+if [ -z "$NEXT_ACTION_V35" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V35 — shutdown path should clear next_action (got: $NEXT_ACTION_V35)"
+fi
+
+# ============================================================
+# V37: navigator with published READY in waiting_on_driver allows idle
+# ============================================================
+
+echo "--- V37: navigator with published READY allows idle ---"
+
+setup_session
+write_state "craftsman" "navigator" "waiting_on_driver" "4" "expert" "Wait for checkpoint" true "risk_check" "published"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V37 navigator published READY allows idle" 0 "$LAST_RC"
+
+# Navigator with READY not published is still blocked
+setup_session
+write_state "craftsman" "navigator" "waiting_on_driver" "4" "expert" "Wait for checkpoint" false "risk_check" ""
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V37 navigator unpublished READY blocks" 2 "$LAST_RC"
+assert_stderr_contains "V37 unpublished READY message" "READY artifact" "$LAST_STDERR"
+
+# Navigator with ready=true but status!=published is also blocked
+setup_session
+write_state "craftsman" "navigator" "waiting_on_driver" "4" "expert" "Wait for checkpoint" true "risk_check" "draft"
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V37 navigator draft READY blocks" 2 "$LAST_RC"
+
+# ============================================================
+# V34: session task-correct appends corrected header to LOG.md
+# ============================================================
+
+echo "--- V34: task-correct appends corrected header ---"
+
+setup_session
+run_session task-correct 3 craftsman expert
+if grep -q "Task 3 — Driver @craftsman, Navigator @expert (corrected)" "$POPCORN/$TEAM/LOG.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V34 — task-correct should append corrected header to LOG.md"
+fi
+
+# Multiple corrections create multiple log entries (append-only)
+run_session task-correct 3 expert craftsman
+CORRECTION_COUNT=$(grep -c "(corrected)" "$POPCORN/$TEAM/LOG.md" 2>/dev/null || echo 0)
+if [ "$CORRECTION_COUNT" = "2" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: V34 — task-correct is append-only; second correction should produce second entry (got $CORRECTION_COUNT)"
+fi
+
+# ============================================================
+# V62: task-correct + rotation guard interaction
+# ============================================================
+
+echo "--- V62: task-correct + rotation guard ---"
+
+# task-correct changes the last driver in LOG.md; rotation guard should respect the corrected entry
+setup_session
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "navigator" "completed" "T1" "" ""
+# Initial log entry: craftsman drove T1
+run_session task T1 craftsman expert
+# Correction: expert is now the recorded driver
+run_session task-correct T1 expert craftsman
+# craftsman is no longer the last driver — should be allowed to drive next
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V62 corrected-out agent can drive next" 0 "$LAST_RC"
+
+# expert is now the last driver per corrected log — should be blocked
+setup_session
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "driver" "completed" "T1" "" ""
+run_session task T1 craftsman expert
+run_session task-correct T1 expert craftsman
+run_hook_stdin "check-task-claim.sh" \
+  '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:expert"}'
+assert_exit "V62 corrected-to agent blocked from back-to-back drive" 2 "$LAST_RC"
+assert_stderr_contains "V62 rotation message mentions agent" "expert" "$LAST_STDERR"
+
+# ============================================================
+# V80: role guard — navigators and advisors cannot edit code files
+# ============================================================
+
+echo "--- V80: role guard (navigator/advisor edit block) ---"
+
+# V80a: navigator edit blocked
+setup_session
+write_state "craftsman" "navigator" "waiting_on_driver" "T1" "" "Reviewing"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v80-a.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V80a navigator edit blocked" 2 "$LAST_RC"
+assert_stderr_contains "V80a navigator message" "navigator" "$LAST_STDERR"
+
+# V80b: advisor edit blocked
+setup_session
+write_state "craftsman" "advisor" "navigating" "T1" "" "Advising"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v80-b.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V80b advisor edit blocked" 2 "$LAST_RC"
+assert_stderr_contains "V80b advisor message" "advisor" "$LAST_STDERR"
+
+# V80c: driver edit allowed
+setup_session
+write_state "craftsman" "driver" "driving" "T1" "" "Implementing"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v80-c.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V80c driver edit allowed" 0 "$LAST_RC"
+
+# V80d: .popcorn-xp/ path bypasses role guard (navigator can write session files)
+setup_session
+write_state "craftsman" "navigator" "waiting_on_driver" "T1" "" "Reviewing"
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$POPCORN/$TEAM/ADVICE.md"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V80d popcorn path bypasses role guard" 0 "$LAST_RC"
+
+# V80e: lead agent exempt (no role state)
+setup_session
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v80-e.ts"'"},"agent_type":"lead"}'
+assert_exit "V80e lead agent exempt" 0 "$LAST_RC"
+
+# V80f: no state file — fail open, allow edit
+setup_session
+run_hook_stdin "context-store-mark-dirty.sh" \
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/v80-f.ts"'"},"agent_type":"popcorn-xp:craftsman"}'
+assert_exit "V80f no state file fails open" 0 "$LAST_RC"
+
+# ============================================================
+# V81: advisor review cursor
+# ============================================================
+
+echo "--- V81: advisor review cursor ---"
+
+# V81a: advisor with unreviewed edits is blocked
+setup_session
+write_state "craftsman" "advisor" "working" "9" "" "reviewing log"
+printf '12:00:00  %-10s %-28s %-40s %s\n' "EDIT" "popcorn-xp:expert" "src/foo.ts" "(marked dirty)" > "$POPCORN/context-store.log"
+# No review cursor file — cursor defaults to 0, so 1 EDIT is unreviewed
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V81a advisor unreviewed edits blocked" 2 "$LAST_RC"
+assert_stderr_contains "V81a advisor message mentions edit count" "1 new edit" "$LAST_STDERR"
+
+# V81b: advisor after running session review is allowed
+setup_session
+write_state "craftsman" "advisor" "waiting_on_verification" "9" "" "waiting after review"
+printf '12:00:00  %-10s %-28s %-40s %s\n' "EDIT" "popcorn-xp:expert" "src/foo.ts" "(marked dirty)" > "$POPCORN/context-store.log"
+env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$BIN_DIR/session" review craftsman
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V81b advisor after review allows idle" 0 "$LAST_RC"
+
+# V81c: driver role does not trigger advisor check
+setup_session
+write_state "craftsman" "driver" "completed" "9" "" "done"
+printf '12:00:00  %-10s %-28s %-40s %s\n' "EDIT" "popcorn-xp:expert" "src/bar.ts" "(marked dirty)" > "$POPCORN/context-store.log"
+checkpoint_now
+run_hook_stdin "enforce-no-idle.sh" '{"teammate_name":"craftsman"}'
+assert_exit "V81c driver not affected by advisor check" 0 "$LAST_RC"
 
 # ============================================================
 # Results
