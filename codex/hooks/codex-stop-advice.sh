@@ -5,17 +5,24 @@ set -euo pipefail
 # Maps exit 2 + stderr to JSON {decision, reason} per research/official/codex/hooks.md.
 # No active session → exit 0, JSON {continue:true}. Warnings-only stdout from advice script → allow stop.
 
+_HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../../hooks/scripts/px-resolve-claude-project-dir.sh
+source "$_HOOK_DIR/../../hooks/scripts/px-resolve-claude-project-dir.sh"
+
 INPUT=$(cat || true)
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-export CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$CWD}"
+[ -z "$CWD" ] && CWD="$(pwd 2>/dev/null || echo .)"
+if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
+  CLAUDE_PROJECT_DIR="$(px_resolve_project_dir_from "$CWD")"
+fi
+export CLAUDE_PROJECT_DIR
 
 # Resolve check-advice script from this hook's checkout (codex/hooks/ → repo root), not from cwd/git,
 # so Codex sessions whose cwd is a temp or subfolder still find the vendored plugin scripts.
-_HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 _REPO_ROOT="$(cd "$_HOOK_DIR/../.." && pwd)"
 ADVICE_SCRIPT="$_REPO_ROOT/hooks/scripts/check-advice-on-complete.sh"
 
-POPCORN="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
+POPCORN="${CLAUDE_PROJECT_DIR}/.popcorn-xp"
 TEAM=$(cat "$POPCORN/.active-team" 2>/dev/null || true)
 if [ -z "$TEAM" ] || [ ! -f "$ADVICE_SCRIPT" ]; then
   jq -n '{continue:true}'
