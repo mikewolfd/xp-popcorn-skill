@@ -790,7 +790,7 @@ All items from this session have been applied. See [backlog.md](backlog.md) for 
 
 ### Doc validation (2026-04-02)
 
-All hook scripts validated against canonical documentation in `research/official/hooks-ref.md` and `research/official/hooks-anthro.md`. Findings:
+All hook scripts validated against canonical documentation in `research/official/claude/hooks-ref.md` and `research/official/claude/hooks-anthro.md`. Findings:
 
 - **check-retro-before-delete.sh**: Had same H5 bug (JSON to stderr with exit 2). Fixed — now uses plain text stderr.
 - **`additionalContext` for TaskCompleted**: Not explicitly documented for this event in per-event tables, but mentioned as a context injection field alongside `systemMessage` and plain stdout. Likely works; not confirmed per-event. Monitoring.
