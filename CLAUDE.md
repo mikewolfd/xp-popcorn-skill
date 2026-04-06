@@ -10,6 +10,8 @@ Popcorn XP is a Claude Code plugin that implements XP pair programming for agent
 
 Runtime is Claude Code only. Requires Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and Coordinator Mode (`CLAUDE_CODE_COORDINATOR_MODE=1`).
 
+**OpenAI Codex:** Reference integration lives under `.codex/` and `codex/` (hooks, layered skills, example agents). See `docs/dual-mode-codex-companion.md` and `codex/README.md`. Tests cover Codex shims as `CX-*` in `./tests/test-hooks.sh`.
+
 ## Running Tests
 
 ```bash
