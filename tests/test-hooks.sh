@@ -1270,7 +1270,9 @@ assert_exit "V52-1: no LOG.md allows claim" 0 "$LAST_RC"
 setup_session
 write_state "craftsman" "driver" "completed" "T1" "" ""
 write_state "expert" "navigator" "completed" "T1" "" ""
-run_session task T1 craftsman expert
+run_session task-init 1
+run_session task T1
+run_session task-claim 1 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V52-2: consecutive drive blocked" 2 "$LAST_RC"
@@ -1281,7 +1283,9 @@ assert_stderr_contains "V52-2: names agent" "craftsman" "$LAST_STDERR"
 setup_session
 write_state "craftsman" "driver" "completed" "T1" "" ""
 write_state "expert" "driver" "completed" "T1" "" ""
-run_session task T1 expert craftsman
+run_session task-init 1
+run_session task T1
+run_session task-claim 1 expert driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V52-3: rotation satisfied allows claim" 0 "$LAST_RC"
@@ -1289,7 +1293,9 @@ assert_exit "V52-3: rotation satisfied allows claim" 0 "$LAST_RC"
 # V52-4: Single teammate state file — rotation exempt
 setup_session
 write_state "craftsman" "driver" "completed" "" "" ""
-run_session task T1 craftsman expert
+run_session task-init 1
+run_session task T1
+run_session task-claim 1 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V52-4: single teammate exempt from rotation" 0 "$LAST_RC"
@@ -1298,7 +1304,9 @@ assert_exit "V52-4: single teammate exempt from rotation" 0 "$LAST_RC"
 setup_session
 write_state "craftsman" "driver" "completed" "T2" "" ""
 write_state "expert" "navigator" "completed" "T2" "" ""
-run_session task T2 craftsman expert
+run_session task-init 2
+run_session task T2
+run_session task-claim 2 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"T2-nav","status":"in_progress","description":"Navigate T2 — verify the finished drive"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V70: nav task claim allowed" 0 "$LAST_RC"
@@ -1308,7 +1316,9 @@ assert_stdout_empty "V70: nav task claim should not emit stdout" "$LAST_STDOUT"
 setup_session
 write_state "craftsman" "navigator" "completed" "T2" "" ""
 write_state "expert" "navigator" "completed" "T2" "" ""
-run_session task T2 craftsman expert
+run_session task-init 2
+run_session task T2
+run_session task-claim 2 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"99","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V86: navigator role still blocked on non-nav claim" 2 "$LAST_RC"
@@ -1318,7 +1328,9 @@ assert_stderr_contains "V86: rotation message" "Rotation" "$LAST_STDERR"
 setup_session
 write_state "craftsman" "driver" "completed" "T2" "" ""
 write_state "expert" "navigator" "completed" "T2" "" ""
-run_session task T2 craftsman expert
+run_session task-init 2
+run_session task T2
+run_session task-claim 2 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"99","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V86b: driver role still blocked by rotation" 2 "$LAST_RC"
@@ -1328,7 +1340,9 @@ assert_stderr_contains "V86b: rotation message" "Rotation" "$LAST_STDERR"
 setup_session
 write_state "craftsman" "advisor" "completed" "T2" "" ""
 write_state "expert" "navigator" "completed" "T2" "" ""
-run_session task T2 craftsman expert
+run_session task-init 2
+run_session task T2
+run_session task-claim 2 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"99","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V86c: advisor role still blocked on non-nav claim" 2 "$LAST_RC"
@@ -1338,7 +1352,9 @@ assert_stderr_contains "V86c: rotation message" "Rotation" "$LAST_STDERR"
 setup_session
 write_state "craftsman" "driver" "completed" "T2" "" ""
 write_state "expert" "driver" "completed" "T2" "" ""
-run_session task T2 expert craftsman
+run_session task-init 2
+run_session task T2
+run_session task-claim 2 expert driver
 run_session log 'Previous work on T2'
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"T3","owner":"craftsman"},"agent_type":"popcorn-xp:craftsman"}'
@@ -1620,7 +1636,7 @@ echo "--- V34: task-correct appends corrected header ---"
 
 setup_session
 run_session task-correct 3 craftsman expert
-if grep -q "Task 3 — Driver @craftsman, Navigator @expert (corrected)" "$POPCORN/$TEAM/LOG.md"; then
+if grep -q "Task T3 — Driver @craftsman, Navigator @expert (corrected)" "$POPCORN/$TEAM/LOG.md"; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
@@ -1862,7 +1878,9 @@ setup_session
 printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
 write_state "craftsman" "driver" "completed" "T1" "" ""
 write_state "expert" "navigator" "completed" "T1" "" ""
-run_session task T1 craftsman expert
+run_session task-init 1
+run_session task T1
+run_session task-claim 1 craftsman driver
 run_hook_stdin "check-task-claim.sh" \
   '{"tool_input":{"taskId":"3","status":"in_progress"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "DM-1: subagent skips check-task-claim" 0 "$LAST_RC"
@@ -1937,14 +1955,23 @@ else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: DM-5 session close should write .closed.json"
 fi
+if [ ! -f "$POPCORN/.active-team" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-5 session close should clear .popcorn-xp/.active-team"
+fi
 
 # DM-6: task-claim rotation enforced via session (same as team hook semantics)
 setup_session
 printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
 write_state "craftsman" "driver" "completed" "T1" "" ""
 write_state "expert" "navigator" "completed" "T1" "" ""
-run_session task T1 craftsman expert
+run_session task-init 1
+run_session task T1
+run_session task-claim 1 craftsman driver
 run_session task-init 2
+run_session task T2
 run_session task-claim 2 craftsman driver
 assert_exit "DM-6: consecutive drive blocked by session task-claim" 2 "$LAST_RC"
 
@@ -2155,19 +2182,59 @@ printf '# R\n1\n2\n3\n4\n5\n' > "$POPCORN/$TEAM/RETRO.md"
 run_session close
 assert_exit "DM-27c close OK with substantive RETRO.md" 0 "$LAST_RC"
 
+# DM-28: session close truncates repo-level context-store.log
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+printf 'stale-edit-line\n' > "$POPCORN/context-store.log"
+printf '# R\n1\n2\n3\n4\n5\n' > "$POPCORN/$TEAM/RETRO.md"
+run_session close-check
+run_session close
+if [ ! -s "$POPCORN/context-store.log" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-28 context-store.log should be empty after session close"
+fi
+
+# DM-29: .active-team pointing at a closed team is rejected
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+printf '# R\n1\n2\n3\n4\n5\n' > "$POPCORN/$TEAM/RETRO.md"
+run_session close-check
+run_session close
+echo "$TEAM" > "$POPCORN/.active-team"
+run_session task-init 9
+assert_exit "DM-29 task-init blocked when team already closed" 2 "$LAST_RC"
+assert_stderr_contains "DM-29 mentions closed" "closed" "$LAST_STDERR"
+
+# DM-30: placeholder session task + task-claim does not false-trigger rotation (different agent may drive the next task after release)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+write_state "craftsman" "driver" "completed" "T1" "" ""
+write_state "expert" "navigator" "completed" "T1" "" ""
+run_session task-init 1
+run_session task T1
+run_session task-claim 1 expert driver
+run_session task-release 1 expert
+run_session task-init 2
+run_session task T2
+run_session task-claim 2 craftsman driver
+assert_exit "DM-30 expert then craftsman drive is allowed" 0 "$LAST_RC"
+
 # ============================================================
 # CX: Codex hook shims (codex/hooks/*.sh)
 # ============================================================
 
 echo "--- CX: Codex hook shims ---"
 
+# Do not set CLAUDE_PROJECT_DIR — shims must resolve git root from stdin .cwd (see px-resolve-claude-project-dir.sh).
 run_codex_hook() {
   local script="$1"
   local stdin_json="$2"
   local stdout_file stderr_file rc=0
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
-  echo "$stdin_json" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$SCRIPT_DIR/codex/hooks/$script" \
+  echo "$stdin_json" | (unset CLAUDE_PROJECT_DIR; bash "$SCRIPT_DIR/codex/hooks/$script") \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -2219,6 +2286,84 @@ else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: CX-4 expected decision:block JSON"
 fi
+
+# CX-5: SessionStart finds .popcorn-xp at git root when cwd is a subdirectory
+CX5_ROOT=$(mktemp -d)
+git -C "$CX5_ROOT" init -q
+mkdir -p "$CX5_ROOT/deep/nested"
+mkdir -p "$CX5_ROOT/.popcorn-xp/cx5-team"
+echo "cx5-team" > "$CX5_ROOT/.popcorn-xp/.active-team"
+printf '# Advice\n' > "$CX5_ROOT/.popcorn-xp/cx5-team/ADVICE.md"
+run_codex_hook "codex-session-start.sh" "$(jq -nc --arg c "$CX5_ROOT/deep/nested" '{cwd:$c,hook_event_name:"SessionStart",source:"startup"}')"
+assert_exit "CX-5 session-start subdir cwd exit 0" 0 "$LAST_RC"
+assert_stdout_contains "CX-5 SessionStart finds team" "cx5-team" "$LAST_STDOUT"
+assert_stdout_contains "CX-5 context uses repo-root session path" "$CX5_ROOT/bin/session" "$LAST_STDOUT"
+rm -rf "$CX5_ROOT"
+
+# CX-6: Stop shim blocks OBJECTION when cwd is subdirectory of git root
+CX6_ROOT=$(mktemp -d)
+git -C "$CX6_ROOT" init -q
+mkdir -p "$CX6_ROOT/pkg"
+mkdir -p "$CX6_ROOT/.popcorn-xp/cx6-team"
+echo "cx6-team" > "$CX6_ROOT/.popcorn-xp/.active-team"
+printf '# Advice\n' >> "$CX6_ROOT/.popcorn-xp/cx6-team/ADVICE.md"
+cat >> "$CX6_ROOT/.popcorn-xp/cx6-team/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-CX-06 — open
+subdir gate
+EOF
+run_codex_hook "codex-stop-advice.sh" "$(jq -nc --arg c "$CX6_ROOT/pkg" '{cwd:$c,hook_event_name:"Stop",turn_id:"t3"}')"
+assert_exit "CX-6 stop subdir cwd exit 0" 0 "$LAST_RC"
+if echo "$LAST_STDOUT" | jq -e '.decision == "block"' >/dev/null 2>&1; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CX-6 expected decision:block for subdir cwd"
+fi
+rm -rf "$CX6_ROOT"
+
+# CX-7: vendored Codex bundle entrypoints exist; lead agent does not point at Claude-only skill path
+for CX7f in codex/LEAD-WORKFLOW.md codex/COMPANION.md hooks/scripts/px-resolve-claude-project-dir.sh; do
+  if [ -f "$SCRIPT_DIR/$CX7f" ]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+    ERRORS="${ERRORS}\n  FAIL: CX-7 missing $CX7f"
+  fi
+done
+if grep -q 'skills/popcorn-xp/SKILL.md' "$SCRIPT_DIR/.codex/agents/popcorn-xp-lead.toml" 2>/dev/null; then
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CX-7 lead.toml should not reference skills/popcorn-xp/SKILL.md"
+else
+  PASS=$((PASS + 1))
+fi
+
+# CX-8: bin/session resolves .popcorn-xp from git root when run in a subdirectory (no CLAUDE_PROJECT_DIR)
+CX8_ROOT=$(mktemp -d)
+CX8_OUT=$(mktemp)
+CX8_ERR=$(mktemp)
+git -C "$CX8_ROOT" init -q
+mkdir -p "$CX8_ROOT/sub"
+mkdir -p "$CX8_ROOT/.popcorn-xp/cx8-team"
+echo "cx8-team" > "$CX8_ROOT/.popcorn-xp/.active-team"
+printf '%s\n' subagent > "$CX8_ROOT/.popcorn-xp/cx8-team/.runtime-mode"
+printf '# L\n' > "$CX8_ROOT/.popcorn-xp/cx8-team/LOG.md"
+printf '# A\n' > "$CX8_ROOT/.popcorn-xp/cx8-team/ADVICE.md"
+CX8_RC=0
+(
+  cd "$CX8_ROOT/sub" || exit 1
+  unset CLAUDE_PROJECT_DIR
+  "$BIN_DIR/session" mode
+) >"$CX8_OUT" 2>"$CX8_ERR" || CX8_RC=$?
+CX8_RC=${CX8_RC:-0}
+if [ "$CX8_RC" -eq 0 ] && grep -q subagent "$CX8_OUT" 2>/dev/null; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CX-8 bin/session from subdir (rc=$CX8_RC out=$(cat "$CX8_OUT" 2>/dev/null))"
+fi
+rm -rf "$CX8_ROOT"
+rm -f "$CX8_OUT" "$CX8_ERR"
 
 # ============================================================
 # Results
