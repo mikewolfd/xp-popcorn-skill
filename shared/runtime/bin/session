@@ -210,6 +210,83 @@ case "$cmd" in
     grep -qF "### $ID — " "$DIR/ADVICE.md" 2>/dev/null && exit 0
     printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md"
     ;;
+  advice-status)
+    ADVICE="$DIR/ADVICE.md"
+    FORMAT="${1:-table}"
+    [ -f "$ADVICE" ] || { echo "No ADVICE.md yet."; exit 0; }
+    case "$FORMAT" in
+      table)
+        rows="$(px_advice_status_rows "$ADVICE")"
+        if [ -z "$rows" ]; then
+          echo "No advice entries."
+          exit 0
+        fi
+        printf '%-10s %-14s %-14s %-14s %s\n' TYPE ID STATUS AUTHOR DETAIL
+        printf '%s\n' "$rows" | while IFS=$'\t' read -r TYPE ID STATUS AUTHOR DETAIL; do
+          [ -n "$TYPE" ] || continue
+          [ -n "$AUTHOR" ] || AUTHOR="-"
+          printf '%-10s %-14s %-14s %-14s %s\n' "$TYPE" "$ID" "$STATUS" "$AUTHOR" "$DETAIL"
+        done
+        ;;
+      open)
+        rows="$(px_advice_status_rows "$ADVICE")"
+        if [ -z "$rows" ]; then
+          echo "No advice entries."
+          exit 0
+        fi
+        had=0
+        while IFS=$'\t' read -r TYPE ID STATUS AUTHOR DETAIL; do
+          [ "$STATUS" = "OPEN" ] || continue
+          had=1
+          [ -n "$AUTHOR" ] || AUTHOR="-"
+          printf '%-10s %-14s %-14s %-14s %s\n' "$TYPE" "$ID" "$STATUS" "$AUTHOR" "$DETAIL"
+        done <<< "$rows"
+        if [ "$had" -eq 0 ]; then
+          echo "No effective open advice."
+        fi
+        ;;
+      counts)
+        had=0
+        while IFS=' ' read -r TYPE count; do
+          [ -n "$TYPE" ] || continue
+          had=1
+          echo "$TYPE $count"
+        done < <(px_effective_open_advice_counts "$ADVICE")
+        if [ "$had" -eq 0 ]; then
+          echo "(none)"
+        fi
+        ;;
+      json)
+        rows="$(px_advice_status_rows "$ADVICE")"
+        if [ -z "$rows" ]; then
+          printf '[]\n'
+          exit 0
+        fi
+        ROWS="$rows" python3 - <<'PY'
+import json
+import os
+
+rows = []
+for line in os.environ.get("ROWS", "").splitlines():
+    if not line.strip():
+        continue
+    advice_type, advice_id, status, author, detail = line.split("\t", 4)
+    rows.append({
+        "type": advice_type,
+        "id": advice_id,
+        "status": status,
+        "author": author or "",
+        "detail": detail,
+    })
+print(json.dumps(rows, indent=2))
+PY
+        ;;
+      *)
+        echo "session advice-status: expected table, open, counts, or json" >&2
+        exit 2
+        ;;
+    esac
+    ;;
   task)
     ID="${1:?}"
     shift
@@ -269,6 +346,22 @@ case "$cmd" in
     AGENT="${1:?}"; TASK_ID="${2:?}"; shift 2
     WRITE_SET="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
     merge_state "$AGENT" "$TASK_ID" --arg task_id "$TASK_ID" --argjson write_set "$WRITE_SET" '.task_id = $task_id | .write_set = $write_set'
+    ;;
+  task-start)
+    TID="${1:?}"; AGENT="${2:?}"; NEXT_ACTION="${3:?}"; shift 3
+    if [ "${1:-}" != "--" ]; then
+      echo "session task-start: use session task-start {task-id} {agent} \"next action\" -- path/to/file1 [file2 ...]" >&2
+      exit 2
+    fi
+    shift
+    if [ "$#" -eq 0 ]; then
+      echo "session task-start: provide at least one write-set path after --" >&2
+      exit 2
+    fi
+    "$0" task "$TID"
+    "$0" task-claim "$TID" "$AGENT" driver
+    "$0" state "$AGENT" driver driving "$TID" - "$NEXT_ACTION"
+    "$0" writeset "$AGENT" "$TID" "$@"
     ;;
   handoff)
     AGENT="${1:?}"; FILE="$DIR/handoff-$AGENT.md"
@@ -413,6 +506,21 @@ case "$cmd" in
     cur_d=$(jq -r '.driver // ""' "$META")
     cur_n=$(jq -r '.navigator // ""' "$META")
     cur_a=$(jq -r '.advisor // ""' "$META")
+    if [ "$ROLE" = "driver" ] && [ "$cur_d" = "$AGENT" ]; then
+      px_event_log task_claim_retry "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg r "$ROLE" --argjson rev "$cur_rev" '{task:$t, agent:$a, role:$r, prev_revision:$rev}')"
+      px_session_release_lock
+      exit 0
+    fi
+    if [ "$ROLE" = "navigator" ] && [ "$cur_n" = "$AGENT" ]; then
+      px_event_log task_claim_retry "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg r "$ROLE" --argjson rev "$cur_rev" '{task:$t, agent:$a, role:$r, prev_revision:$rev}')"
+      px_session_release_lock
+      exit 0
+    fi
+    if [ "$ROLE" = "advisor" ] && [ "$cur_a" = "$AGENT" ]; then
+      px_event_log task_claim_retry "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg r "$ROLE" --argjson rev "$cur_rev" '{task:$t, agent:$a, role:$r, prev_revision:$rev}')"
+      px_session_release_lock
+      exit 0
+    fi
     if [ "$ROLE" = "driver" ] && [ -n "$cur_d" ] && [ "$cur_d" != "$AGENT" ]; then
       echo "session task-claim: driver already set ($cur_d)" >&2
       px_session_release_lock
@@ -635,7 +743,7 @@ case "$cmd" in
         if [ "$STRICT" -eq 1 ] && [ "$TYPE" = "OBJECTION" ] && [ "${count:-0}" -gt 0 ]; then
           fail=1
         fi
-      done < <(px_unresolved_advice "$ADVICE")
+      done < <(px_effective_open_advice_counts "$ADVICE")
       if [ "$had" -eq 0 ]; then
         echo "  (none)"
       fi
@@ -686,7 +794,34 @@ case "$cmd" in
       fi
     fi
     echo ""
-    echo "--- Agent state (navigator READY) ---"
+    echo "--- Agent state (driver + navigator READY) ---"
+    if [ -d "$DIR/tasks" ]; then
+      while IFS= read -r meta; do
+        [ -f "$meta" ] || continue
+        tid=$(jq -r '.task_id // ""' "$meta")
+        dr=$(jq -r '.driver // ""' "$meta")
+        [ -n "$dr" ] || continue
+        sf="$(state_file "$dr")"
+        if [ ! -f "$sf" ]; then
+          echo "  WARN: @$dr drives $tid but has no agent-state file"
+          [ "$STRICT" -eq 1 ] && fail=1
+          continue
+        fi
+        srole=$(jq -r '.role // ""' "$sf")
+        sphase=$(jq -r '.phase // ""' "$sf")
+        stid=$(jq -r '.task_id // ""' "$sf")
+        swrites=$(jq -r '(.write_set // []) | length' "$sf" 2>/dev/null || echo 0)
+        snext=$(jq -r '.next_action // ""' "$sf")
+        if [ "$srole" != "driver" ] || [ -z "$sphase" ] || [ -z "$snext" ] || [ "$(normalize_task_slug "${stid:-}")" != "$tid" ]; then
+          echo "  WARN: @$dr drives $tid but state is incomplete (role=$srole phase=$sphase task=$stid next_action=${snext:-missing})"
+          [ "$STRICT" -eq 1 ] && fail=1
+        fi
+        if [ "${swrites:-0}" -eq 0 ]; then
+          echo "  WARN: @$dr drives $tid but write_set is empty"
+          [ "$STRICT" -eq 1 ] && fail=1
+        fi
+      done < <(find "$DIR/tasks" -mindepth 2 -maxdepth 2 -name meta.json 2>/dev/null | sort)
+    fi
     if [ ! -d "$STATE_DIR" ] || [ -z "$(ls "$STATE_DIR"/*.json 2>/dev/null)" ]; then
       echo "  (no agent-state files)"
     else
@@ -746,7 +881,7 @@ case "$cmd" in
     if [ "$STRICT" -eq 1 ]; then
       echo "health: OK (--strict)"
     else
-      echo "health: report complete (add --strict to exit nonzero on OBJECTIONs, missing READY, or advisor chat drift)"
+      echo "health: report complete (add --strict to exit nonzero on OBJECTIONs, missing driver state/write_set, missing READY, or advisor chat drift)"
     fi
     ;;
   close-check)

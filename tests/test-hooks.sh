@@ -1073,6 +1073,22 @@ else
   ERRORS="${ERRORS}\n  FAIL: R4 ready/state merge should preserve READY metadata and write_set"
 fi
 
+# task-start creates placeholder, claim, state, and write set in one step
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 8
+run_session task-start 8 boyle 'Implement the docs/demo hero' -- docs/demo/index.html docs/demo/styles.css
+TASK8_DRIVER=$(jq -r '.driver // ""' "$POPCORN/$TEAM/tasks/T8/meta.json" 2>/dev/null || echo missing)
+TASK8_PHASE=$(jq -r '.phase // ""' "$POPCORN/$TEAM/agent-state/boyle.json" 2>/dev/null || echo missing)
+TASK8_WRITE_COUNT=$(jq -r '.write_set | length' "$POPCORN/$TEAM/agent-state/boyle.json" 2>/dev/null || echo 0)
+if [ "$TASK8_DRIVER" = "boyle" ] && [ "$TASK8_PHASE" = "driving" ] && [ "$TASK8_WRITE_COUNT" = "2" ] && \
+   grep -q "## Task T8" "$POPCORN/$TEAM/LOG.md"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: R4 task-start should atomically establish driver claim, state, write set, and task header"
+fi
+
 # snapshot creates structured handoff template
 run_session snapshot craftsman 7
 if [ -f "$POPCORN/$TEAM/snapshot-craftsman.md" ]; then
@@ -2043,6 +2059,25 @@ printf 'ready\n' > "$POPCORN/$TEAM/navigator-ready-expert-T1.md"
 run_session health --strict
 assert_exit "DM-11 strict OK with READY file" 0 "$LAST_RC"
 
+# DM-11b: health --strict fails when driver claim lacks state/write_set
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session task-claim 1 boyle driver
+run_session health --strict
+assert_exit "DM-11b strict fails missing driver state" 1 "$LAST_RC"
+assert_stdout_contains "DM-11b mentions missing driver state" "has no agent-state file" "$LAST_STDOUT"
+
+# DM-11c: health --strict fails when driver write_set is empty
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 1
+run_session task-claim 1 boyle driver
+run_session state boyle driver driving 1 - 'Implement docs/demo'
+run_session health --strict
+assert_exit "DM-11c strict fails empty driver write_set" 1 "$LAST_RC"
+assert_stdout_contains "DM-11c mentions empty write_set" "write_set is empty" "$LAST_STDOUT"
+
 # DM-12: subagent + registered advisor + task chat ahead of review cursor → enforce-no-idle blocks
 setup_session
 printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
@@ -2164,10 +2199,11 @@ run_hook_stdin "check-advice-on-subagent-stop.sh" '{"hook_event_name":"SubagentS
 assert_exit "DM-25 SubagentStop compact warn exit 0" 0 "$LAST_RC"
 assert_stdout_contains "DM-25 compaction context" "Compaction pending" "$LAST_STDOUT"
 
-# DM-26: task-revision reads meta; events.jsonl receives task_claim
+# DM-26: task-revision reads meta; events.jsonl receives task_claim and retries are distinct
 setup_session
 printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
 run_session task-init 7
+run_session task-claim 7 zoe driver
 run_session task-claim 7 zoe driver
 run_session task-revision 7
 if [ "$LAST_STDOUT" = "1" ]; then
@@ -2181,6 +2217,12 @@ if [ -f "$POPCORN/$TEAM/events.jsonl" ] && grep -q '"event":"task_claim"' "$POPC
 else
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: DM-26 events.jsonl should log task_claim"
+fi
+if [ -f "$POPCORN/$TEAM/events.jsonl" ] && grep -q '"event":"task_claim_retry"' "$POPCORN/$TEAM/events.jsonl"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-26 events.jsonl should log task_claim_retry for duplicate claims"
 fi
 
 # DM-27: subagent session close requires RETRO.md (≥5 lines); --force skips

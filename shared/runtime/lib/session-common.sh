@@ -182,6 +182,88 @@ px_unresolved_advice() {
   return 0
 }
 
+# px_advice_status_rows ADVICE_PATH
+# Emits TSV rows describing the effective latest status for each advice item:
+#   TYPE<TAB>ID<TAB>STATUS<TAB>AUTHOR<TAB>DETAIL
+# STATUS is one of OPEN, FIXED, REJECTED, INCORPORATED, NOTED.
+# DETAIL comes from the original open entry description.
+px_advice_status_rows() {
+  local advice_path="${1:?}"
+  [ -f "$advice_path" ] || return 0
+
+  python3 - "$advice_path" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+open_re = re.compile(r"^### (OBJECTION|SMELL|STEER|FYI) ([^ ]+) — open(?: \(by ([^)]+)\))?$")
+resolve_re = re.compile(r"^### ([^ ]+) — (FIXED|REJECTED|INCORPORATED|NOTED)$")
+
+rows = []
+current = None
+
+with open(path, "r", encoding="utf-8") as handle:
+    for raw_line in handle:
+        line = raw_line.rstrip("\n")
+        match = open_re.match(line)
+        if match:
+            current = {
+                "type": match.group(1),
+                "id": match.group(2),
+                "author": match.group(3) or "",
+                "status": "OPEN",
+                "detail_lines": [],
+            }
+            rows.append(current)
+            continue
+
+        match = resolve_re.match(line)
+        if match:
+            target_id = match.group(1)
+            outcome = match.group(2)
+            for row in rows:
+                if row["id"] == target_id:
+                    row["status"] = outcome
+            current = None
+            continue
+
+        if current is not None and not line.startswith("### "):
+            if line.strip():
+                current["detail_lines"].append(line.strip())
+
+for row in rows:
+    detail = " ".join(row["detail_lines"]).strip()
+    print("\t".join([row["type"], row["id"], row["status"], row["author"], detail]))
+PY
+}
+
+# px_effective_open_advice_counts ADVICE_PATH [TYPE...]
+# Prints "TYPE N" rows using the effective latest status from px_advice_status_rows.
+px_effective_open_advice_counts() {
+  local advice_path="${1:?}"
+  shift
+  local types
+  if [ $# -gt 0 ]; then
+    types=("$@")
+  else
+    types=(OBJECTION SMELL STEER FYI)
+  fi
+
+  [ -f "$advice_path" ] || return 0
+
+  local rows type count
+  rows="$(px_advice_status_rows "$advice_path")"
+  [ -z "$rows" ] && return 0
+
+  for type in "${types[@]}"; do
+    count=$(printf '%s\n' "$rows" | awk -F '\t' -v type="$type" '$1 == type && $3 == "OPEN" { count++ } END { print count + 0 }')
+    if [ "${count:-0}" -gt 0 ]; then
+      echo "$type $count"
+    fi
+  done
+  return 0
+}
+
 px_normalize_path() {
   local p="${1:?}"
   # Strip leading ./ so "./foo" and "foo" both normalize the same way
