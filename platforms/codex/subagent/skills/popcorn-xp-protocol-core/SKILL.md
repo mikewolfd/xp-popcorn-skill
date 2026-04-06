@@ -15,7 +15,7 @@ Core rules **1–14** apply in every transport. Your active transport section ad
 
 1. You are autonomous. You read files, claim tasks, coordinate with your pair, and make decisions.
 2. Exactly one driver edits code at a time. If you are the navigator or advisor, do not edit code files.
-3. Communication channels depend on the active transport — see your transport section below.
+3. Communication channels depend on the active transport — see **Subagent mode** / **Team mode** in the full protocol; on **Codex**, load **`popcorn-xp-protocol-subagent`** (after **`popcorn-xp-protocol-core`**).
 4. Persist important state to session files. Ephemeral product messages (where they exist) are capped and may be lost; **LOG.md** and **ADVICE.md** are permanent.
 5. Advice is input, not instructions. You have your own approach — defend it when you believe in it. The navigator sees things you don't, but you see things they don't. The only hard gate is OBJECTIONs: someone claims something is factually wrong, and you must engage. Everything else is your call.
 6. Task ownership is the lock. Every logical task is a pair: a drive task and a navigate task. The driver owns the drive task. The navigator owns the navigate task. Do not edit code unless you own the active drive task.
@@ -27,6 +27,7 @@ Core rules **1–14** apply in every transport. Your active transport section ad
 12. Navigators publish a READY artifact before implementation starts. Choose one: risk check, test plan, spec check, or review note. Once published, move into `waiting_on_driver` until the next checkpoint or objection.
 13. Respect the task write set. If the lead assigned a file ownership list, do not edit outside it without explicit reassignment.
 14. Check before editing shared files. Before editing any file that other agents may have touched, run `git log --oneline -5 {file}` to see recent changes. If another agent committed changes you haven't seen, read the file fresh before editing. Do not edit based on stale context.
+15. Follow through after the first fix. A runtime crash fix is not done just because the page loads again; if the navigator or advisor raises semantics, accessibility, or copy issues on the same slice, either fix them in the same task or explicitly reject them with reasoning before you call the task complete.
 
 Transport-only extras — tactical peer messaging, completion order, and tool-specific locks — are defined in your transport section.
 

@@ -22,7 +22,7 @@ Core rules **1–14** apply in every transport. Your active transport section ad
 
 1. You are autonomous. You read files, claim tasks, coordinate with your pair, and make decisions.
 2. Exactly one driver edits code at a time. If you are the navigator or advisor, do not edit code files.
-3. Communication channels depend on the active transport — see your transport section below.
+3. Communication channels depend on the active transport — see **Subagent mode** / **Team mode** in the full protocol; on **Codex**, load **`popcorn-xp-protocol-subagent`** (after **`popcorn-xp-protocol-core`**).
 4. Persist important state to session files. Ephemeral product messages (where they exist) are capped and may be lost; **LOG.md** and **ADVICE.md** are permanent.
 5. Advice is input, not instructions. You have your own approach — defend it when you believe in it. The navigator sees things you don't, but you see things they don't. The only hard gate is OBJECTIONs: someone claims something is factually wrong, and you must engage. Everything else is your call.
 6. Task ownership is the lock. Every logical task is a pair: a drive task and a navigate task. The driver owns the drive task. The navigator owns the navigate task. Do not edit code unless you own the active drive task.
@@ -34,6 +34,7 @@ Core rules **1–14** apply in every transport. Your active transport section ad
 12. Navigators publish a READY artifact before implementation starts. Choose one: risk check, test plan, spec check, or review note. Once published, move into `waiting_on_driver` until the next checkpoint or objection.
 13. Respect the task write set. If the lead assigned a file ownership list, do not edit outside it without explicit reassignment.
 14. Check before editing shared files. Before editing any file that other agents may have touched, run `git log --oneline -5 {file}` to see recent changes. If another agent committed changes you haven't seen, read the file fresh before editing. Do not edit based on stale context.
+15. Follow through after the first fix. A runtime crash fix is not done just because the page loads again; if the navigator or advisor raises semantics, accessibility, or copy issues on the same slice, either fix them in the same task or explicitly reject them with reasoning before you call the task complete.
 
 Transport-only extras — tactical peer messaging, completion order, and tool-specific locks — are defined in your transport section.
 
@@ -312,17 +313,17 @@ Do NOT describe what you built or what bugs you found — that's in LOG.md. Focu
 
 ## Subagent mode
 
-The sections above define shared rules, advice lifecycle, and session file shapes. **This section is only the file-bus transport** — task claims, chat, closeout, and subagent-specific commands.
+**Shared rules, advice lifecycle, and session file shapes** come from the **common / core** teammate material (in the full Claude protocol, that is the **Core Rules** / **Advice Lifecycle** / **Session Files** sections **above**; on **Codex**, load **`popcorn-xp-protocol-core`** first). **This section is only the file-bus transport** — task claims, chat, closeout, and subagent-specific commands.
 
 When `.popcorn-xp/{team}/.runtime-mode` is **missing** or contains **`subagent`**:
 
 - **Claims:** Use `session task-claim {task-id} {your-short-name} driver|navigator|advisor` for locks. Release with `session task-release`. Complete with `session task-complete` (runs the OBJECTION gate).
 - **Tactical chat:** `session chat {task-id} {from} {kind} "..."` — this is your **tactical peer channel** for discussion and negotiation. Typed **OBJECTION** / **SMELL** / **STEER** / **FYI** still go to **ADVICE.md** via **`session advice`** — chat is not the ledger.
 - **Wake-ups:** The lead resumes you or nudges the next turn. Reconstruct state from LOG.md, ADVICE.md, task chat, and `tasks/T{n}/meta.json` if you start fresh.
-- **Stopping:** `SubagentStop` enforces unresolved OBJECTIONs (same as task completion), may surface open SMELL/STEER/FYI via `additionalContext`, and nudges if `.compact-pending-{agent}.json` exists.
+- **Stopping (turn end):** The same OBJECTION gate as **`session task-complete`** runs when a subagent turn ends. **Claude Code:** **`SubagentStop`** enforces this, may surface open SMELL/STEER/FYI via **`additionalContext`**, and nudges if **`.compact-pending-{agent}.json`** exists. **OpenAI Codex:** the **`Stop`** hook runs the equivalent via **`platforms/codex/subagent/hooks/codex-stop-advice.sh`** (same underlying advice check where configured).
 - **Abandon / close:** Use **`session task-abandon {task-id} 'reason'`** when work is dropped without a normal complete. **`session close-check`** fails if task-bus roles are still held, retros are missing after `retro-request`, or compaction stop markers lack handoffs — fix before **`session close`**. **`session close`** also requires **`RETRO.md`** with **≥5 lines** (append the session summary first); **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate. Successful **`close`** clears **`.popcorn-xp/.active-team`** (when it still points at this team) and truncates **`context-store.log`**; set a new active team before the next slice.
 - **Task header:** Use **`session task {id}`** for a placeholder line in **`LOG.md`**; driver/navigator names are synced from **`task-claim`** / **`task-release`** so rotation is not tripped before a claim.
-- **Idle (`TeammateIdle`):** Retro, shutdown, and compaction handoff rules still apply. In subagent mode, advisors are nudged when **task chat** grows past their last `session review` cursor. With no `agent-state/{you}.json` (or empty `role` and `phase`), working-phase idle nudges are skipped — register with `session state` when you join the session.
+- **Idle and lifecycle nudges:** Retro, shutdown, and compaction handoff rules still apply. **Claude Code (subagent):** **`TeammateIdle`** can enforce phase-aware nudges. **OpenAI Codex:** there is no **`TeammateIdle`** hook — rely on the **lead** to resume you and on **`session health`**, **`session close-check`**, and **`Stop`** for hard gates. In subagent mode, **advisors** are nudged when **task chat** grows past their last **`session review`** cursor (where **`enforce-no-idle`** runs). With no **`agent-state/{you}.json`** (or empty **`role`** and **`phase`**), working-phase idle nudges are skipped — register with **`session state`** when you join the session.
 
 ### Subagent command reference
 
@@ -330,6 +331,7 @@ When `.popcorn-xp/{team}/.runtime-mode` is **missing** or contains **`subagent`*
 
 ```bash
 .popcorn-xp/{team}/session task-init {n}
+.popcorn-xp/{team}/session task-start {n} {your-short-name} "next action" -- path/to/file1 [file2 ...]
 .popcorn-xp/{team}/session task {n}
 .popcorn-xp/{team}/session task-claim {n} {your-short-name} driver|navigator|advisor [expected-revision]
 .popcorn-xp/{team}/session task-revision {n}
@@ -346,6 +348,7 @@ When `.popcorn-xp/{team}/.runtime-mode` is **missing** or contains **`subagent`*
 .popcorn-xp/{team}/session chat-read {n} [start-line]
 .popcorn-xp/{team}/session cursor-get {your-short-name} {n}
 .popcorn-xp/{team}/session cursor-ack {your-short-name} {n} {line}
+.popcorn-xp/{team}/session review {your-short-name}
 ```
 
 **Closeout:**
@@ -356,9 +359,15 @@ When `.popcorn-xp/{team}/.runtime-mode` is **missing** or contains **`subagent`*
 .popcorn-xp/{team}/session close --force
 ```
 
-**Shared with all transports:** Use **`session advice`**, **`session resolve`**, **`session log`**, and the ADVICE.md / LOG.md rules in **Advice Lifecycle** and **Session Files** above.
+**Shared with all transports:** Use **`session advice`**, **`session resolve`**, **`session advice-status`**, and **`session log`**, plus the ADVICE.md / LOG.md rules from **Advice Lifecycle** and **Session Files** in the **common / core** material (those sections **above** in the full Claude protocol; the **`popcorn-xp-protocol-core`** skill on Codex). `session advice-status` shows the **effective latest state per advice ID**, so append-only history with later `FIXED` / `REJECTED` / `INCORPORATED` / `NOTED` entries is easier to read than raw `ADVICE.md`.
 
-If the lead assigned a write set, record it before editing:
+Drivers should treat kickoff as atomic. Prefer:
+
+```bash
+.popcorn-xp/{team-name}/session task-start {task-id} {your-name} "Implement the assigned slice" -- path/to/file1 path/to/file2
+```
+
+If the lead or runtime already claimed the seat for you, record the write set before editing:
 
 ```bash
 .popcorn-xp/{team-name}/session writeset {your-name} {task-id} path/to/file1 path/to/file2
