@@ -2,7 +2,7 @@
 
 XP pair programming for Claude Code agents. One driver edits, one navigator steers, they rotate roles, and advice has teeth.
 
-> Claude Code only. This skill depends on Claude Code's Agent Teams and Coordinator Mode features, so it will not run in Codex, Cursor, or other agents.
+> **Claude Code** is the primary runtime (Agent Teams + Coordinator Mode). For **OpenAI Codex**, use the layered layout under [`.codex/`](./.codex/) and [`codex/`](./codex/) with [docs/dual-mode-codex-companion.md](./docs/dual-mode-codex-companion.md) — subagent / file-bus mode only; there is no Codex-native `team` transport.
 
 ## What It Does
 
