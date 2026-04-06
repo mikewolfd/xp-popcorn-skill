@@ -2,12 +2,17 @@
 #
 # Popcorn XP — Claude Code plugin layout checks
 #
-# Grounded in research/official/claude/plugin.md:
-# - File locations reference (agents/, skills/, hooks/hooks.json at plugin root;
-#   only plugin.json inside .claude-plugin/)
-# - Plugin manifest schema (name required if manifest present; version optional)
-# - Hook commands should use ${CLAUDE_PLUGIN_ROOT} for bundled paths
-# - Optional: claude plugin validate <path> (marketplace + plugin roots)
+# Grounded in research/official/claude/ (read alongside this script):
+#   plugin.md        — manifest schema, path rules (./ prefix), layout, hooks location,
+#                      ${CLAUDE_PLUGIN_ROOT} / ${CLAUDE_PLUGIN_DATA}, MCP/LSP paths, CLI validate
+#   hooks-ref.md     — hook event names, matcher groups, handler types (command|http|prompt|agent)
+#   hooks-anthro.md  — exit codes, hook I/O, matcher behavior (user guide; cross-check ref)
+#   agents-anthro.md — plugin agents: required frontmatter; hooks/mcpServers/permissionMode unsupported
+#   subagent.md      — same agent rules as agents-anthro (duplicate upstream doc)
+#   skills-anthro.md — skills/*/SKILL.md; description recommended; name optional; !`cmd` preprocessing
+#   agent-teams-anthro.md — TeammateIdle / Task* hooks context (experimental teams)
+#   env.md           — CLAUDE_CODE_PLUGIN_* and hook-related env (reference only)
+#   tools.md         — tool names for hook matchers (reference)
 #
 
 set +e
@@ -20,7 +25,7 @@ PLUGIN_JSON="$PLUGIN_ROOT/.claude-plugin/plugin.json"
 PLUGIN_META_DIR="$PLUGIN_ROOT/.claude-plugin"
 HOOKS_JSON="$PLUGIN_ROOT/hooks/hooks.json"
 RESULTS_FILE="$SCRIPT_DIR/test-results.json"
-DOC_REF="research/official/claude/plugin.md"
+DOC_REF="research/official/claude/plugin.md (+ userConfig/channels) + hooks-ref.md + agents-anthro.md + skills-anthro.md (+ bang-backtick preprocessing)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -60,12 +65,81 @@ add_result() {
   fi
 }
 
-# First YAML frontmatter block must include name: and description: (skills reference)
-skill_frontmatter_ok() {
-  local f="$1"
-  local block
-  block=$(awk '/^---$/{c++; next} c==1{print} c>=2{exit}' "$f" 2>/dev/null)
-  echo "$block" | grep -q '^name:' && echo "$block" | grep -q '^description:'
+# skills-anthro.md: SKILL.md may omit name (directory name used); description is recommended.
+skill_frontmatter_block() {
+  awk '/^---$/{c++; next} c==1{print} c>=2{exit}' "$1" 2>/dev/null
+}
+
+skill_has_opening_frontmatter() {
+  [[ -f "$1" ]] && head -1 "$1" | grep -q '^---$'
+}
+
+skill_description_present() {
+  echo "$1" | grep -q '^description:'
+}
+
+# skills-anthro.md: name lowercase letters, numbers, hyphens, max 64 chars (when set)
+skill_name_valid() {
+  local block="$1"
+  local n
+  n=$(echo "$block" | grep '^name:' | head -1 | sed 's/^name:[[:space:]]*//;s/[[:space:]]*$//;s/^["'\'']//;s/["'\'']$//')
+  [[ -z "$n" ]] && return 0
+  [[ ${#n} -le 64 ]] && [[ "$n" =~ ^[a-z0-9-]+$ ]]
+}
+
+# skills-anthro.md — markdown body after closing ---; !`command` runs before Claude sees skill text
+skill_body_after_frontmatter() {
+  awk '/^---$/{c++; next} c>=2{print}' "$1" 2>/dev/null
+}
+
+skill_uses_bang_backtick() {
+  skill_body_after_frontmatter "$1" | grep -q '!`'
+}
+
+# plugin.md — collect mcp server keys from inline object or .mcp.json path(s)
+mcp_server_names_list() {
+  local pj="$1"
+  local root="$2"
+  local t mp k
+  t=$(jq -r 'if .mcpServers == null then "null" else .mcpServers | type end' "$pj" 2>/dev/null) || return 0
+  case "$t" in
+    object)
+      jq -r '.mcpServers | keys[]' "$pj" 2>/dev/null
+      ;;
+    string)
+      mp=$(jq -r '.mcpServers' "$pj" 2>/dev/null)
+      [[ "$mp" == ./* ]] && mp="${root}/${mp#./}"
+      [[ -f "$mp" ]] && jq -r 'keys[]' "$mp" 2>/dev/null
+      ;;
+    array)
+      while IFS= read -r mp; do
+        [[ "$mp" == ./* ]] && mp="${root}/${mp#./}"
+        [[ -f "$mp" ]] && jq -r 'keys[]' "$mp" 2>/dev/null
+      done < <(jq -r '.mcpServers[]? | select(type == "string")' "$pj" 2>/dev/null)
+      ;;
+  esac
+}
+
+# agents-anthro.md / plugin.md: plugin agents require name + description; no hooks/mcpServers/permissionMode
+agent_frontmatter_block() {
+  skill_frontmatter_block "$1"
+}
+
+# plugin.md + hooks-ref.md — lifecycle hook event keys under .hooks
+hook_event_is_known() {
+  case "$1" in
+    SessionStart|UserPromptSubmit|PreToolUse|PermissionRequest|PermissionDenied|PostToolUse|PostToolUseFailure|Notification|SubagentStart|SubagentStop|TaskCreated|TaskCompleted|Stop|StopFailure|TeammateIdle|InstructionsLoaded|ConfigChange|CwdChanged|FileChanged|WorktreeCreate|WorktreeRemove|PreCompact|PostCompact|Elicitation|ElicitationResult|SessionEnd) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# hooks-ref.md — handler types
+hook_handler_type_ok() {
+  local t="${1:-command}"
+  case "$t" in
+    command|http|prompt|agent) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 echo ""
@@ -169,7 +243,7 @@ if [[ -f "$PLUGIN_JSON" ]]; then
           BAD_PATH=$((BAD_PATH + 1))
         fi
       done < <(jq -r '
-        [.agents?, .skills?, .hooks?, .commands?, .outputStyles?]
+        [.agents?, .skills?, .hooks?, .commands?, .outputStyles?, .mcpServers?, .lspServers?]
         | flatten
         | map(select(type == "string"))
         | .[]
@@ -180,17 +254,121 @@ if [[ -f "$PLUGIN_JSON" ]]; then
       else
         add_result "plugin_paths" "failed" "$BAD_PATH bad path(s)"
       fi
+
+      # userConfig (plugin.md — User configuration)
+      UC_FAIL=0
+      if jq -e '.userConfig != null' "$PLUGIN_JSON" >/dev/null 2>&1; then
+        if ! jq -e '.userConfig | type == "object"' "$PLUGIN_JSON" >/dev/null 2>&1; then
+          log_failure "plugin.json userConfig must be an object (plugin.md)"
+          UC_FAIL=1
+        else
+          while IFS= read -r uerr; do
+            [[ -z "$uerr" ]] && continue
+            log_failure "plugin.json userConfig: $uerr (plugin.md)"
+            UC_FAIL=1
+          done < <(jq -r '
+            .userConfig | to_entries[] |
+            if (.key | test("^[A-Za-z_][A-Za-z0-9_]*$") | not) then "invalid key (must be identifier): \(.key)"
+            elif (.value | type) != "object" then "\(.key): value must be object with description / optional sensitive"
+            elif (.value | has("description") | not) then "\(.key): missing description"
+            elif (.value.sensitive != null and (.value.sensitive | type) != "boolean") then "\(.key): sensitive must be boolean"
+            else empty end
+          ' "$PLUGIN_JSON")
+        fi
+        if [[ "$UC_FAIL" -eq 0 ]]; then
+          log_success "plugin.json userConfig shape OK (plugin.md)"
+          add_result "plugin_user_config" "passed" "valid"
+        else
+          add_result "plugin_user_config" "failed" "schema"
+        fi
+      else
+        log_info "plugin.json: no userConfig (optional; plugin.md)"
+        add_result "plugin_user_config" "skipped" "omitted"
+      fi
+
+      # channels (plugin.md — Channels)
+      CH_FAIL=0
+      if jq -e '.channels != null' "$PLUGIN_JSON" >/dev/null 2>&1; then
+        if ! jq -e '.channels | type == "array"' "$PLUGIN_JSON" >/dev/null 2>&1; then
+          log_failure "plugin.json channels must be an array (plugin.md)"
+          CH_FAIL=1
+        else
+          _MCP_KEYS=()
+          while IFS= read -r _k; do
+            [[ -n "$_k" ]] && _MCP_KEYS+=("$_k")
+          done < <(mcp_server_names_list "$PLUGIN_JSON" "$PLUGIN_ROOT" | sort -u)
+          CH_MCP_UNRESOLVED=0
+          ci=0
+          while IFS= read -r ch; do
+            srv=$(echo "$ch" | jq -r '.server // empty')
+            if [[ -z "$srv" ]]; then
+              log_failure "plugin.json channels[$ci] missing required server (plugin.md)"
+              CH_FAIL=1
+            elif [[ ${#_MCP_KEYS[@]} -gt 0 ]]; then
+              found=0
+              for mk in "${_MCP_KEYS[@]}"; do
+                [[ "$mk" == "$srv" ]] && found=1 && break
+              done
+              if [[ "$found" -eq 0 ]]; then
+                log_failure "plugin.json channels[$ci].server \"$srv\" must match an mcpServers key (plugin.md)"
+                CH_FAIL=1
+              fi
+            else
+              if [[ "$CH_MCP_UNRESOLVED" -eq 0 ]]; then
+                log_warning "channels: could not resolve mcpServers keys (use inline mcpServers object or readable path); cannot verify channel.server (plugin.md)"
+                CH_MCP_UNRESOLVED=1
+              fi
+            fi
+            cuc=$(echo "$ch" | jq -c '.userConfig // null')
+            if [[ "$cuc" != "null" ]]; then
+              if ! echo "$cuc" | jq -e 'type == "object"' >/dev/null 2>&1; then
+                log_failure "plugin.json channels[$ci].userConfig must be an object (plugin.md)"
+                CH_FAIL=1
+              else
+                while IFS= read -r uerr; do
+                  [[ -z "$uerr" ]] && continue
+                  log_failure "plugin.json channels[$ci].userConfig: $uerr (plugin.md)"
+                  CH_FAIL=1
+                done < <(echo "$cuc" | jq -r '
+                  to_entries[] |
+                  if (.key | test("^[A-Za-z_][A-Za-z0-9_]*$") | not) then "invalid key: \(.key)"
+                  elif (.value | type) != "object" then "\(.key): value must be object"
+                  elif (.value | has("description") | not) then "\(.key): missing description"
+                  elif (.value.sensitive != null and (.value.sensitive | type) != "boolean") then "\(.key): sensitive must be boolean"
+                  else empty end
+                ')
+              fi
+            fi
+            ci=$((ci + 1))
+          done < <(jq -c '.channels[]' "$PLUGIN_JSON")
+        fi
+        if [[ "$CH_FAIL" -eq 0 ]]; then
+          log_success "plugin.json channels shape OK (plugin.md)"
+          add_result "plugin_channels" "passed" "valid"
+        else
+          add_result "plugin_channels" "failed" "schema"
+        fi
+      else
+        log_info "plugin.json: no channels (optional; plugin.md)"
+        add_result "plugin_channels" "skipped" "omitted"
+      fi
     else
       log_failure "plugin.json invalid JSON"
       add_result "plugin_json_valid" "failed" "Parse error"
+      add_result "plugin_user_config" "skipped" "parse error"
+      add_result "plugin_channels" "skipped" "parse error"
     fi
   else
     log_warning "jq not installed; skipping plugin.json validation"
     add_result "plugin_json_valid" "skipped" "no jq"
+    add_result "plugin_user_config" "skipped" "no jq"
+    add_result "plugin_channels" "skipped" "no jq"
   fi
 else
   log_failure "Missing $PLUGIN_JSON (optional in spec, but required for stable popcorn-xp id)"
   add_result "plugin_json_exists" "failed" "Not found"
+  add_result "plugin_user_config" "skipped" "no manifest"
+  add_result "plugin_channels" "skipped" "no manifest"
 fi
 
 # --- Test 3: Only plugin.json lives under .claude-plugin/ (plugin.md — Warning box) ---
@@ -211,15 +389,33 @@ else
   add_result "plugin_meta_dir" "failed" "no .claude-plugin"
 fi
 
-# --- Test 4: agents/ default location ---
-log_info "Test 4: agents/*.md (default location)..."
+# --- Test 4: agents/ default location + plugin agent frontmatter (agents-anthro.md, plugin.md) ---
+log_info "Test 4: agents/*.md (default location + frontmatter)..."
 
 AGENTS_DIR="$PLUGIN_ROOT/agents"
+AGENT_FM_FAIL=0
 if [[ -d "$AGENTS_DIR" ]]; then
   AGENT_COUNT=$(find "$AGENTS_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${AGENT_COUNT:-0}" -gt 0 ]]; then
-    log_success "Agent definitions: $AGENT_COUNT markdown file(s)"
-    add_result "agents" "passed" "count=$AGENT_COUNT"
+    while IFS= read -r -d '' agent_md; do
+      ablock=$(agent_frontmatter_block "$agent_md")
+      if ! skill_has_opening_frontmatter "$agent_md"; then
+        log_failure "Agent missing YAML frontmatter: $agent_md"
+        AGENT_FM_FAIL=$((AGENT_FM_FAIL + 1))
+      elif echo "$ablock" | grep -qE '^(hooks|mcpServers|permissionMode):'; then
+        log_failure "Plugin agent must not set hooks/mcpServers/permissionMode (agents-anthro.md): $agent_md"
+        AGENT_FM_FAIL=$((AGENT_FM_FAIL + 1))
+      elif ! echo "$ablock" | grep -q '^name:' || ! echo "$ablock" | grep -q '^description:'; then
+        log_failure "Agent frontmatter needs name: and description: (agents-anthro.md): $agent_md"
+        AGENT_FM_FAIL=$((AGENT_FM_FAIL + 1))
+      fi
+    done < <(find "$AGENTS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
+    if [[ "$AGENT_FM_FAIL" -eq 0 ]]; then
+      log_success "Agent definitions: $AGENT_COUNT; name+description; no disallowed plugin fields"
+      add_result "agents" "passed" "count=$AGENT_COUNT"
+    else
+      add_result "agents" "failed" "frontmatter=$AGENT_FM_FAIL"
+    fi
   else
     log_failure "No .md files in $AGENTS_DIR"
     add_result "agents" "failed" "Empty agents/"
@@ -229,75 +425,140 @@ else
   add_result "agents" "failed" "agents/ missing"
 fi
 
-# --- Test 5: skills/<name>/SKILL.md + frontmatter ---
-log_info "Test 5: skills/<name>/SKILL.md (plugin.md skill structure)..."
+# --- Test 5: skills/<name>/SKILL.md + frontmatter (plugin.md, skills-anthro.md) ---
+log_info "Test 5: skills/<name>/SKILL.md (plugin.md + skills-anthro.md)..."
 
 SKILLS_DIR="$PLUGIN_ROOT/skills"
 SKILL_COUNT=0
 SKILL_FM_FAIL=0
+SKILL_BANG_COUNT=0
 if [[ -d "$SKILLS_DIR" ]]; then
   while IFS= read -r -d '' skill_md; do
     SKILL_COUNT=$((SKILL_COUNT + 1))
-    if skill_frontmatter_ok "$skill_md"; then
-      :
-    else
-      log_failure "SKILL.md missing name/description in frontmatter: $skill_md"
+    sblock=$(skill_frontmatter_block "$skill_md")
+    if ! skill_has_opening_frontmatter "$skill_md"; then
+      log_failure "SKILL.md must start with YAML frontmatter (---): $skill_md"
       SKILL_FM_FAIL=$((SKILL_FM_FAIL + 1))
+      continue
+    fi
+    if ! skill_description_present "$sblock"; then
+      log_warning "SKILL.md should include description: in frontmatter (skills-anthro.md recommends): $skill_md"
+    fi
+    if ! skill_name_valid "$sblock"; then
+      log_failure "Skill name: must be lowercase [a-z0-9-] max 64 chars when set (skills-anthro.md): $skill_md"
+      SKILL_FM_FAIL=$((SKILL_FM_FAIL + 1))
+    fi
+    if skill_uses_bang_backtick "$skill_md"; then
+      log_warning "SKILL.md uses !\`...\` shell preprocessing (runs before model sees content; skills-anthro.md): $skill_md"
+      SKILL_BANG_COUNT=$((SKILL_BANG_COUNT + 1))
     fi
   done < <(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' -print0 2>/dev/null)
   if [[ "$SKILL_COUNT" -gt 0 && "$SKILL_FM_FAIL" -eq 0 ]]; then
-    log_success "Skills with SKILL.md: $SKILL_COUNT; frontmatter has name + description"
+    log_success "Skills with SKILL.md: $SKILL_COUNT; frontmatter valid (description recommended)"
     add_result "skills" "passed" "count=$SKILL_COUNT"
+    if [[ "$SKILL_BANG_COUNT" -gt 0 ]]; then
+      add_result "skill_bang_preprocess" "warning" "$SKILL_BANG_COUNT SKILL.md use !\`...\`"
+    else
+      add_result "skill_bang_preprocess" "passed" "no !\`...\` blocks"
+    fi
   elif [[ "$SKILL_COUNT" -eq 0 ]]; then
     log_failure "No skills/*/SKILL.md under $SKILLS_DIR"
     add_result "skills" "failed" "No SKILL.md"
+    add_result "skill_bang_preprocess" "skipped" "no skills"
   else
     add_result "skills" "failed" "frontmatter issues"
+    if [[ "$SKILL_BANG_COUNT" -gt 0 ]]; then
+      add_result "skill_bang_preprocess" "warning" "$SKILL_BANG_COUNT SKILL.md use !\`...\`"
+    else
+      add_result "skill_bang_preprocess" "skipped" "skills failed first"
+    fi
   fi
 else
   log_failure "Missing directory: $SKILLS_DIR"
   add_result "skills" "failed" "skills/ missing"
+  add_result "skill_bang_preprocess" "skipped" "no skills dir"
 fi
 
-# --- Test 6: hooks/hooks.json — shape, ${CLAUDE_PLUGIN_ROOT}, scripts exist + executable ---
-log_info "Test 6: hooks/hooks.json + bundled scripts (plugin.md — Hooks, env vars)..."
+# --- Test 6: hooks/hooks.json — events, handler types, ${CLAUDE_PLUGIN_ROOT|DATA}, scripts ---
+log_info "Test 6: hooks/hooks.json + bundled scripts (plugin.md, hooks-ref.md)..."
 
+HOOK_SRC_JSON=""
+HOOK_SRC_LABEL=""
 if [[ -f "$HOOKS_JSON" ]]; then
-  log_success "hooks.json exists at hooks/hooks.json"
-  add_result "hooks_json_exists" "passed" "Found"
+  HOOK_SRC_JSON="$HOOKS_JSON"
+  HOOK_SRC_LABEL="hooks/hooks.json"
+elif [[ -f "$PLUGIN_JSON" ]] && command -v jq &>/dev/null && jq -e '.hooks | type == "object"' "$PLUGIN_JSON" >/dev/null 2>&1; then
+  HOOK_SRC_JSON="$PLUGIN_JSON"
+  HOOK_SRC_LABEL="plugin.json (inline hooks)"
+  log_info "Using inline hooks from plugin.json (plugin.md: hooks may be inline)"
+fi
+
+if [[ -n "$HOOK_SRC_JSON" ]]; then
+  log_success "Hook config found: $HOOK_SRC_LABEL"
+  add_result "hooks_json_exists" "passed" "$HOOK_SRC_LABEL"
   if command -v jq &>/dev/null; then
-    if jq -e '.hooks | type == "object"' "$HOOKS_JSON" >/dev/null 2>&1; then
+    if jq -e '.hooks | type == "object"' "$HOOK_SRC_JSON" >/dev/null 2>&1; then
       log_success "Top-level .hooks object present"
       add_result "hooks_json_shape" "passed" "Valid shape"
     else
-      log_failure "hooks.json missing .hooks object"
+      log_failure "Hook config missing top-level .hooks object"
       add_result "hooks_json_shape" "failed" "Bad shape"
+    fi
+    HOOK_EVENT_FAIL=0
+    while IFS= read -r ev; do
+      [[ -z "$ev" ]] && continue
+      if ! hook_event_is_known "$ev"; then
+        log_failure "Unknown hook event key (plugin.md / hooks-ref.md): $ev"
+        HOOK_EVENT_FAIL=$((HOOK_EVENT_FAIL + 1))
+      fi
+    done < <(jq -r '.hooks | keys[]' "$HOOK_SRC_JSON" 2>/dev/null)
+    if [[ "$HOOK_EVENT_FAIL" -eq 0 ]]; then
+      log_success "All .hooks event keys are documented lifecycle events"
+      add_result "hooks_events" "passed" "known events"
+    else
+      add_result "hooks_events" "failed" "unknown=$HOOK_EVENT_FAIL"
+    fi
+    HOOK_TYPE_FAIL=0
+    while IFS= read -r ht; do
+      [[ -z "$ht" ]] && continue
+      if ! hook_handler_type_ok "$ht"; then
+        log_failure "Unknown hook handler type (hooks-ref.md: command|http|prompt|agent): $ht"
+        HOOK_TYPE_FAIL=$((HOOK_TYPE_FAIL + 1))
+      fi
+    done < <(jq -r '.hooks | to_entries[] | .value[] | .hooks[]? | .type // "command"' "$HOOK_SRC_JSON" 2>/dev/null | sort -u)
+    if [[ "$HOOK_TYPE_FAIL" -eq 0 ]]; then
+      log_success "Hook handler types are valid"
+      add_result "hooks_handler_types" "passed" "OK"
+    else
+      add_result "hooks_handler_types" "failed" "bad=$HOOK_TYPE_FAIL"
     fi
     HOOK_CMD_FAIL=0
     HOOK_REL_FAIL=0
     HOOK_X_FAIL=0
     while IFS= read -r cmd; do
       [[ -z "$cmd" ]] && continue
-      if [[ "$cmd" != *'${CLAUDE_PLUGIN_ROOT}'* ]]; then
-        log_failure "Hook command must use \${CLAUDE_PLUGIN_ROOT} for bundled paths (plugin.md): ${cmd:0:120}..."
+      if [[ "$cmd" != *'${CLAUDE_PLUGIN_ROOT}'* && "$cmd" != *'${CLAUDE_PLUGIN_DATA}'* ]]; then
+        log_failure "Plugin hook command must use \${CLAUDE_PLUGIN_ROOT} or \${CLAUDE_PLUGIN_DATA} for paths (plugin.md): ${cmd:0:120}..."
         HOOK_CMD_FAIL=$((HOOK_CMD_FAIL + 1))
         continue
       fi
-      rel=$(echo "$cmd" | sed -n 's/.*\${CLAUDE_PLUGIN_ROOT}\///p')
-      [[ -z "$rel" ]] && continue
-      rel="${rel%% *}"
-      target="$PLUGIN_ROOT/$rel"
-      if [[ ! -f "$target" ]]; then
-        log_failure "Hook script missing: $target"
-        HOOK_REL_FAIL=$((HOOK_REL_FAIL + 1))
-      elif [[ ! -x "$target" ]]; then
-        log_warning "Hook script not executable (plugin.md troubleshooting): $rel"
-        HOOK_X_FAIL=$((HOOK_X_FAIL + 1))
+      if [[ "$cmd" == *'${CLAUDE_PLUGIN_ROOT}'* ]]; then
+        rel=$(echo "$cmd" | sed -n 's/.*\${CLAUDE_PLUGIN_ROOT}\///p')
+        [[ -z "$rel" ]] && continue
+        rel="${rel%% *}"
+        target="$PLUGIN_ROOT/$rel"
+        if [[ ! -f "$target" ]]; then
+          log_failure "Hook script missing: $target"
+          HOOK_REL_FAIL=$((HOOK_REL_FAIL + 1))
+        elif [[ ! -x "$target" ]]; then
+          log_warning "Hook script not executable (plugin.md troubleshooting): $rel"
+          HOOK_X_FAIL=$((HOOK_X_FAIL + 1))
+        fi
       fi
-    done < <(jq -r '[.hooks | to_entries[] | .value[] | .hooks[]? | select(.type == "command") | .command] | unique | .[]' "$HOOKS_JSON" 2>/dev/null)
+    done < <(jq -r '[.hooks | to_entries[] | .value[] | .hooks[]? | select((.type // "command") == "command") | .command] | unique | .[]' "$HOOK_SRC_JSON" 2>/dev/null)
     if [[ "$HOOK_CMD_FAIL" -eq 0 && "$HOOK_REL_FAIL" -eq 0 ]]; then
-      log_success "All command hooks use \${CLAUDE_PLUGIN_ROOT} and resolve to existing files"
-      add_result "hooks_commands" "passed" "CLAUDE_PLUGIN_ROOT + files"
+      log_success "Command hooks use plugin path vars and resolve under plugin root"
+      add_result "hooks_commands" "passed" "CLAUDE_PLUGIN_ROOT|DATA + files"
     else
       add_result "hooks_commands" "failed" "cmd=$HOOK_CMD_FAIL missing=$HOOK_REL_FAIL"
     fi
@@ -307,18 +568,66 @@ if [[ -f "$HOOKS_JSON" ]]; then
       log_success "Referenced hook scripts are executable"
       add_result "hooks_executable" "passed" "chmod +x OK"
     fi
+  else
+    log_warning "jq not installed; skipping hooks.json event/type/command checks"
+    add_result "hooks_json_shape" "skipped" "no jq"
+    add_result "hooks_events" "skipped" "no jq"
+    add_result "hooks_handler_types" "skipped" "no jq"
+    add_result "hooks_commands" "skipped" "no jq"
+    add_result "hooks_executable" "skipped" "no jq"
   fi
   HOOK_SCRIPT_COUNT=$(find "$PLUGIN_ROOT/hooks/scripts" -type f -name '*.sh' 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${HOOK_SCRIPT_COUNT:-0}" -gt 0 ]]; then
     log_success "hooks/scripts/*.sh count: $HOOK_SCRIPT_COUNT"
     add_result "hook_scripts" "passed" "count=$HOOK_SCRIPT_COUNT"
+    SHB_WARN=0
+    while IFS= read -r -d '' hs; do
+      first=$(head -1 "$hs")
+      if [[ "$first" != '#!/bin/bash' && "$first" != '#!/usr/bin/env bash' && "$first" != '#!/usr/bin/bash' ]]; then
+        log_warning "Hook script shebang should be #!/bin/bash or #!/usr/bin/env bash (hooks-anthro.md): $hs"
+        SHB_WARN=$((SHB_WARN + 1))
+      fi
+    done < <(find "$PLUGIN_ROOT/hooks/scripts" -type f -name '*.sh' -print0 2>/dev/null)
+    if [[ "$SHB_WARN" -gt 0 ]]; then
+      add_result "hooks_shebang" "warning" "$SHB_WARN scripts"
+    else
+      add_result "hooks_shebang" "passed" "bash shebangs"
+    fi
   else
     log_failure "No .sh under $PLUGIN_ROOT/hooks/scripts"
     add_result "hook_scripts" "failed" "No scripts"
   fi
 else
-  log_failure "Missing $HOOKS_JSON"
+  log_failure "No hook config: add hooks/hooks.json or inline \"hooks\" in plugin.json (plugin.md)"
   add_result "hooks_json_exists" "failed" "Not found"
+fi
+
+# --- Test 6b: optional .mcp.json / .lsp.json (plugin.md) ---
+log_info "Test 6b: optional .mcp.json / .lsp.json..."
+
+MCP_JSON="$PLUGIN_ROOT/.mcp.json"
+LSP_JSON="$PLUGIN_ROOT/.lsp.json"
+if [[ -f "$MCP_JSON" ]]; then
+  if command -v jq &>/dev/null && jq empty "$MCP_JSON" 2>/dev/null; then
+    log_success ".mcp.json valid JSON (plugin.md: use \${CLAUDE_PLUGIN_ROOT} in bundled server paths)"
+    add_result "mcp_json" "passed" "valid JSON"
+  else
+    log_failure ".mcp.json missing or invalid JSON"
+    add_result "mcp_json" "failed" "parse"
+  fi
+else
+  add_result "mcp_json" "skipped" "no file"
+fi
+if [[ -f "$LSP_JSON" ]]; then
+  if command -v jq &>/dev/null && jq empty "$LSP_JSON" 2>/dev/null; then
+    log_success ".lsp.json valid JSON (plugin.md: install language server binary separately)"
+    add_result "lsp_json" "passed" "valid JSON"
+  else
+    log_failure ".lsp.json invalid JSON"
+    add_result "lsp_json" "failed" "parse"
+  fi
+else
+  add_result "lsp_json" "skipped" "no file"
 fi
 
 # --- Test 7: Official claude plugin validate (plugin.md — Debugging) ---

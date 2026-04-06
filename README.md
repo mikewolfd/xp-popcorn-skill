@@ -133,7 +133,7 @@ npx skills add /path/to/popcorn-xp/platforms/codex/subagent --agent codex --skil
 
 Use a **Git URL with `tree/<branch>/platforms/codex/subagent`** when you are not using a local clone. Skills land in **`.agents/skills/`** as **`popcorn-xp`**, **`popcorn-xp-protocol-core`**, and **`popcorn-xp-protocol-subagent`**, matching **`.codex/agents/*.toml`**.
 
-2. **Hooks and agents** — if **this repo is your project root**, run **`./install/codex/generate.sh`**. Otherwise copy **`platforms/codex/subagent/manifests/*`** and **`platforms/codex/subagent/agents/*.toml`** into your project’s **`.codex/`**. Vendor **`shared/runtime/`** and hook dependencies as in [platforms/codex/subagent/README.md](./platforms/codex/subagent/README.md).
+1. **Hooks and agents** — if **this repo is your project root**, run **`./install/codex/generate.sh`**. Otherwise copy **`platforms/codex/subagent/manifests/*`** and **`platforms/codex/subagent/agents/*.toml`** into your project’s **`.codex/`**. Vendor **`shared/runtime/`** and hook dependencies as in [platforms/codex/subagent/README.md](./platforms/codex/subagent/README.md).
 
 ---
 

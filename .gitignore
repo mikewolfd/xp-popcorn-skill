@@ -1,4 +1,5 @@
 tests/test-results.json
+tests/codex-plugin-test-results.json
 node_modules/
 .popcorn-xp/
 .playwright-mcp/
