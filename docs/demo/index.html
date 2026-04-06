@@ -3,12 +3,59 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popcorn XP Demo v2</title>
+    <title>Popcorn XP Session Viewer</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2304090d'/%3E%3Cpath d='M19 45V18h7.5l5.5 9.5 5.5-9.5H45v27h-6V29.4L32 40.9l-7-11.5V45z' fill='%23f3ede2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <div class="page-shell">
+    <!--
+      Folder picker — two visual states, one element.
+      Empty state:  .loader-stage is full-screen prominent (pre-load)
+      Loaded state: body[data-loaded] collapses it to a slim toolbar row
+    -->
+    <section class="loader-stage" aria-label="Session folder loader" id="loader-stage">
+      <!-- Empty state: shown before any folder is loaded -->
+      <div class="loader-empty" id="loader-empty" aria-hidden="false">
+        <p class="eyebrow">Popcorn XP / Session viewer</p>
+        <h1 class="loader-heading">Open a session folder.</h1>
+        <p class="loader-sub">
+          Select a <code>.popcorn-xp/{team}/</code> directory to load real session
+          artifacts — events, tasks, advice, checkpoints, and agent state.
+        </p>
+        <label class="loader-pick-btn" for="folder-picker">
+          <span>Choose folder</span>
+          <input
+            type="file"
+            id="folder-picker"
+            webkitdirectory
+            multiple
+            accept=""
+            aria-label="Select a .popcorn-xp team session folder"
+          >
+        </label>
+        <p class="loader-hint" id="loader-hint" aria-live="polite" aria-atomic="true"></p>
+      </div>
+
+      <!-- Toolbar state: shown after session is loaded -->
+      <div class="loader-toolbar" id="loader-toolbar" hidden aria-hidden="true">
+        <span class="loader-toolbar-team" id="toolbar-team-name"></span>
+        <span class="loader-toolbar-meta" id="toolbar-meta"></span>
+        <label class="loader-toolbar-btn" for="folder-picker-toolbar">
+          <span>Change folder</span>
+          <input
+            type="file"
+            id="folder-picker-toolbar"
+            webkitdirectory
+            multiple
+            accept=""
+            aria-label="Select a different session folder"
+          >
+        </label>
+        <div class="loader-errors" id="loader-errors" hidden></div>
+      </div>
+    </section>
+
+    <div class="page-shell" id="page-shell" hidden aria-hidden="true">
       <header class="hero">
         <div class="hero-story">
           <p class="eyebrow">Popcorn XP / Subagent replay surface</p>
@@ -136,6 +183,7 @@
         </section>
       </main>
     </div>
-    <script src="./app.js"></script>
+    <script type="module" src="./loader.js"></script>
+    <script defer src="./app.js"></script>
   </body>
 </html>
