@@ -1,2 +1,7 @@
 node_modules/
 .popcorn-xp/
+.playwright-mcp/
+.mypy_cache/
+.pytest_cache/
+.claude/
+*.png
