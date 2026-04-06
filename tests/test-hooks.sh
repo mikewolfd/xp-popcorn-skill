@@ -140,6 +140,8 @@ setup_session() {
   mkdir -p "$POPCORN/$TEAM" "$POPCORN/$TEAM/agent-state"
   echo "$TEAM" > "$POPCORN/.active-team"
   printf "# Advice\n" > "$POPCORN/$TEAM/ADVICE.md"
+  # Tests below exercise team transport (context-store, TaskUpdate, etc.); repo default is subagent when omitted.
+  printf '%s\n' team > "$POPCORN/$TEAM/.runtime-mode"
 }
 
 checkpoint_now() {
