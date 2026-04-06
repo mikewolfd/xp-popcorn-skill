@@ -1,5 +1,4 @@
 {
   "name": "popcorn-xp",
-  "version": "1.0.0",
   "description": "XP pair programming for Claude Code: lead skill, teammate agents, protocol auto-load, lifecycle hooks."
 }
