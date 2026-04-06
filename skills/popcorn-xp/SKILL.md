@@ -68,13 +68,16 @@ The plugin ships with agent definitions in `agents/` that can be used as teammat
 |-------|------|--------------|
 | `popcorn-xp:craftsman` | "Is this clean and readable?" | Drive and navigate in rotation |
 | `popcorn-xp:expert` | "Does this actually work in edge cases?" | Drive and navigate in rotation |
-| `popcorn-xp:tester` | "How will we prove this works?" | Advisor: monitor context-store.log, review edits through the testing lens, send advice |
+| `popcorn-xp:scout` | "Are we solving the right problem?" | **Default advisor:** log-watching through scope, constraints, and orientation — catch wrong surface, drift, and early unknowns |
+| `popcorn-xp:tester` | "How will we prove this works?" | **Usually supplemental:** verification pairs, RED/GREEN lanes, final proof; **standing advisor** only when the session is verification-led |
 
 The **navigator's** standing work is **read-ahead**: stay one step ahead of the driver — read files the driver hasn't reached yet, check constraints and patterns, publish a READY artifact before implementation starts.
 
 The **advisor's** standing work is **log-watching**: read `.popcorn-xp/{team-name}/context-store.log` after every batch of edits, read the changed files through your lens, and send advice. The advisor does not rotate into driving unless they own an explicit task.
 
-The `scout` agent is for orientation-first sessions where the first task is "map the codebase" rather than "implement X."
+**Default the standing advisor to `scout`.** That lens stays on "right problem, right place, right constraints" for the whole session. Use `tester` as standing advisor when tests and proof are the main risk; otherwise pull `tester` in for specific verification tasks or bugfix lanes (see Monitor).
+
+The `scout` agent also fits **orientation-first** work when the first task is "map the codebase" rather than "implement X" (driver or advisor).
 The `strategist` agent is for planning-first sessions where the first task is "clarify the bet" rather than "start building."
 
 **Supplemental roles (task-scoped, not part of core rotation):**
@@ -114,7 +117,7 @@ Native agents carry project-specific context, conventions, and tool configuratio
 | Requirements, prioritization, scope decisions | **product-manager** |
 | Independent code review, evidence-based auditing | **code-reviewer** |
 
-A native agent doesn't need to match perfectly — it needs to serve the same lens. A `flutter-architect` can fill the craftsman role for a Flutter project. An `elixir-phoenix-social` can fill the expert role for an Elixir service. A `test-engineer` is a direct replacement for tester.
+A native agent doesn't need to match perfectly — it needs to serve the same lens. A `flutter-architect` can fill the craftsman role for a Flutter project. An `elixir-phoenix-social` can fill the expert role for an Elixir service. A `code-scout` (or similar explore agent) maps to **scout** — **prefer for the standing advisor seat**. A `test-engineer` is a direct replacement for **tester** (verification lens).
 
 **How to spawn a native agent as a teammate:**
 
@@ -194,14 +197,14 @@ Read the frontmatter (`name`, `description`) of each discovered file. Also revie
 >
 > | Persona | Available agents |
 > |---------|-----------------|
-> | scout | `popcorn-xp:scout`, `code-scout` (native) |
+> | scout | `popcorn-xp:scout`, `code-scout` (native) — **default standing advisor** |
 > | craftsman | `popcorn-xp:craftsman`, `flutter-architect` (native) |
 > | expert | `popcorn-xp:expert` |
-> | tester | `popcorn-xp:tester`, `test-engineer` (native) |
+> | tester | `popcorn-xp:tester`, `test-engineer` (native) — verification-led advisor or task-scoped proof |
 > | strategist | `popcorn-xp:strategist` |
 > | code-reviewer | `popcorn-xp:code-reviewer`, `code-reviewer` (native) |
 >
-> Which roles do you want on the team, and which agent for each? I'll spawn the initial three (driver, navigator, advisor) at the start and bring in supplemental specialists as specific tasks require them.
+> Which roles do you want on the team, and which agent for each? I'll spawn the initial three (driver, navigator, advisor) at the start and bring in supplemental specialists as specific tasks require them. **Unless you prefer a verification-led advisor, default advisor = scout** (or native `code-scout`).
 
 Wait for the user to confirm before proceeding. The user picks:
 
@@ -434,8 +437,12 @@ Agent(name: "flutter-architect", subagent_type: "flutter-architect",
 Agent(name: "expert", model: "{model}", team_name: "{team-name}",
   prompt: "<navigator prompt from protocol.md>")
 
-# Native test-engineer — loads protocol via Skill tool
-Agent(name: "test-engineer", subagent_type: "test-engineer",
+# Default scout as standing advisor — protocol auto-loaded via skills field
+Agent(name: "scout", model: "{model}", team_name: "{team-name}",
+  prompt: "<advisor prompt from protocol.md>")
+
+# Or native code-scout as advisor — loads protocol via Skill tool
+Agent(name: "code-scout", subagent_type: "code-scout",
   model: "{model}", team_name: "{team-name}",
   prompt: "FIRST: Skill('popcorn-xp-protocol')\n<advisor prompt, lens from native agent>")
 ```
@@ -509,7 +516,7 @@ You receive messages from teammates automatically. Your role during execution:
 
 When all tasks are complete, follow this sequence exactly. Do not skip steps or reorder — the retro conversation happens **before** shutdown, shutdown happens **before** TeamDelete, and the retro file is written **after** shutdown.
 
-1. Ask a teammate (typically the tester) to run final verification.
+1. Ask a teammate (typically the **tester** if on the bench, otherwise the **navigator** or **driver** of the last pair) to run final verification.
 2. Confirm no unresolved OBJECTIONs exist (ask the navigator or check via a teammate).
 3. **Check ADVICE.md for open SMELLs, STEERs, and FYIs.** For each: (a) resolve it now if trivial, (b) create a follow-up task if it warrants future work, or (c) note it in the retro. Do not let the session end with unacknowledged open items.
 4. **Retrospective (mandatory — mechanical).** Run the session retro-request subcommand, then notify each teammate:

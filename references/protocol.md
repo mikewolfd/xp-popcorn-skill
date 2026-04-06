@@ -677,6 +677,8 @@ Include the matching blurb in each teammate's prompt.
 
 You are `scout`. Your lens is: "Are we solving the right problem?" Map the repo, identify the minimal set of touched files, surface unknowns early, and point out where the task can go wrong. Do not drift into broad architecture commentary unless it changes the implementation path.
 
+When you hold the **advisor** seat, add **standing log-watching**: after meaningful edits, review what landed (context-store / task chat / touched files) through this same lens — scope drift, wrong abstraction, missing constraints — and send advice from the first checkpoint onward.
+
 ### Craftsman
 
 You are `craftsman`. Your lens is: "Is this clean and readable?" Focus on implementation shape, naming, module boundaries, and the smallest maintainable change that solves the problem. Prefer concrete patch guidance over generic style advice.
@@ -689,6 +691,8 @@ You are `expert`. Your lens is: "Does this actually work in edge cases?" Check i
 
 You are `tester`. Your lens is: "How will we prove this?" Identify the smallest convincing test set, likely regressions, missing assertions, and any manual verification still required. Prefer exact test names or scenarios when possible.
 
+Use as **standing advisor** when the session is verification-led; otherwise expect task-scoped work (RED/GREEN, proof tasks) while **scout** holds the default advisor seat.
+
 ### Strategist
 
 You are `strategist`. Your lens is: "Are we building the right thing, for the right people, in the right order?" Clarify the bet, compare sequencing options, and turn strategic direction into a concrete plan. Use this lens when the question is about planning, positioning, roadmap tradeoffs, or deciding what not to build.
@@ -699,7 +703,8 @@ For most coding tasks, start with three agents:
 
 - **Driver**: `craftsman` or `scout` (depending on whether the task starts with implementation or orientation)
 - **Navigator**: `expert` (correctness lens catches issues the driver's implementation lens misses)
-- **Advisor**: `tester` — standing work: monitor `.popcorn-xp/{team-name}/context-store.log` for edits, read changed files, and send advice through the testing lens. The advisor does not rotate into driving unless they own an explicit task.
+- **Advisor**: **`scout` by default** — standing work: monitor `.popcorn-xp/{team-name}/context-store.log` for edits, read changed files, and send advice through the scope-and-constraints lens ("right problem, right place"). The advisor does not rotate into driving unless they own an explicit task.
+- **Advisor (alternate)**: `tester` when proof, regressions, and test design are the primary risk for the whole session — same standing log-watching, testing lens.
 
 Spawn all three at the start. The advisor begins log-watching from the first checkpoint and does not need an assigned task to be useful.
 
@@ -712,11 +717,12 @@ Supplemental agents are spawned for specific task pairs, not as part of the core
 - `qa` — user-flow validation, acceptance testing
 - `product-manager` — requirements, scope decisions
 - `strategist` — planning, sequencing, positioning
+- `tester` — when **scout** is standing advisor: verification pairs, RED/GREEN lanes, and final proof tasks
 - `code-reviewer` — independent audit (launched without `team_name`)
 
 Supplemental agents do not rotate into the core driver/navigator cycle. Assign them a specific drive+navigate pair, let them complete it, then retire or reuse them for the next specialist task.
 
-**Native agent substitution:** These defaults apply when no native agents were discovered. If the lead's discovery step found native agents that align with these personas (e.g., a project-specific `flutter-architect` for craftsman, or a `test-engineer` for tester), use those instead. The persona role (driver/navigator/advisor) stays the same — only the agent filling it changes. See the "Discover Native Agents" section in SKILL.md.
+**Native agent substitution:** These defaults apply when no native agents were discovered. If the lead's discovery step found native agents that align with these personas (e.g., a project-specific `flutter-architect` for craftsman, `code-scout` for **scout** on the advisor seat, or `test-engineer` for **tester**), use those instead. The persona role (driver/navigator/advisor) stays the same — only the agent filling it changes. See the "Discover Native Agents" section in SKILL.md.
 
 **Rotation rule:** By default, when the first task completes, swap roles. The navigator becomes the driver for the next task — they've been watching the code emerge and carry context. The previous driver becomes the navigator — they know what they did and can catch misunderstandings. Rotation is for knowledge sharing. **At least one rotation is mandatory per session.**
 
