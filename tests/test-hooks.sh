@@ -2154,6 +2154,71 @@ run_session close
 assert_exit "DM-27c close OK with substantive RETRO.md" 0 "$LAST_RC"
 
 # ============================================================
+# CX: Codex hook shims (codex/hooks/*.sh)
+# ============================================================
+
+echo "--- CX: Codex hook shims ---"
+
+run_codex_hook() {
+  local script="$1"
+  local stdin_json="$2"
+  local stdout_file stderr_file rc=0
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  echo "$stdin_json" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$SCRIPT_DIR/codex/hooks/$script" \
+    >"$stdout_file" 2>"$stderr_file" || rc=$?
+  LAST_STDOUT=$(cat "$stdout_file")
+  LAST_STDERR=$(cat "$stderr_file")
+  LAST_RC=$rc
+  rm -f "$stdout_file" "$stderr_file"
+}
+
+# CX-1: SessionStart — no active team → no stdout
+rm -rf "$POPCORN"
+run_codex_hook "codex-session-start.sh" "$(jq -nc --arg c "$TMPDIR_ROOT" '{cwd:$c,hook_event_name:"SessionStart",source:"startup"}')"
+assert_exit "CX-1 session-start no team exit 0" 0 "$LAST_RC"
+if [ -z "$LAST_STDOUT" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CX-1 expected empty stdout"
+fi
+
+# CX-2: SessionStart — active team → JSON additionalContext
+setup_session
+run_codex_hook "codex-session-start.sh" "$(jq -nc --arg c "$TMPDIR_ROOT" '{cwd:$c,hook_event_name:"SessionStart",source:"startup"}')"
+assert_exit "CX-2 session-start with team exit 0" 0 "$LAST_RC"
+assert_stdout_contains "CX-2 SessionStart JSON" "SessionStart" "$LAST_STDOUT"
+assert_stdout_contains "CX-2 mentions team" "$TEAM" "$LAST_STDOUT"
+
+# CX-3: Stop — no team → continue true JSON
+rm -rf "$POPCORN"
+run_codex_hook "codex-stop-advice.sh" "$(jq -nc --arg c "$TMPDIR_ROOT" '{cwd:$c,hook_event_name:"Stop",turn_id:"t1"}')"
+assert_exit "CX-3 stop no team exit 0" 0 "$LAST_RC"
+if echo "$LAST_STDOUT" | jq -e '.continue == true' >/dev/null 2>&1; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CX-3 expected continue:true JSON"
+fi
+
+# CX-4: Stop — open OBJECTION → decision block + reason
+setup_session
+cat >> "$POPCORN/$TEAM/ADVICE.md" <<'EOF'
+
+### OBJECTION OBJ-CX-01 — open
+Codex stop gate
+EOF
+run_codex_hook "codex-stop-advice.sh" "$(jq -nc --arg c "$TMPDIR_ROOT" '{cwd:$c,hook_event_name:"Stop",turn_id:"t2"}')"
+assert_exit "CX-4 stop with OBJECTION exit 0" 0 "$LAST_RC"
+if echo "$LAST_STDOUT" | jq -e '.decision == "block"' >/dev/null 2>&1; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: CX-4 expected decision:block JSON"
+fi
+
+# ============================================================
 # Results
 # ============================================================
 
