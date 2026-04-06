@@ -56,4 +56,4 @@ Full details are in git history. Grouped by session for traceability.
 | 14 | 2026-04-05 | 3 | Backlog audit: closed V87 (already in protocol), V88/AA26 (lockf removed) | V87, V88, AA26 |
 | 15 | 2026-04-05 | 9 | Backlog sweep: shutdown lifecycle, rotation guard, advice authorship, performance, docs cleanup | V85-V86, V89-V95 |
 
-146 items completed + 17 closed across 15 sessions. 335 tests at last count (`./tests/test-hooks.sh`).
+146 items completed + 17 closed across 15 sessions. 350 tests at last count (`./tests/test-hooks.sh`).

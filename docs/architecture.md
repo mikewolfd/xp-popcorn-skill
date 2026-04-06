@@ -223,7 +223,7 @@ The only interface teammates use for session file writes. Commands:
 | `session log "message"` | Appends checkpoint to `LOG.md` and advances `.checkpoint-cursor` to the current `context-store.log` line count. |
 | `session advice TYPE ID [AUTHOR] "description"` | Appends advice entry to ADVICE.md (idempotent — skips if ID exists). |
 | `session resolve ID OUTCOME "detail"` | Appends resolution entry to ADVICE.md. |
-| `session task ID DRIVER NAV` | Appends task header to LOG.md. |
+| `session task ID` | Appends a placeholder task header; names come from `task-claim` / `task-release`. |
 | `session state AGENT ROLE PHASE TASK_ID BLOCKED_ON NEXT_ACTION` | Writes explicit per-agent state to `agent-state/{agent}.json`. |
 | `session ready AGENT TASK_ID KIND "detail"` | Publishes navigator READY artifact and moves navigator into `waiting_on_driver`. |
 | `session writeset AGENT TASK_ID <files...>` | Records the current task write set. |
@@ -271,6 +271,7 @@ REJECTED is a first-class outcome. A driver who rejects an OBJECTION with sound 
 `context-store.log` at `.popcorn-xp/context-store.log` is the source of truth for cross-agent file awareness. There is no separate JSON cache.
 
 Two hooks maintain it:
+
 - `context-store-check.sh` (PreToolUse Read) — scans `context-store.log` for the latest EDIT on the file and injects metadata when another agent was the last editor
 - `context-store-mark-dirty.sh` (PreToolUse Edit/Write) — appends every in-project edit to `context-store.log`, emits soft-lock warnings, and nudges for checkpoints after 3+ edits since `.checkpoint-cursor`
 

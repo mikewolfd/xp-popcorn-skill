@@ -146,7 +146,7 @@ Common subcommands (see **`bin/session` help** and **dual-mode doc** for the ful
 3. **Navigator (future)** — Stays ahead of the driver: checkpoints, files not yet touched, risks and STEER/SMELL/FYI; reserve **OBJECTION** for correctness gaps; dual-write to **ADVICE.md** per protocol.
 4. **Advisor (past)** — Reviews what already shipped in this task stream: logs, diffs, tests, coverage gaps; owns verification tasks when assigned; **OBJECTION** when evidence says the work is not done.
 5. **Rotation** — After a task, swap driver/navigator per convention so the person who watched the code drives the next slice when possible.
-6. **Closeout** — **Team:** retro rules + **TeamDelete** when satisfied. **Subagent:** **`session close-check`** then **`session close`** (and **RETRO.md** length gate unless **`--force`**) — see protocol.
+6. **Closeout** — **Team:** retro rules + **TeamDelete** when satisfied. **Subagent:** **`session close-check`** then **`session close`** (and **RETRO.md** length gate unless **`--force`**); **`close`** clears **`.popcorn-xp/.active-team`** and **`context-store.log`** so the next slice starts clean — see protocol.
 
 Teammates may spawn focused **`claude --bare -p`** micro-runs for narrow checks without bloating the main context; optional, not the primary bus.
 

@@ -50,12 +50,13 @@ Or: `.popcorn-xp/$TEAM/session mode team` / `session mode subagent`.
 **Subagent mode essentials:**
 
 1. Initialize each logical task folder: `.popcorn-xp/$TEAM/session task-init {n}` (creates `tasks/T{n}/meta.json` and `back-forth.md`).
-2. Claims and rotation are enforced by the shell, not `TaskUpdate`: `session task-claim {n} {agent-short-name} driver|navigator|advisor [expected-revision]` (optional CAS — re-read with `session task-revision {n}` if mismatch), `session task-release`, `session task-complete` / `task-abandon`. Toggle **`session task-advisor-scope {n} true|false`** to mark the task advisor as session-default vs task override (`advisor_session_default` in `meta.json`).
+2. Log a task placeholder, then claim on the bus: **`session task {n}`** (writes **Driver (pending claim)** in **LOG.md**), then **`session task-claim {n} {agent-short-name} driver|navigator|advisor`** so real names sync from **meta.json** (avoids rotation false positives). Claims and rotation are enforced by the shell, not `TaskUpdate`: optional CAS with **`session task-revision {n}`** if revision mismatch, **`session task-release`**, **`session task-complete`** / **`task-abandon`**. Toggle **`session task-advisor-scope {n} true|false`** to mark the task advisor as session-default vs task override (`advisor_session_default` in `meta.json`).
 3. Tactical chat → `session chat {n} {from} {kind} "message"`; read with `session chat-read {n} [start-line]`. Per-agent read cursors in `tasks/T{n}/meta.json`: `session cursor-get {agent} {n}` / `session cursor-ack {agent} {n} {line}` (navigators in `waiting_on_driver` should ack through the latest chat before idling in subagent mode).
 4. Typed advice still goes only to **ADVICE.md** (never rely on chat alone for OBJECTIONs).
-5. Closeout: `session retro-request` → each registered teammate submits **`.retro-{agent}.md`** (2+ lines) *or* a real **`handoff-{agent}.md`** (5+ lines) if they retired without a retro → release task roles (`task-release` / `task-complete`) or **`session task-abandon {id} 'reason'`** for stranded work → **`session close-check`** (OBJECTIONs, no active driver lock, no `tasks/*/meta.json` claims on non-done/abandoned tasks, no `.compact-pending-*`, each `.compact-stop-*` paired with a 5+ line handoff) → append **RETRO.md** (≥5 lines of real content in the accumulated file) → **`session close`** (runs `close-check` again, then enforces **`RETRO.md`** in **`subagent`** mode; **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate) → writes `.closed.json`; session dir kept for audit. Machine-facing **`events.jsonl`** records task/chat/close events (set **`POPCORN_XP_EVENT_LOG_DEBUG`** if append failures should print to stderr).
+5. Closeout: `session retro-request` → each registered teammate submits **`.retro-{agent}.md`** (2+ lines) *or* a real **`handoff-{agent}.md`** (5+ lines) if they retired without a retro → release task roles (`task-release` / `task-complete`) or **`session task-abandon {id} 'reason'`** for stranded work → **`session close-check`** (OBJECTIONs, no active driver lock, no `tasks/*/meta.json` claims on non-done/abandoned tasks, no `.compact-pending-*`, each `.compact-stop-*` paired with a 5+ line handoff) → append **RETRO.md** (≥5 lines of real content in the accumulated file) → **`session close`** (runs `close-check` again, then enforces **`RETRO.md`** in **`subagent`** mode; **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate) → writes `.closed.json`, removes **`.popcorn-xp/.active-team`** when it still names this team, truncates **`context-store.log`**; team dir kept for audit. Further **`session`** use requires a new **`echo {team} > .popcorn-xp/.active-team`**. Machine-facing **`events.jsonl`** records task/chat/close events (set **`POPCORN_XP_EVENT_LOG_DEBUG`** if append failures should print to stderr).
 6. In subagent mode, `session log` does not advance the context-store checkpoint (that log is team-mode only). Advisors use task chat + `session review` / cursors instead of context-store polling.
 7. Periodically run **`session health`** for a readable snapshot (task bus cursors, unresolved advice, navigator READY gaps, advisor review drift). Use **`session health --strict`** to exit nonzero on open OBJECTIONs, missing READY while `phase=navigating`, or advisor chat not caught up — useful before handoffs or `session close`.
+8. **Recovery:** If the **same drive seat** hits **two** failures on **session mechanics** (task claims, rotation, **`close-check`**) after good-faith retries, stop recycling that seat: use a **bounded single-task worker** or a **fresh team** (new directory + new **`.active-team`**). Escalate model only when the slice truly needs it.
 
 ## Role Roster
 
@@ -559,6 +560,9 @@ Write `.popcorn-xp/{team-name}/RETRO.md` after every session. This file accumula
 
 Session goal: {goal}. Met: yes/no.
 
+- **Lead host:** {`claude-code` | `codex` | other} — which product ran the lead (which hooks and lead playbook applied).
+- **Task transport:** {`subagent` | `team`} — should match `.popcorn-xp/{team}/.runtime-mode` when that file exists.
+
 ### Team
 - Driver(s): {who drove which tasks}
 - Navigator(s): {who navigated which tasks}
@@ -591,6 +595,8 @@ Session goal: {goal}. Met: yes/no.
 - {what to change next time — e.g., "start with scout driving orientation before craftsman drives implementation"}
 - {what to keep — e.g., "the expert-as-navigator pattern caught 2 real bugs"}
 ```
+
+Recording **Lead host** and **Task transport** keeps accumulated **RETRO.md** interpretable: process recommendations may reference spawn defaults, hook behavior, or docs that differ between Claude Code and Codex even when **`bin/session`** behavior is the same.
 
 This file is for the human. Read it before starting the next popcorn-xp session on the same codebase — it's the team's institutional memory about how the process works here.
 

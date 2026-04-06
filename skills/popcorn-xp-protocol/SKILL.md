@@ -87,7 +87,8 @@ When `.popcorn-xp/{team}/.runtime-mode` is **missing** or contains **`subagent`*
 - **Tactical chat:** `session chat {task-id} {from} {kind} "..."` — for discussion and negotiation. **OBJECTION / SMELL / STEER / FYI** still go to **ADVICE.md** via `session advice` — chat is not the source of truth for typed advice.
 - **Wake-ups:** The lead resumes you or nudges the next turn. Reconstruct state from LOG.md, ADVICE.md, task chat, and `tasks/T{n}/meta.json` if you start fresh.
 - **Stopping:** In **subagent** mode, `SubagentStop` enforces unresolved OBJECTIONs (same as task completion), may surface open SMELL/STEER/FYI via `additionalContext`, and nudges if `.compact-pending-{agent}.json` exists.
-- **Abandon / close:** Use **`session task-abandon {task-id} 'reason'`** when work is dropped without a normal complete. **`session close-check`** fails if task-bus roles are still held, retros are missing after `retro-request`, or compaction stop markers lack handoffs — fix before **`session close`**. **`session close`** also requires **`RETRO.md`** with **≥5 lines** (append the session summary first); **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate.
+- **Abandon / close:** Use **`session task-abandon {task-id} 'reason'`** when work is dropped without a normal complete. **`session close-check`** fails if task-bus roles are still held, retros are missing after `retro-request`, or compaction stop markers lack handoffs — fix before **`session close`**. **`session close`** also requires **`RETRO.md`** with **≥5 lines** (append the session summary first); **`session close --force`** skips **`close-check`** and the **`RETRO.md`** gate. Successful **`close`** clears **`.popcorn-xp/.active-team`** (when it still points at this team) and truncates **`context-store.log`**; set a new active team before the next slice.
+- **Task header:** Use **`session task {id}`** for a placeholder line in **`LOG.md`**; driver/navigator names are synced from **`task-claim`** / **`task-release`** so rotation is not tripped before a claim.
 - **Idle (`TeammateIdle`):** Retro, shutdown, and compaction handoff rules still apply. Driver checkpoint nags use **team** context-store only; in **subagent** mode advisors are nudged when **task chat** grows past their last `session review` cursor. With no `agent-state/{you}.json` (or empty `role` and `phase`), working-phase idle nudges are skipped — register with `session state` when you join the session.
 
 If the lead assigned a write set, record it before editing:
@@ -219,7 +220,7 @@ Bash: .popcorn-xp/{team-name}/session resolve SML-3-01 INCORPORATED "Detail"
 Log task headers when claiming a task:
 
 ```
-Bash: .popcorn-xp/{team-name}/session task {id} {your-role} {navigator-role}
+Bash: .popcorn-xp/{team-name}/session task {id}   # placeholder; then task-claim assigns names
 ```
 
 When you rotate out after completing a task, create a structured snapshot:

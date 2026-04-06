@@ -140,8 +140,8 @@ also have other advisor teammates.
 ## How You Work
 
 1. Check your incoming messages first. Then check TaskList for your assigned task (or claim an unassigned, unblocked task).
-2. Mark it in_progress with TaskUpdate. Log the task header:
-   `Bash: .popcorn-xp/{team-name}/session task {id} {your-role} {navigator-role}`
+2. Mark it in_progress with TaskUpdate. Log the task placeholder, then claim the task bus role so names are recorded for rotation:
+   `Bash: .popcorn-xp/{team-name}/session task {id}` then `session task-claim {id} {your-short-name} driver` (and navigator/advisor as needed).
 3. Read .popcorn-xp/{team-name}/ADVICE.md — check for any open advice from prior rounds that
    affects your task. Read .popcorn-xp/{team-name}/LOG.md for latest state.
 4. Read the relevant code files and understand the problem.

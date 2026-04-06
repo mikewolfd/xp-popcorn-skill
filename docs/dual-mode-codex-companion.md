@@ -114,10 +114,12 @@ The popcorn-xp repo ships a **copy-paste / merge** layout you can drop into anot
 | [`.codex/hooks.json`](../.codex/hooks.json) | `SessionStart` → [`codex/hooks/codex-session-start.sh`](../codex/hooks/codex-session-start.sh); `Stop` → [`codex/hooks/codex-stop-advice.sh`](../codex/hooks/codex-stop-advice.sh) |
 | [`codex/skills/popcorn-xp-protocol-core/`](../codex/skills/popcorn-xp-protocol-core/SKILL.md) | Layer A — shared core |
 | [`codex/skills/popcorn-xp-protocol-subagent/`](../codex/skills/popcorn-xp-protocol-subagent/SKILL.md) | Layer B — subagent transport |
+| [`codex/LEAD-WORKFLOW.md`](../codex/LEAD-WORKFLOW.md) | Vendored lead checklist (no dependency on `skills/popcorn-xp/`) |
+| [`codex/COMPANION.md`](../codex/COMPANION.md) | Vendored hook / project-root notes |
 | [`.codex/agents/`](../.codex/agents/) | Example agents with `[[skills.config]]` pointing at the two skills |
 | [`codex/README.md`](../codex/README.md) | Install notes and assumptions |
 
-Hook commands use `$(git rev-parse --show-toplevel)` so the **git root** must contain both `codex/hooks/` and `hooks/scripts/`. **`codex-stop-advice.sh`** resolves `check-advice-on-complete.sh` from the hook file’s parent repo (two levels above `codex/hooks/`), so it still works when `cwd` in the hook JSON is not the repo root.
+Hook **commands** in `hooks.json` use `$(git rev-parse --show-toplevel)` so the shim path resolves from the **current shell cwd** when Codex expands the command. **Inside** the shims, stdin **`cwd`** (often a repo **subdirectory**) is mapped to **`CLAUDE_PROJECT_DIR`** via **`git -C "$cwd" rev-parse --show-toplevel`**, with fallback to **`cwd`** when not in a git work tree — so **`.popcorn-xp`** is found at the **repository root** even when the session cwd is nested. Vendor [`hooks/scripts/px-resolve-claude-project-dir.sh`](../hooks/scripts/px-resolve-claude-project-dir.sh) alongside other hook scripts; **`bin/session`** uses the same resolver when **`CLAUDE_PROJECT_DIR`** is unset.
 
 Regression tests: **`CX-*`** cases in [`tests/test-hooks.sh`](../tests/test-hooks.sh).
 

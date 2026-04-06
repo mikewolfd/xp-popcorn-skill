@@ -486,8 +486,9 @@ Suggested contract:
    - required retros exist for active participants
 5. The lead appends this session’s summary to **`RETRO.md`** (accumulated across sessions; same minimum substance as team-mode `TeamDelete` retro: at least **5 lines** of real content).
 6. The lead calls **`session close`**, which re-runs `close-check` then requires **`RETRO.md`** to exist with **≥5 lines** in `subagent` mode, then writes **`.closed.json`**. **`session close --force`** skips both `close-check` and the `RETRO.md` gate (escape hatch only).
+7. **`session close`** also clears **session-global** markers so the next slice does not inherit a stale active team or edit log: it removes **`.popcorn-xp/.active-team`** when it still points at the team being closed, and truncates **`.popcorn-xp/context-store.log`**. The **team directory** (including **`LOG.md`**, **`RETRO.md`**, **`.closed.json`**, task bus, **`events.jsonl`**) remains the durable audit record.
 
-`subagent` mode should not delete its coordination artifacts at close. The default should be to keep the session directory as an auditable record and a recovery point.
+Calling **`session`** commands while **`.active-team`** still references a team that already has **`.closed.json`** fails with an error until the lead clears or replaces **`.active-team`** (or starts under a new team name).
 
 ## Implementation Guardrails
 
@@ -597,7 +598,7 @@ First, extend `bin/session` into a durable task-bus API, preserve the existing i
 | Mode switch | `.runtime-mode` + `session mode team` or `subagent`; **if the file is missing, mode is `subagent`** (write `team` to opt into Agent Teams) |
 | Task bus | `tasks/T{n}/meta.json`, `back-forth.md`, revision + `advisor_session_default`, per-agent chat cursors |
 | Claims | `task-claim` with session lock, single-driver rules, rotation, optional expected-revision CAS |
-| Closeout | `close-check` + `session close` → `.closed.json`; **`subagent`:** `close` also requires `RETRO.md` (≥5 lines); **`close --force`** skips `close-check` and `RETRO.md`; session dir retained |
+| Closeout | `close-check` + `session close` → `.closed.json`; **`subagent`:** `close` also requires `RETRO.md` (≥5 lines); **`close --force`** skips `close-check` and `RETRO.md`; clears **`.active-team`** (when it names this team) + **`context-store.log`**; session dir retained |
 | Hooks | Team-only scripts no-op in subagent; `enforce-no-idle` uses task chat / cursors for advisors and navigators in `waiting_on_driver`; `SubagentStop` runs OBJECTION + warnings + compaction-pending hint |
 | Audit | `events.jsonl` via `px_event_log` (set **`POPCORN_XP_EVENT_LOG_DEBUG`** to surface append/`jq` failures on stderr) |
 | Tests | Dual-mode cases prefixed `DM-` in `./tests/test-hooks.sh` |
