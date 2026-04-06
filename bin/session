@@ -5,12 +5,20 @@ set -euo pipefail
 # Teammates call this to append entries to LOG.md, ADVICE.md, and manage agent state.
 # Resolves the active team from .popcorn-xp/.active-team.
 # Subagent mode: task bus under tasks/T{n}/, claim/close-check/close; see docs/dual-mode-proposal.md
+# session task {id} writes a placeholder LOG header; task-claim / task-release sync driver@ names.
+# session close clears .active-team (when it names this team) and truncates context-store.log.
 
 SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=../hooks/scripts/session-common.sh
 source "$SCRIPT_ROOT/hooks/scripts/session-common.sh"
+# shellcheck source=../hooks/scripts/px-resolve-claude-project-dir.sh
+source "$SCRIPT_ROOT/hooks/scripts/px-resolve-claude-project-dir.sh"
 
-POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
+if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
+  export CLAUDE_PROJECT_DIR
+  CLAUDE_PROJECT_DIR="$(px_resolve_project_dir_from "${PWD:-.}")"
+fi
+POPCORN_DIR="${CLAUDE_PROJECT_DIR}/.popcorn-xp"
 TEAM=$(cat "$POPCORN_DIR/.active-team" 2>/dev/null || true)
 [ -z "$TEAM" ] && { echo "No active popcorn-xp team" >&2; exit 1; }
 
@@ -34,6 +42,35 @@ normalize_task_slug() {
 }
 
 task_dir() { echo "$DIR/tasks/$(normalize_task_slug "$1")"; }
+
+# Replace or append the single ## Task {TS} — line from tasks/{TS}/meta.json (claim-derived names).
+px_sync_task_log_from_meta() {
+  local TID="${1:?}" TS M d n ds ns nl tmp pfx
+  TS=$(normalize_task_slug "$TID")
+  M="$(task_dir "$TID")/meta.json"
+  [ -f "$M" ] || return 0
+  d=$(jq -r '.driver // ""' "$M")
+  n=$(jq -r '.navigator // ""' "$M")
+  [ -n "$d" ] && ds="@${d}" || ds="(pending claim)"
+  [ -n "$n" ] && ns="@${n}" || ns="(pending claim)"
+  nl="## Task ${TS} — Driver ${ds}, Navigator ${ns}"
+  pfx="## Task ${TS} —"
+  if [ ! -f "$DIR/LOG.md" ]; then
+    printf '%s\n' "$nl" > "$DIR/LOG.md"
+    return 0
+  fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/px-sync-log.XXXXXX")"
+  if awk -v pfx="$pfx" -v nl="$nl" '
+    index($0, pfx) == 1 { print nl; rep = 1; next }
+    { print }
+    END { exit(rep ? 0 : 1) }
+  ' "$DIR/LOG.md" > "$tmp"; then
+    mv "$tmp" "$DIR/LOG.md"
+  else
+    rm -f "$tmp"
+    printf '\n%s\n' "$nl" >> "$DIR/LOG.md"
+  fi
+}
 
 px_session_acquire_lock() {
   local i=0
@@ -103,6 +140,11 @@ merge_state() {
 
 cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
 
+if [ -f "$DIR/.closed.json" ] && [ "$cmd" != "close" ]; then
+  echo "session: team $TEAM is closed (.popcorn-xp/$TEAM/.closed.json). Remove or replace .popcorn-xp/.active-team to start a new slice." >&2
+  exit 2
+fi
+
 case "$cmd" in
   log)
     printf '\n### Checkpoint\n%s\n' "$*" >> "$DIR/LOG.md"
@@ -168,13 +210,23 @@ case "$cmd" in
     printf '\n### %s — %s\n%s\n' "$ID" "$O" "${*:-(no detail)}" >> "$DIR/ADVICE.md"
     ;;
   task)
-    ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"
-    grep -qF "## Task $ID —" "$DIR/LOG.md" 2>/dev/null && exit 0
-    printf '\n## Task %s — Driver @%s, Navigator @%s\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md"
+    ID="${1:?}"
+    shift
+    TS=$(normalize_task_slug "$ID")
+    if [ $# -ge 2 ]; then
+      echo "session task: driver/navigator names are assigned on task-claim; ignoring legacy driver/navigator arguments." >&2
+      shift 2
+    elif [ $# -ge 1 ]; then
+      echo "session task: ignoring stray argument after task id (use: session task {id})" >&2
+      shift
+    fi
+    grep -qF "## Task $TS —" "$DIR/LOG.md" 2>/dev/null && exit 0
+    printf '\n## Task %s — Driver (pending claim), Navigator (pending claim)\n' "$TS" >> "$DIR/LOG.md"
     ;;
   task-correct)
     ID="${1:?}"; DRIVER="${2:?}"; NAV="${3:?}"
-    printf '\n## Task %s — Driver @%s, Navigator @%s (corrected)\n' "$ID" "$DRIVER" "$NAV" >> "$DIR/LOG.md"
+    TS=$(normalize_task_slug "$ID")
+    printf '\n## Task %s — Driver @%s, Navigator @%s (corrected)\n' "$TS" "$DRIVER" "$NAV" >> "$DIR/LOG.md"
     ;;
   state)
     AGENT="${1:?}"; ROLE="${2:?}"; PHASE="${3:?}"; TASK_ID="${4:?}"; BLOCKED_ON="${5:--}"; shift 5
@@ -391,7 +443,7 @@ case "$cmd" in
     if [ "$ROLE" = "driver" ]; then
       teammate_count=$(find "$STATE_DIR" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
       if [ "${teammate_count:-0}" -ge 2 ] && [ -f "$DIR/LOG.md" ] && grep -q "^## Task" "$DIR/LOG.md"; then
-        last_driver=$(grep "^## Task" "$DIR/LOG.md" | tail -1 | sed 's/.*Driver @\([^,]*\).*/\1/' | tr -d ' ')
+        last_driver=$(px_last_task_log_driver "$DIR/LOG.md")
         if [ -n "$last_driver" ] && [ "$last_driver" = "$AGENT" ]; then
           echo "session task-claim: rotation required — $AGENT drove the last task" >&2
           px_session_release_lock
@@ -416,6 +468,7 @@ case "$cmd" in
     if [ "$ROLE" = "driver" ]; then
       jq -n --arg task_id "$TS" --arg agent "$AGENT" '{task_id: $task_id, agent: $agent}' > "$ACTIVE_DRIVER_FILE"
     fi
+    px_sync_task_log_from_meta "$TID"
     px_event_log task_claim "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg r "$ROLE" --argjson rev "$cur_rev" '{task:$t, agent:$a, role:$r, prev_revision:$rev}')"
     px_session_release_lock
     ;;
@@ -448,6 +501,7 @@ case "$cmd" in
         fi
       fi
     fi
+    px_sync_task_log_from_meta "$TID"
     px_event_log task_release "$(jq -nc --arg t "$TS" --arg a "$AGENT" '{task:$t, agent:$a}')"
     px_session_release_lock
     ;;
@@ -788,6 +842,10 @@ case "$cmd" in
       FORCE=1
       shift
     fi
+    if [ -f "$DIR/.closed.json" ]; then
+      echo "session close: team $TEAM is already closed" >&2
+      exit 2
+    fi
     if [ "$FORCE" -eq 0 ]; then
       if ! env CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}" bash "$SCRIPT_ROOT/bin/session" close-check; then
         echo "session close: close-check failed (use: session close --force to skip)" >&2
@@ -815,6 +873,10 @@ case "$cmd" in
       --argjson forced "$FORCED_JSON" \
       '{closed_at: $closed_at, runtime_mode: $mode, close_check_skipped: $forced}' > "$DIR/.closed.json"
     px_event_log session_close "$(jq -nc --arg m "$(px_runtime_mode)" --argjson f "$FORCED_JSON" '{runtime_mode:$m, forced:$f}')"
+    if [ -f "$POPCORN_DIR/.active-team" ] && [ "$(tr -d '\n' < "$POPCORN_DIR/.active-team")" = "$TEAM" ]; then
+      rm -f "$POPCORN_DIR/.active-team"
+    fi
+    : > "$POPCORN_DIR/context-store.log" 2>/dev/null || true
     px_session_release_lock
     ;;
   chat)

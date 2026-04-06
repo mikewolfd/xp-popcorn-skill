@@ -61,7 +61,7 @@ if [ "$IS_CLAIM" -eq 1 ] && [ "$IS_NAV_TASK" -eq 0 ] && [ -f "$LOG_FILE" ] && [ 
   teammate_count=$(find "$STATE_DIR" -name '*.json' -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
   if [ "$teammate_count" -ge 2 ]; then
     if grep -q "^## Task" "$LOG_FILE"; then
-      last_driver=$(grep "^## Task" "$LOG_FILE" | tail -1 | sed 's/.*Driver @\([^,]*\).*/\1/' | tr -d ' ')
+      last_driver=$(px_last_task_log_driver "$LOG_FILE")
       if [ -n "$last_driver" ] && [ "$last_driver" = "$AGENT_SHORT" ]; then
         echo "Popcorn XP: Rotation required. You (@$AGENT_SHORT) drove the last task. Another teammate must drive next to maintain rotation." >&2
         exit 2

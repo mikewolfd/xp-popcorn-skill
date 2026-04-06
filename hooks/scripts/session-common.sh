@@ -205,3 +205,22 @@ px_path_in_write_set() {
     ) | index($path) != null
   ' >/dev/null 2>&1
 }
+
+# Last driver slug from LOG.md: walk ## Task lines bottom-up; first Driver @name
+# wins. Placeholder lines use "Driver (pending claim)" (no @) and do not match.
+px_last_task_log_driver() {
+  local logf="${1:?}"
+  local line cand
+  [ -f "$logf" ] || return 0
+  # Bash 3.2–compatible (no mapfile): newest ## Task lines first.
+  while IFS= read -r line; do
+    if [[ "$line" =~ Driver[[:space:]]+@([^,]+) ]]; then
+      cand="${BASH_REMATCH[1]// /}"
+      if [[ -n "$cand" ]]; then
+        echo "$cand"
+        return 0
+      fi
+    fi
+  done < <(awk '/^## Task/ { a[++c] = $0 } END { for (i = c; i >= 1; i--) print a[i] }' "$logf" 2>/dev/null)
+  echo ""
+}
