@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Popcorn XP is a Claude Code plugin that implements XP pair programming for agent teams. It launches 2-3 autonomous Claude Code agents that pair-program: one driver edits code, one navigator steers via typed advice, and they rotate roles between tasks. The lead (orchestrator) runs in coordinator mode with no file access.
+Popcorn XP is a Claude Code plugin that implements XP pair programming for agent teams. The working trio is **one driver, one navigator, one advisor** — **current, future, and past** respectively: the driver edits the present task; the navigator reads ahead and steers via typed advice; the advisor reviews what already landed (tests, regressions). Driver and navigator rotate between tasks; the advisor is the standing reviewer unless you rotate that seat by design.
 
-**Dual runtime mode** (`.popcorn-xp/{team}/.runtime-mode`): **`team`** is the default — Agent Teams, `TaskUpdate`, context-store hooks, `TeammateIdle`. **`subagent`** uses lead-orchestrated subagents and a file task bus (`bin/session task-init|task-claim [expected-rev]|task-revision|task-advisor-scope|task-release|task-complete|task-abandon|chat|cursor-*|health|close-check|close [--force]`, etc.); team-only hooks no-op; `SubagentStop` runs OBJECTION + non-blocking advice/compaction hints. Append-only **`events.jsonl`** logs task/session events. See `docs/dual-mode-proposal.md` and `skills/popcorn-xp/SKILL.md`.
+**Dual runtime mode** (`.popcorn-xp/{team}/.runtime-mode`): **`subagent`** is the **recommended default** (also the default when `.runtime-mode` is **omitted**) — lead keeps normal tools and orchestrates subagents; file task bus via `bin/session` (`task-init|task-claim [expected-rev]|task-revision|task-advisor-scope|task-release|task-complete|task-abandon|chat|cursor-*|health|close-check|close [--force]`, etc.); team-only hooks no-op; `SubagentStop` runs OBJECTION + non-blocking advice/compaction hints; append-only **`events.jsonl`**. **`team`** (Agent Teams, `TaskUpdate`, context-store, `TeammateIdle`) uses a **coordinator-only lead** (no file tools) and peer **`SendMessage`** — **explicit opt-in**; avoid steering new sessions there until a **Claude Code bug** causing **extreme token use** in team mode is fixed. See `docs/dual-mode-proposal.md` and `skills/popcorn-xp/SKILL.md`.
 
-Runtime is Claude Code only. Requires Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and Coordinator Mode (`CLAUDE_CODE_COORDINATOR_MODE=1`).
+Runtime is Claude Code. **`team`** mode requires Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and Coordinator Mode (`CLAUDE_CODE_COORDINATOR_MODE=1`) for the lead. **`subagent`** mode does not require the lead to run coordinator-only (subagents still run under normal agent tooling).
 
 **OpenAI Codex:** Reference integration lives under `.codex/` and `codex/` (hooks, layered skills, example agents). See `docs/dual-mode-codex-companion.md` and `codex/README.md`. Tests cover Codex shims as `CX-*` in `./tests/test-hooks.sh`.
 
@@ -73,7 +73,7 @@ Created at `.popcorn-xp/{team-name}/` during session setup. Gitignored.
 - `LOG.md` — Append-only checkpoint log
 - `ADVICE.md` — Append-only advice ledger (advice entries + resolution entries)
 - `RETRO.md` — Accumulated retrospectives across sessions
-- `.runtime-mode` — `team` or `subagent` (default `team` if missing)
+- `.runtime-mode` — `team` or `subagent` (default **`subagent`** if missing; write `team` to opt into Agent Teams)
 - `tasks/T{n}/meta.json` & `tasks/T{n}/back-forth.md` — Subagent task bus (subagent mode)
 - `.closed.json` — Written by `session close` (subagent closeout marker)
 - `session` — Thin wrapper that execs `bin/session` (the canonical session helper)

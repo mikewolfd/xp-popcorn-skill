@@ -4,8 +4,8 @@ Lead-facing prompt reference for Popcorn XP. The canonical teammate protocol liv
 
 ## Runtime mode
 
-- **`team`** (default): Agent Teams, `TaskUpdate`, `SendMessage`, context-store soft locks, `TeammateIdle` nudges (checkpoint + advisor review from `context-store.log`).
-- **`subagent`**: Set `.popcorn-xp/{team}/.runtime-mode` to `subagent`. Lead spawns/resumes subagents; teammates use `bin/session` task-bus commands (`task-init`, `task-claim`, `chat`, `task-complete`, **`task-abandon`**, `close-check`, `close` (after `close-check`, **`close`** requires **`RETRO.md`** with **≥5 lines**; **`close --force`** skips **`close-check`** and the **`RETRO.md`** gate). Typed advice still goes to **ADVICE.md**; tactical discussion goes to `tasks/T{n}/back-forth.md`. Run **`session health`** / **`session health --strict`** for a lead-side audit. **`close-check`** also verifies open task-bus claims are cleared (or tasks **abandoned**), and after **`retro-request`** each `agent-state` peer needs **`.retro-{agent}.md`** (2+ lines) or **`handoff-{agent}.md`** (5+ lines); any **`.compact-stop-*.json`** needs a matching 5+ line handoff. `TeammateIdle` still enforces **retro / shutdown / compaction**; advisor review nudges use **task chat vs `session review`**; navigators in **`waiting_on_driver`** must stay current on task chat via **`cursor-ack`** (see below). Agents without an `agent-state` file skip working-phase idle nudges. Full design: `docs/dual-mode-proposal.md`.
+- **`subagent`** (default when `.runtime-mode` is **missing** — recommended until Claude Code team transport stops inflating tokens): Lead spawns/resumes subagents; teammates use `bin/session` task-bus commands (`task-init`, `task-claim`, `chat`, `task-complete`, **`task-abandon`**, `close-check`, `close` (after `close-check`, **`close`** requires **`RETRO.md`** with **≥5 lines**; **`close --force`** skips **`close-check`** and the **`RETRO.md`** gate). Typed advice still goes to **ADVICE.md**; tactical discussion goes to `tasks/T{n}/back-forth.md`. Run **`session health`** / **`session health --strict`** for a lead-side audit. **`close-check`** also verifies open task-bus claims are cleared (or tasks **abandoned**), and after **`retro-request`** each `agent-state` peer needs **`.retro-{agent}.md`** (2+ lines) or **`handoff-{agent}.md`** (5+ lines); any **`.compact-stop-*.json`** needs a matching 5+ line handoff. `TeammateIdle` still enforces **retro / shutdown / compaction**; advisor review nudges use **task chat vs `session review`**; navigators in **`waiting_on_driver`** must stay current on task chat via **`cursor-ack`** (see below). Agents without an `agent-state` file skip working-phase idle nudges. Full design: `docs/dual-mode-proposal.md`.
+- **`team`** (explicit opt-in: write `team` to `.runtime-mode`): Agent Teams, `TaskUpdate`, `SendMessage`, context-store soft locks, `TeammateIdle` nudges (checkpoint + advisor review from `context-store.log`).
 
 ## Subagent mode: task chat and cursors
 
@@ -17,6 +17,8 @@ Tactical back-and-forth with the driver uses **`tasks/T{n}/back-forth.md`**, app
 - **Hooks:** `PreToolUse(TeamDelete)` retro and context-store cleanup scripts **no-op** in subagent mode; closeout is **`session close-check`** then append **`RETRO.md`**, then **`session close`** (enforces **`RETRO.md`**), not team deletion.
 
 ## Core Rules
+
+**Three seats:** **driver** (**current** — implements the in-flight task), **navigator** (**future** — reads ahead, steers, typed advice), **advisor** (**past** — reviews checkpoints and merged work, verification, evidence-based objections).
 
 1. You are autonomous. You read files, claim tasks, message teammates, and make decisions. Nobody relays information to you.
 2. Exactly one driver edits code at a time. If you are the navigator or advisor, do not edit code files.

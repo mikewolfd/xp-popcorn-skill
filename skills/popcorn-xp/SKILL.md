@@ -1,6 +1,6 @@
 ---
 name: popcorn-xp
-description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Supports two runtime modes — team (Agent Teams + SendMessage) and subagent (lead-orchestrated subagents + file task bus) — with the same lenses, ADVICE.md gates, LOG.md, and rotation rules.
+description: Use when the user explicitly asks for a multi-agent coding session such as "pair program", "xp session", "popcorn", "team of agents", or "work together on this with subagents". Two runtime modes — subagent (file task bus; default until Claude Code team-mode token bug is fixed) and team (Agent Teams + SendMessage; opt-in only) — same lenses, ADVICE.md gates, LOG.md, and rotation rules.
 # disable-model-invocation: true
 ---
 
@@ -11,7 +11,7 @@ description: Use when the user explicitly asks for a multi-agent coding session 
 
 # Popcorn XP
 
-Launch an XP pair-programming session. You (the lead) set up the team and step back. Teammates pair-program directly with each other via SendMessage. One driver edits, one navigator steers, they swap roles between tasks. Advice has teeth — OBJECTIONs block task completion.
+Launch an XP pair-programming session. You (the lead) set up the session and step back. **Default to `subagent` mode:** teammates coordinate through **durable files** and `bin/session` (task bus, chat, hooks as documented). **Team mode** uses **SendMessage** between teammates — only when the user explicitly wants native Agent Teams; it is **discouraged for now** because of **severe token inflation from a Claude Code bug** in that path. One **driver** (current), one **navigator** (future), one **advisor** (past); driver and navigator rotate; OBJECTIONs still block completion.
 
 **Your lens as lead:** Is the team working effectively? You are not a driver. You set tasks, enforce pairing, relay findings, and intervene on exceptions. Your job is to keep the pair dynamic healthy — rotation, advice flow, checkpoint cadence — not to do the work yourself.
 
@@ -30,19 +30,19 @@ Do not activate for ordinary single-agent coding.
 
 ### Runtime mode: `team` vs `subagent`
 
-Pick explicitly from the user's wording (default **team** if they do not say):
+**Default `subagent`** unless the user clearly asks for **team** (native Agent Teams). Team mode is **opt-in** due to **extreme token usage from a current Claude Code bug** on that path.
 
 | Mode | When to use | Coordination |
 |------|-------------|--------------|
-| **team** | Live pairing, low-latency navigator interruption, native Agent Teams | `TeamCreate`, `TaskUpdate`, `SendMessage`, context-store hooks |
-| **subagent** | Async is OK, durable audit trail, simpler debugging, broad subagent permissions | Lead spawns/resumes subagents; `session task-*`, `tasks/T{n}/back-forth.md`, `SubagentStop` advice gate |
+| **subagent** | **Default.** Async-friendly, durable audit trail, avoids broken team token behavior | Lead spawns/resumes subagents; `session task-*`, `tasks/T{n}/back-forth.md`, `SubagentStop` advice gate |
+| **team** | User explicitly wants live `SendMessage` / Agent Teams **and** accepts token risk until the platform fix | `TeamCreate`, `TaskUpdate`, `SendMessage`, context-store hooks |
 
 After creating the session directory, set mode once:
 
 ```bash
-printf '%s\n' team > ".popcorn-xp/$TEAM/.runtime-mode"      # default if omitted
-# or
-printf '%s\n' subagent > ".popcorn-xp/$TEAM/.runtime-mode"
+printf '%s\n' subagent > ".popcorn-xp/$TEAM/.runtime-mode"   # default — recommended
+# Explicit native teams (opt-in, not recommended until Claude fixes team token bug):
+printf '%s\n' team > ".popcorn-xp/$TEAM/.runtime-mode"
 ```
 
 Or: `.popcorn-xp/$TEAM/session mode team` / `session mode subagent`.
@@ -59,7 +59,7 @@ Or: `.popcorn-xp/$TEAM/session mode team` / `session mode subagent`.
 
 ## Role Roster
 
-The plugin ships with agent definitions in `agents/` that can be used as teammates. The default team is **3 core members**: a driver, a navigator, and an advisor. Add specialists for specific tasks; they are supplemental, not part of the rotation.
+The plugin ships with agent definitions in `agents/` that can be used as teammates. The default team is **3 core members**: **one driver, one navigator, one advisor** — **current, future, and past** respectively. The driver implements what is in flight now; the navigator reads ahead and steers; the advisor reviews what has already landed (verification, regressions, objections). Map concrete personas from `agents/` onto those three seats. Add specialists for specific tasks; they are supplemental, not part of the core rotation unless you promote them.
 
 **Core roles (coding tasks):**
 
@@ -225,7 +225,7 @@ TEAM="{team-name}"
 mkdir -p ".popcorn-xp/$TEAM"
 echo "# Popcorn XP Log" > ".popcorn-xp/$TEAM/LOG.md"
 printf "# Advice\n" > ".popcorn-xp/$TEAM/ADVICE.md"
-printf '%s\n' team > ".popcorn-xp/$TEAM/.runtime-mode"   # or: subagent — see Runtime mode above
+printf '%s\n' subagent > ".popcorn-xp/$TEAM/.runtime-mode"   # default; use `team` only if user explicitly wants Agent Teams (see Runtime mode)
 echo "$TEAM" > .popcorn-xp/.active-team
 cat > ".popcorn-xp/$TEAM/session" << SCRIPT
 #!/bin/bash

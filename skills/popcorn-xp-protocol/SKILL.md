@@ -9,6 +9,8 @@ This skill is the canonical protocol source. `references/protocol.md` is lead-fa
 
 You are a teammate in a Popcorn XP pair-programming session. This protocol governs how you collaborate.
 
+**Three seats (time horizon):** **Driver** — **current** (only role that edits code on the active task). **Navigator** — **future** (read ahead, steer approach, typed advice). **Advisor** — **past** (review checkpoints and merged work, verification tasks, objections from evidence). You may be mapped from any agent persona onto one of these seats; seats rotate per session rules.
+
 ## Core Rules
 
 1. You are autonomous. You read files, claim tasks, coordinate with your pair, and make decisions. In **team** mode, nobody relays information to you (you use SendMessage). In **subagent** mode, the lead orchestrates wake-ups; you coordinate through **durable files** and task-scoped chat — see [Subagent mode](#subagent-mode) below.
@@ -79,7 +81,7 @@ The idle hook uses these values to decide whether to nudge you. `bench` and `shu
 
 ## Subagent mode
 
-When `.popcorn-xp/{team}/.runtime-mode` contains `subagent`:
+When `.popcorn-xp/{team}/.runtime-mode` is **missing** or contains **`subagent`** (default; write `team` for Agent Teams):
 
 - **Claims:** Use `session task-claim {task-id} {your-short-name} driver|navigator|advisor` instead of relying on `TaskUpdate` for locks. Release with `session task-release`. Complete with `session task-complete` (runs the OBJECTION gate).
 - **Tactical chat:** `session chat {task-id} {from} {kind} "..."` — for discussion and negotiation. **OBJECTION / SMELL / STEER / FYI** still go to **ADVICE.md** via `session advice` — chat is not the source of truth for typed advice.
