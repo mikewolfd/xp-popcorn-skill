@@ -223,6 +223,7 @@ The only interface teammates use for session file writes. Commands:
 | `session log "message"` | Appends checkpoint to `LOG.md` and advances `.checkpoint-cursor` to the current `context-store.log` line count. |
 | `session advice TYPE ID [AUTHOR] "description"` | Appends advice entry to ADVICE.md (idempotent — skips if ID exists). |
 | `session resolve ID OUTCOME "detail"` | Appends resolution entry to ADVICE.md. |
+| `session task-start TASK_ID AGENT "next action" -- <files...>` | Atomic driver kickoff: ensures a task header exists, claims the drive seat, writes driver state, and records a non-empty write set before edits begin. |
 | `session task ID` | Appends a placeholder task header; names come from `task-claim` / `task-release`. |
 | `session state AGENT ROLE PHASE TASK_ID BLOCKED_ON NEXT_ACTION` | Writes explicit per-agent state to `agent-state/{agent}.json`. |
 | `session ready AGENT TASK_ID KIND "detail"` | Publishes navigator READY artifact and moves navigator into `waiting_on_driver`. |

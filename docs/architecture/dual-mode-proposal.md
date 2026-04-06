@@ -221,13 +221,14 @@ This should remain the write API for both modes. Extend it with task-bus command
 Implemented commands (non-exhaustive; see `bin/session`):
 
 - `session task-init {task-id}`
+- `session task-start {task-id} {agent} "next action" -- <files...>` — atomic driver kickoff; claims the drive seat, writes driver state, and records a non-empty write set before edits begin
 - `session task-claim {task-id} {agent} {role} [expected-revision]` — optional numeric CAS on `meta.json` `revision` after session lock; mismatches fail with a clear error
 - `session task-revision {task-id}` — print current revision for clients
 - `session task-advisor-scope {task-id} true|false` — sets `advisor_session_default` in `meta.json`
 - `session task-release` / `task-complete` / `task-abandon` — clear roles, bump `revision`, append to `LOG.md` where applicable
 - `session close-check` / `session close` / `session close --force` — `close` runs `close-check` unless `--force`
 - `session chat …` / `chat-read` / `cursor-get` / `cursor-ack`
-- `session health` / `session health --strict` — lead-side diagnostics
+- `session health` / `session health --strict` — lead-side diagnostics; strict mode fails on missing driver state or empty driver write sets in addition to existing advice/READY checks
 - Append-only `events.jsonl` in the team directory for automation (task claims, chat, close, etc.)
 
 In `subagent` mode, `task-claim` plus the session directory lock and `revision` CAS provide the atomicity that `TaskUpdate` supplied in `team` mode. Reserved `lease_holder` / `lease_epoch` fields in `meta.json` remain available for future stricter leasing if needed.
