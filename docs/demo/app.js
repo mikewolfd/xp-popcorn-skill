@@ -24,7 +24,7 @@ const lanes = [
     label: "Past",
     agent: "verifier",
     task: "T9",
-    phase: "reviewing",
+    phase: "completed",
     summary: "Tracking terminology and preparing lightweight local verification for the final artifact.",
     channel: "ADVICE.md + review cursor",
     status: "Checks that landed work matches the repo language.",
@@ -68,7 +68,7 @@ const feed = [
     kind: "brief",
     task: "T7",
     agent: "lead",
-    summary: "Lead opens a demo slice for watching active subagent streams.",
+    summary: "Lead opens a demo slice for watching a mocked subagent replay.",
     note: "Writes stay isolated to docs/demo/*.",
     path: "tasks/T7/back-forth.md",
   },
@@ -88,7 +88,7 @@ const feed = [
     kind: "ready",
     task: "T8",
     agent: "designer",
-    summary: "READY published with a calm operations-console direction and explicit mock/live labeling.",
+    summary: "READY published with a calm operations-console direction and explicit replay labeling.",
     note: "Three lanes, one central stream, durable file-bus cues.",
     path: "navigator-ready-designer-T8.md",
   },
@@ -109,7 +109,7 @@ const feed = [
     task: "T7",
     agent: "implementer",
     summary: "Drive seat corrected to implementer and the task bus marks T7 active.",
-    note: "Only one write seat remains live.",
+    note: "Only one write seat remains active.",
     path: "tasks/T7/meta.json",
   },
   {
@@ -138,7 +138,7 @@ const feed = [
     kind: "checkpoint",
     task: "T7",
     agent: "implementer",
-    summary: "The live stream begins replaying task chat, typed advice, and session-health shifts.",
+    summary: "The replay begins stepping through task chat, typed advice, and session-health shifts.",
     note: "Replay is mocked but grounded in current repo vocabulary.",
     path: "docs/demo/app.js",
   },
@@ -188,7 +188,7 @@ const headlineStatus = document.querySelector("#headline-status");
 
 function renderSummary() {
   const visible = feed.slice(0, state.visibleCount);
-  const liveCount = visible.filter((entry) => entry.role !== "control").length;
+  const teammateCount = visible.filter((entry) => entry.role !== "control").length;
   const latest = visible[visible.length - 1];
   const metrics = [
     {
@@ -199,7 +199,7 @@ function renderSummary() {
     {
       label: "visible entries",
       value: String(visible.length).padStart(2, "0"),
-      note: `${liveCount} teammate updates in replay`,
+      note: `${teammateCount} teammate updates in replay`,
     },
     {
       label: "latest lane",
@@ -222,7 +222,7 @@ function renderSummary() {
     )
     .join("");
 
-  headlineStatus.textContent = `sweep-v85-v95 / ${state.paused ? "replay paused" : "mocked live replay"}`;
+  headlineStatus.textContent = `sweep-v85-v95 / ${state.paused ? "mocked replay paused" : "mocked replay"}`;
 }
 
 function renderLanes() {
@@ -352,9 +352,9 @@ function renderHealth() {
       detail: "Checkpoints and typed advice stay append-only.",
     },
     {
-      label: "Mock/live label",
+      label: "Replay label",
       value: "always on",
-      detail: "The replay never pretends to be wired to live hooks.",
+      detail: "The demo stays framed as a mocked replay, not live hooks.",
     },
   ];
 
@@ -377,7 +377,7 @@ function render() {
   renderStream();
   renderAdvice();
   renderHealth();
-  streamStatus.textContent = state.paused ? "Replay paused" : "Replay running";
+  streamStatus.textContent = state.paused ? "Mocked replay paused" : "Mocked replay stepping";
 }
 
 function setFilter(nextFilter) {
