@@ -12,8 +12,8 @@ set -euo pipefail
 # Requires: bash 4+, no other dependencies
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/hooks/scripts"
-BIN_DIR="$SCRIPT_DIR/bin"
+HOOKS_DIR="$SCRIPT_DIR/platforms/claude/subagent/hooks/scripts"
+BIN_DIR="$SCRIPT_DIR/shared/runtime/bin"
 FIXTURES_DIR="$SCRIPT_DIR/tests/fixtures"
 
 # --- Test harness ---
@@ -800,31 +800,31 @@ echo "--- V45: write set path normalization ---"
 
 # Relative path in write set matches absolute incoming file_path
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/claude/subagent/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 relative write set matches absolute path" 0 "$LAST_RC"
 
 # Absolute path in write set still matches absolute incoming path (no regression)
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/hooks/scripts/bar.sh"'"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/bar.sh"'"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 absolute write set matches absolute path" 0 "$LAST_RC"
 
 # File not in write set is still blocked
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/claude/subagent/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 file outside write set is blocked" 2 "$LAST_RC"
 assert_stderr_contains "V45 outside write set message" "outside the declared write set" "$LAST_STDERR"
 
 # dot-slash prefix in write set matches absolute path (V45-dot-prefix fix)
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./platforms/claude/subagent/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 dot-slash write set matches absolute path" 0 "$LAST_RC"
 
 # ============================================================
@@ -945,7 +945,7 @@ assert_exit "H2 debounce nudge 3 allows" 0 "$LAST_RC"
 
 echo "--- R4: session script subcommands ---"
 
-# Use bin/session via CLAUDE_PROJECT_DIR (same mechanism as production)
+# Use shared/runtime/bin/session via CLAUDE_PROJECT_DIR (same mechanism as production)
 setup_session
 run_session() {
   local stdout_file stderr_file
@@ -1025,7 +1025,7 @@ else
 fi
 
 # writeset records owned files
-run_session writeset craftsman 7 hooks/hooks.json tests/test-hooks.sh
+run_session writeset craftsman 7 platforms/claude/subagent/hooks/hooks.json tests/test-hooks.sh
 WRITE_COUNT=$(jq -r '.write_set | length' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo 0)
 if [ "$WRITE_COUNT" = "2" ]; then
   PASS=$((PASS + 1))
@@ -1045,7 +1045,7 @@ else
 fi
 
 # ready + later state merge preserves navigator READY metadata
-run_session writeset expert 7 docs/architecture.md
+run_session writeset expert 7 docs/architecture/architecture.md
 run_session ready expert 7 risk_check 'Watch for shutdown path and native agent normalization.'
 run_session state expert navigator waiting_on_driver 7 craftsman 'Wait for the next driver checkpoint'
 if [ "$(jq -r '.navigator_ready' "$POPCORN/$TEAM/agent-state/expert.json" 2>/dev/null || echo false)" = "true" ] && \
@@ -2222,19 +2222,19 @@ run_session task-claim 2 craftsman driver
 assert_exit "DM-30 expert then craftsman drive is allowed" 0 "$LAST_RC"
 
 # ============================================================
-# CX: Codex hook shims (codex/hooks/*.sh)
+# CX: Codex hooks
 # ============================================================
 
-echo "--- CX: Codex hook shims ---"
+echo "--- CX: Codex hooks ---"
 
-# Do not set CLAUDE_PROJECT_DIR — shims must resolve git root from stdin .cwd (see px-resolve-claude-project-dir.sh).
+# Do not set CLAUDE_PROJECT_DIR — the hooks must resolve git root from stdin .cwd (see resolve-project-dir.sh).
 run_codex_hook() {
   local script="$1"
   local stdin_json="$2"
   local stdout_file stderr_file rc=0
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
-  echo "$stdin_json" | (unset CLAUDE_PROJECT_DIR; bash "$SCRIPT_DIR/codex/hooks/$script") \
+  echo "$stdin_json" | (unset CLAUDE_PROJECT_DIR; bash "$SCRIPT_DIR/platforms/codex/subagent/hooks/$script") \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -2297,7 +2297,7 @@ printf '# Advice\n' > "$CX5_ROOT/.popcorn-xp/cx5-team/ADVICE.md"
 run_codex_hook "codex-session-start.sh" "$(jq -nc --arg c "$CX5_ROOT/deep/nested" '{cwd:$c,hook_event_name:"SessionStart",source:"startup"}')"
 assert_exit "CX-5 session-start subdir cwd exit 0" 0 "$LAST_RC"
 assert_stdout_contains "CX-5 SessionStart finds team" "cx5-team" "$LAST_STDOUT"
-assert_stdout_contains "CX-5 context uses repo-root session path" "$CX5_ROOT/bin/session" "$LAST_STDOUT"
+assert_stdout_contains "CX-5 context uses repo-root session path" "$CX5_ROOT/shared/runtime/bin/session" "$LAST_STDOUT"
 rm -rf "$CX5_ROOT"
 
 # CX-6: Stop shim blocks OBJECTION when cwd is subdirectory of git root
@@ -2323,7 +2323,7 @@ fi
 rm -rf "$CX6_ROOT"
 
 # CX-7: vendored Codex bundle entrypoints exist; lead agent does not point at Claude-only skill path
-for CX7f in codex/LEAD-WORKFLOW.md codex/COMPANION.md hooks/scripts/px-resolve-claude-project-dir.sh; do
+for CX7f in platforms/codex/subagent/LEAD-WORKFLOW.md platforms/codex/subagent/COMPANION.md shared/runtime/lib/resolve-project-dir.sh; do
   if [ -f "$SCRIPT_DIR/$CX7f" ]; then
     PASS=$((PASS + 1))
   else
@@ -2331,14 +2331,14 @@ for CX7f in codex/LEAD-WORKFLOW.md codex/COMPANION.md hooks/scripts/px-resolve-c
     ERRORS="${ERRORS}\n  FAIL: CX-7 missing $CX7f"
   fi
 done
-if grep -q 'skills/popcorn-xp/SKILL.md' "$SCRIPT_DIR/.codex/agents/popcorn-xp-lead.toml" 2>/dev/null; then
+if grep -q 'platforms/claude/subagent/skills/popcorn-xp/SKILL.md' "$SCRIPT_DIR/platforms/codex/subagent/agents/popcorn-xp-lead.toml" 2>/dev/null; then
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: CX-7 lead.toml should not reference skills/popcorn-xp/SKILL.md"
+  ERRORS="${ERRORS}\n  FAIL: CX-7 lead.toml should not reference platforms/claude/subagent/skills/popcorn-xp/SKILL.md"
 else
   PASS=$((PASS + 1))
 fi
 
-# CX-8: bin/session resolves .popcorn-xp from git root when run in a subdirectory (no CLAUDE_PROJECT_DIR)
+# CX-8: shared/runtime/bin/session resolves .popcorn-xp from git root when run in a subdirectory (no CLAUDE_PROJECT_DIR)
 CX8_ROOT=$(mktemp -d)
 CX8_OUT=$(mktemp)
 CX8_ERR=$(mktemp)
@@ -2360,7 +2360,7 @@ if [ "$CX8_RC" -eq 0 ] && grep -q subagent "$CX8_OUT" 2>/dev/null; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: CX-8 bin/session from subdir (rc=$CX8_RC out=$(cat "$CX8_OUT" 2>/dev/null))"
+  ERRORS="${ERRORS}\n  FAIL: CX-8 shared/runtime/bin/session from subdir (rc=$CX8_RC out=$(cat "$CX8_OUT" 2>/dev/null))"
 fi
 rm -rf "$CX8_ROOT"
 rm -f "$CX8_OUT" "$CX8_ERR"

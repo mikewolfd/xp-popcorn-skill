@@ -7,7 +7,7 @@
         {
             "name": "popcorn-xp",
             "description": "XP pair programming for Claude Code agents. One driver edits, one navigator steers, they rotate, advice has teeth.",
-            "source": "./"
+            "source": "./platforms/claude/subagent"
         }
     ]
 }

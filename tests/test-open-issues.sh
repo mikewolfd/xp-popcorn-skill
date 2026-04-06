@@ -5,7 +5,7 @@ set -euo pipefail
 # Runs hook scripts with crafted inputs to prove or disprove each issue.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/hooks/scripts"
+HOOKS_DIR="$SCRIPT_DIR/platforms/claude/subagent/hooks/scripts"
 
 # --- Test harness (same as test-hooks.sh) ---
 
@@ -98,7 +98,7 @@ run_hook_stdin() {
 TMPDIR_ROOT=$(mktemp -d)
 TEAM="test-team"
 POPCORN="$TMPDIR_ROOT/.popcorn-xp"
-AGENTS_DIR="$SCRIPT_DIR/agents"
+AGENTS_DIR="$SCRIPT_DIR/platforms/claude/subagent/agents"
 
 setup_session() {
   rm -rf "$POPCORN"
@@ -196,7 +196,7 @@ echo "--- AA9: Protocol references in agent bodies ---"
 
 AA9_COUNT=0
 for agent_file in "$AGENTS_DIR"/*.md; do
-  if grep -q 'references/protocol.md' "$agent_file"; then
+  if grep -q 'shared/protocol/' "$agent_file"; then
     AA9_COUNT=$((AA9_COUNT + 1))
   fi
 done
@@ -210,10 +210,10 @@ done
 
 if [ "$AA9_COUNT" -eq 0 ] && [ "$AA9_SKILLS_COUNT" -gt 0 ]; then
   PASS=$((PASS + 1))
-  echo "  AA9 proven: no agent bodies reference protocol.md, and $AA9_SKILLS_COUNT load via skills field"
+  echo "  AA9 proven: no agent bodies reference shared protocol docs, and $AA9_SKILLS_COUNT load via skills field"
 else
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: AA9 — refs=$AA9_COUNT, skills=$AA9_SKILLS_COUNT"
+  ERRORS="${ERRORS}\n  FAIL: AA9 — shared-protocol-refs=$AA9_COUNT, skills=$AA9_SKILLS_COUNT"
 fi
 
 # VERDICT: AA9 CONFIRMED — protocol loading is centralized in skills

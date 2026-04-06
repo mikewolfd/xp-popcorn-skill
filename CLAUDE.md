@@ -1,16 +1,16 @@
 # CLAUDE.md
 
-Project guidance for **Claude Code** (claude.ai/code), **OpenAI Codex** (CLI / app), and any tool that loads this file (including **`AGENT.md`**, a symlink here). Same pairing model and session files everywhere; **native transport and hooks differ by product** — see below.
+Project guidance for **Claude Code** (claude.ai/code), **OpenAI Codex** (CLI / app), and any tool that loads this file (including **`AGENT.md`**, a symlink here). Same pairing model and session files everywhere; packaging and transport differ by product.
 
 ## What This Is
 
 Popcorn XP is a plugin-shaped workflow for XP pair programming with agent teams. The working trio is **one driver, one navigator, one advisor** — **current, future, and past** respectively: the driver edits the present task; the navigator reads ahead and steers via typed advice; the advisor reviews what already landed (by default through the **scout** scope-and-constraints lens; **tester** when verification-led). Driver and navigator rotate between tasks; the advisor is the standing reviewer unless you rotate that seat by design.
 
-**Dual runtime mode** (`.popcorn-xp/{team}/.runtime-mode`): **`subagent`** is the **recommended default** (also the default when `.runtime-mode` is **omitted**) — lead keeps normal tools and orchestrates workers; file task bus via `bin/session` (`task-init|task-claim [expected-rev]|task-revision|task-advisor-scope|task-release|task-complete|task-abandon|chat|cursor-*|health|close-check|close [--force]`, etc.); on **Claude Code**, team-only hooks no-op in this mode; **`SubagentStop`** runs OBJECTION + non-blocking advice/compaction hints; append-only **`events.jsonl`**. **`team`** (**Claude Code** only today: Agent Teams, `TaskUpdate`, context-store, `TeammateIdle`) uses a **coordinator-only lead** (no file tools) and peer **`SendMessage`** — **explicit opt-in**; avoid steering new sessions there until a **Claude Code bug** causing **extreme token use** in team mode is fixed. See `docs/dual-mode-proposal.md` and `skills/popcorn-xp/SKILL.md`.
+**Dual runtime mode** (`.popcorn-xp/{team}/.runtime-mode`): **`subagent`** is the **recommended default** (also the default when `.runtime-mode` is **omitted**) — lead keeps normal tools and orchestrates workers; file task bus via `shared/runtime/bin/session` (`task-init|task-claim [expected-rev]|task-revision|task-advisor-scope|task-release|task-complete|task-abandon|chat|cursor-*|health|close-check|close [--force]`, etc.); on **Claude Code**, team-only hooks no-op in this mode; **`SubagentStop`** runs OBJECTION + non-blocking advice/compaction hints; append-only **`events.jsonl`**. **`team`** (**Claude Code** only today: Agent Teams, `TaskUpdate`, context-store, `TeammateIdle`) uses a **coordinator-only lead** (no file tools) and peer **`SendMessage`** — **explicit opt-in**; avoid steering new sessions there until a **Claude Code bug** causing **extreme token use** in team mode is fixed. Claude source lives in `platforms/claude/subagent/`; `.claude-plugin/marketplace.json` points there. See `docs/dual-mode-proposal.md` and `platforms/claude/subagent/skills/popcorn-xp/SKILL.md`.
 
-**Claude Code:** Full hook surface in `hooks/hooks.json` (table below). **`team`** mode needs Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and Coordinator Mode (`CLAUDE_CODE_COORDINATOR_MODE=1`) for the lead. **`subagent`** mode does not require the lead to be coordinator-only (subagents still use normal agent tooling).
+**Claude Code:** Full hook surface in `platforms/claude/subagent/hooks/hooks.json` (table below). **`team`** mode needs Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and Coordinator Mode (`CLAUDE_CODE_COORDINATOR_MODE=1`) for the lead. **`subagent`** mode does not require the lead to be coordinator-only (subagents still use normal agent tooling).
 
-**Codex:** Treat this repo as **`subagent`-first** — same `bin/session`, `LOG.md`, `ADVICE.md`, task bus, and closeout story; no Claude-style Agent Teams / `TaskUpdate` transport in the captured product docs. Hooks are wired through **`.codex/hooks.json`** → **`codex/hooks/*.sh`** (for example **`Stop`** instead of **`SubagentStop`**); read **`codex/COMPANION.md`**, **`codex/README.md`**, and **`docs/dual-mode-codex-companion.md`** for gaps vs the Claude hook table. Layered skills for teammates live under **`codex/skills/`**; vendored lead checklist: **`codex/LEAD-WORKFLOW.md`**. Tests cover Codex shims as **`CX-*`** in **`./tests/test-hooks.sh`**.
+**Codex:** Treat this repo as **`subagent`-first** — same `shared/runtime/bin/session`, `LOG.md`, `ADVICE.md`, task bus, and closeout story; no Claude-style Agent Teams / `TaskUpdate` transport in the captured product docs. Hooks are wired through **`platforms/codex/subagent/manifests/hooks.json`** → **`platforms/codex/subagent/hooks/*.sh`** (for example **`Stop`** instead of **`SubagentStop`**); read **`platforms/codex/subagent/COMPANION.md`**, **`platforms/codex/subagent/README.md`**, and **`docs/architecture/dual-mode-codex-companion.md`** for gaps vs the Claude hook table. Layered skills for teammates live under **`platforms/codex/subagent/skills/`**; vendored lead checklist: **`platforms/codex/subagent/LEAD-WORKFLOW.md`**. Tests cover Codex direct-tree hooks as **`CX-*`** in **`./tests/test-hooks.sh`**.
 
 ## Running Tests
 
@@ -27,22 +27,22 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 
 ### Plugin Structure
 
-**Claude Code:** `plugin.json` registers three components: `agents/` (teammate definitions), `skills/` (lead workflow + protocol), `hooks/hooks.json` (lifecycle enforcement).
+**Claude Code:** `platforms/claude/subagent/` registers three components: `agents/` (teammate definitions), `skills/` (lead workflow + protocol), `hooks/hooks.json` (lifecycle enforcement).
 
-**Codex:** Parallel layout under **`.codex/`** (config, hooks, agents) plus the **`codex/`** tree — see **`codex/README.md`**.
+**Codex:** Parallel layout under **`platforms/codex/subagent/`** plus generated **`.codex/`** install output — see **`platforms/codex/subagent/README.md`**.
 
 ### Two Skills, Different Audiences
 
-- **`skills/popcorn-xp/SKILL.md`** — The lead's playbook. Loaded when a user triggers a session ("popcorn this task"). Contains full workflow: team creation, task breakdown, teammate spawning, monitoring, shutdown lifecycle. The lead follows this.
-- **`skills/popcorn-xp-protocol/SKILL.md`** — The teammate protocol. On **Claude Code**, auto-loaded into every popcorn-xp agent via the `skills` field in agent frontmatter. Native agents from other plugins load this via `Skill('popcorn-xp-protocol')`. On **Codex**, point **`[[skills.config]]`** at the vendored copies under **`codex/skills/`** (see **`codex/README.md`**).
+- **`platforms/claude/subagent/skills/popcorn-xp/SKILL.md`** — The lead's playbook. Loaded when a user triggers a session ("popcorn this task"). Contains full workflow: team creation, task breakdown, teammate spawning, monitoring, shutdown lifecycle. The lead follows this.
+- **`platforms/claude/subagent/skills/popcorn-xp-protocol/SKILL.md`** — The teammate protocol. On **Claude Code**, auto-loaded into every popcorn-xp agent via the `skills` field in agent frontmatter. Native agents from other plugins load this via `Skill('popcorn-xp-protocol')`. On **Codex**, point **`[[skills.config]]`** at the vendored copies under **`platforms/codex/subagent/skills/`** (see **`platforms/codex/subagent/README.md`**).
 
 ### Hook System
 
-**Claude Code:** `hooks/hooks.json` registers hooks on lifecycle and tool use events. All hooks are no-ops when no `.popcorn-xp/.active-team` exists.
+**Claude Code:** `platforms/claude/subagent/hooks/hooks.json` registers hooks on lifecycle and tool use events. All hooks are no-ops when no `.popcorn-xp/.active-team` exists.
 
-**Codex:** Only a subset of events exists in the upstream product (see **`research/official/codex/hooks.md`**); this repo’s shims bridge **`SessionStart`** / **`Stop`** to the same bash contracts where possible. Do not assume every row in the table below has a Codex equivalent — use **`docs/dual-mode-codex-companion.md`** as the mapping.
+**Codex:** Only a subset of events exists in the upstream product (see **`research/official/codex/hooks.md`**); this repo’s hooks bridge **`SessionStart`** / **`Stop`** to the same bash contracts where possible. Do not assume every row in the table below has a Codex equivalent — use **`docs/architecture/dual-mode-codex-companion.md`** as the mapping.
 
-On **Claude Code**, when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`**, these hooks exit 0 immediately (team transport not used): `context-store-check.sh`, `context-store-mark-dirty.sh`, `check-task-claim.sh`, `update-task-state.sh`. **`check-retro-before-delete.sh`** and **`cleanup-context-store.sh`** also no-op in subagent mode (closeout is `session close-check` / `session close`, not `TeamDelete`). `enforce-no-idle.sh` still runs **retro / shutdown / compaction** gates; working-phase nudges skip context-store; **advisors** use task chat vs `.review-cursor-*`; **navigators** in `waiting_on_driver` must **cursor-ack** task chat (meta cursors). Agents with no `agent-state` registration (or empty role and phase) skip working nudges. **`SubagentStop`** runs `check-advice-on-subagent-stop.sh`. (**Codex:** use the **`Stop`** shim path described in **`codex/COMPANION.md`**.)
+On **Claude Code**, when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`**, these hooks exit 0 immediately (team transport not used): `context-store-check.sh`, `context-store-mark-dirty.sh`, `check-task-claim.sh`, `update-task-state.sh`. **`check-retro-before-delete.sh`** and **`cleanup-context-store.sh`** also no-op in subagent mode (closeout is `session close-check` / `session close`, not `TeamDelete`). `enforce-no-idle.sh` still runs **retro / shutdown / compaction** gates; working-phase nudges skip context-store; **advisors** use task chat vs `.review-cursor-*`; **navigators** in `waiting_on_driver` must **cursor-ack** task chat (meta cursors). Agents with no `agent-state` registration (or empty role and phase) skip working nudges. **`SubagentStop`** runs `check-advice-on-subagent-stop.sh`. (**Codex:** use the **`Stop`** hook path described in **`platforms/codex/subagent/COMPANION.md`**.)
 
 | Event | Script | Purpose |
 |-------|--------|---------|
@@ -80,7 +80,7 @@ Created at `.popcorn-xp/{team-name}/` during session setup. Gitignored.
 - `.runtime-mode` — `team` or `subagent` (default **`subagent`** if missing; write `team` to opt into Agent Teams)
 - `tasks/T{n}/meta.json` & `tasks/T{n}/back-forth.md` — Subagent task bus (subagent mode)
 - `.closed.json` — Written by `session close` (subagent closeout marker)
-- `session` — Thin wrapper that execs `bin/session` (the canonical session helper)
+- `session` — Thin wrapper that execs `shared/runtime/bin/session` (the canonical session helper)
 - `.active-team` — Contains current team name (at `.popcorn-xp/.active-team`)
 - `agent-state/*.json` — Per-agent machine-readable state (role, phase, task, write set)
 - Signal files: `.retro-requested`, `.retro-{agent}.md`, `.shutdown`, `.checkpoint-cursor`
@@ -95,9 +95,9 @@ ADVICE.md is an append-only ledger. Hooks determine unresolved items by checking
 
 ### Agent Definitions
 
-**Claude Code:** Agents in **`agents/`** use Markdown with YAML frontmatter: `name`, `description`, `model`, `color`, `skills: [popcorn-xp-protocol]`, plus lens text. The `skills` field auto-loads the protocol into each agent's context.
+**Claude Code:** Agents in **`platforms/claude/subagent/agents/`** use Markdown with YAML frontmatter: `name`, `description`, `model`, `color`, `skills: [popcorn-xp-protocol]`, plus lens text. The `skills` field auto-loads the protocol into each agent's context.
 
-**Codex:** Custom agents live under **`.codex/agents/*.toml`** (`developer_instructions`, optional `[[skills.config]]`, etc.); see **`codex/README.md`** and **`research/official/codex/subagents.md`**.
+**Codex:** Custom agents live under **`platforms/codex/subagent/agents/*.toml`** (`developer_instructions`, optional `[[skills.config]]`, etc.); generated install output may mirror them under **`.codex/agents/*.toml`**. See **`platforms/codex/subagent/README.md`** and **`research/official/codex/subagents.md`**.
 
 ### Shutdown Lifecycle (R4)
 
@@ -127,8 +127,8 @@ When you add or change hook scripts, compare event names, matchers, and payload 
 
 ## Key Conventions
 
-- Hook scripts and **`bin/session`** use **`$CLAUDE_PROJECT_DIR`** when set (**Claude Code** sets it). **Codex** often leaves it unset; hook shims and session then resolve the repo root with **`git -C <cwd> rev-parse --show-toplevel`** from hook stdin **`cwd`** (or the shell cwd), then fall back to **`cwd`** — see **`hooks/scripts/px-resolve-claude-project-dir.sh`** and **`codex/COMPANION.md`**. Keep **`.popcorn-xp/`** at the **git root** in normal layouts.
-- `bin/session` is the canonical session helper. A thin wrapper at `.popcorn-xp/{team}/session` execs it. Subagent mode adds `task-init`, `task-claim`, `task-release`, `task-complete`, `task-abandon`, `chat`, `chat-read`, `cursor-get`, `cursor-ack`, `health` (`--strict` optional), `close-check` (OBJECTIONs, locks, open task-bus claims, retro-or-handoff when `.retro-requested`, compaction handoffs), `close` (after `close-check`, requires `RETRO.md` with ≥5 lines; `close --force` skips `close-check` and `RETRO.md`; successful close removes `.popcorn-xp/.active-team` when it still names this team and truncates `.popcorn-xp/context-store.log`), and `mode`. **`session task {id}`** appends a placeholder task header; real driver/navigator names are written from **`task-claim`** / **`task-release`** (legacy extra args to `session task` are ignored). Most subcommands refuse to run if the team already has **`.closed.json`**. Optional: **`POPCORN_XP_EVENT_LOG_DEBUG`** — `events.jsonl` append failures print to stderr.
+- Hook scripts and **`shared/runtime/bin/session`** use **`$CLAUDE_PROJECT_DIR`** when set (**Claude Code** sets it). **Codex** often leaves it unset; hook scripts and session then resolve the repo root with **`shared/runtime/lib/resolve-project-dir.sh`** from hook stdin **`cwd`** (or the shell cwd), then fall back to **`cwd`**. Keep **`.popcorn-xp/`** at the **git root** in normal layouts.
+- `shared/runtime/bin/session` is the canonical session helper. A thin wrapper at `.popcorn-xp/{team}/session` execs it. Subagent mode adds `task-init`, `task-claim`, `task-release`, `task-complete`, `task-abandon`, `chat`, `chat-read`, `cursor-get`, `cursor-ack`, `health` (`--strict` optional), `close-check` (OBJECTIONs, locks, open task-bus claims, retro-or-handoff when `.retro-requested`, compaction handoffs), `close` (after `close-check`, requires `RETRO.md` with ≥5 lines; `close --force` skips `close-check` and `RETRO.md`; successful close removes `.popcorn-xp/.active-team` when it still names this team and truncates `.popcorn-xp/context-store.log`), and `mode`. **`session task {id}`** appends a placeholder task header; real driver/navigator names are written from **`task-claim`** / **`task-release`** (legacy extra args to `session task` are ignored). Most subcommands refuse to run if the team already has **`.closed.json`**. Optional: **`POPCORN_XP_EVENT_LOG_DEBUG`** — `events.jsonl` append failures print to stderr.
 - `session log` advances the checkpoint cursor from `context-store.log` line count in **team** mode only; in **subagent** mode it only appends to LOG.md.
 - Context store agent names follow `popcorn-xp:<agent-name>` convention (prefixed by hooks).
-- `references/protocol.md` contains teammate prompt templates (driver, navigator, advisor) that the lead includes when spawning agents. This is the detailed version; the protocol skill is the condensed version auto-loaded into agents.
+- `shared/protocol/templates.md` contains teammate prompt templates (driver, navigator, advisor) that the lead includes when spawning agents. This is the detailed version; `shared/protocol/core.md` is the transport-agnostic core and the protocol skill is the condensed version auto-loaded into agents.
