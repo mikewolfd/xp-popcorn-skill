@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/codex/hooks/codex-session-start.sh\"",
+            "timeout": 30,
+            "statusMessage": "Popcorn XP session context"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/codex/hooks/codex-stop-advice.sh\"",
+            "timeout": 60,
+            "statusMessage": "Popcorn XP advice gate"
+          }
+        ]
+      }
+    ]
+  }
+}
