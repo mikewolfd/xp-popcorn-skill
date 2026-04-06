@@ -35,8 +35,9 @@ When all tasks are complete, follow this sequence exactly. Do not skip steps or 
 
    Agents will approve the shutdown_request, which terminates their session. The `enforce-no-idle.sh` hook will also remind any idle agent to approve a pending shutdown_request. Proceed to TeamDelete once all teammates have shut down.
 6. **Write the retro file.** After teammates shut down, write `.popcorn-xp/{team-name}/RETRO.md` with your assessment of the session. This is YOUR perspective as the lead — what you observed about how the team worked, not just what they built. Use the format below.
-7. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
-8. After teammates have shut down (or after 3 failed shutdown attempts):
+7. **Confirm `RETRO.md` exists before the final user summary.** Do not present the technical summary until `.popcorn-xp/{team-name}/RETRO.md` exists and contains the session entry you just wrote.
+8. Present a technical summary to the user: what was done, what each role found, any remaining risk. Include a brief retro summary (2-3 bullets on what worked, what didn't, what to change next time).
+9. After teammates have shut down (or after 3 failed shutdown attempts):
 
    ```
    TeamDelete

@@ -11,7 +11,8 @@
 
 - Each logical slice is a **pair**: **drive** + **navigate** task (navigator verifies after driver completes).
 - **`session task-init {n}`** before work on task **n**.
-- **`session task {n}`** for a **LOG.md** placeholder; real driver/navigator lines sync from **`task-claim`** / **`task-release`**.
+- Use **`session task-start {n} {driver} "next action" -- <owned files...>`** to kick off the driver atomically. It records the task header if needed, claims the drive seat, writes driver state, and records the write set before edits begin.
+- **`session task {n}`** remains available for a standalone **LOG.md** placeholder; real driver/navigator lines sync from **`task-claim`** / **`task-release`**.
 - Claims: **`session task-claim`**, **`task-release`**, **`task-complete`**, **`task-abandon`** as in **`popcorn-xp-protocol-subagent`**.
 - Typed advice only in **`ADVICE.md`** (**`session advice`** / **`session resolve`**). **OBJECTION** blocks completion until resolved.
 
@@ -23,9 +24,10 @@
 
 ## 4. Health and closeout
 
-- Run **`session health`** (or **`--strict`**) before risky handoffs.
+- Run **`session health`** (or **`--strict`**) before risky handoffs. In strict mode, missing driver state or an empty driver write set is a failure.
+- For UI work, capture browser evidence at the first meaningful visual checkpoint, not only at closeout. End-of-session Playwright capture is a confirmation step, not the primary verification path.
 - **`session retro-request`** → per-agent **`.retro-*.md`** or **`handoff-*.md`** as required.
-- **`session close-check`** → append **`RETRO.md`** (≥5 real lines) → **`session close`** (or **`close --force`** only if you accept skipping gates). Successful **`close`** clears **`.popcorn-xp/.active-team`** (when it still names this team) and truncates **`context-store.log`**; run **`echo {team} > .popcorn-xp/.active-team`** again before the next slice. In each new **RETRO.md** entry, set **Lead host:** **`codex`** and **Task transport:** **`subagent`** (or **`team`** if you opted in) so future readers know which playbook and hooks applied — same fields as **`platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md`** retro template.
+- **`session close-check`** → append **`RETRO.md`** (≥5 real lines) → confirm **`RETRO.md`** exists before the final user summary → **`session close`** (or **`close --force`** only if you accept skipping gates). Successful **`close`** clears **`.popcorn-xp/.active-team`** (when it still names this team) and truncates **`context-store.log`**; run **`echo {team} > .popcorn-xp/.active-team`** again before the next slice. In each new **RETRO.md** entry, set **Lead host:** **`codex`** and **Task transport:** **`subagent`** (or **`team`** if you opted in) so future readers know which playbook and hooks applied — same fields as **`platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md`** retro template.
 - **Recovery:** After **two** failures on **session mechanics** for the **same drive seat** (claims, rotation, close-check), switch to a **bounded implementation worker** or a **fresh team** instead of retrying the same seat.
 
 ## 5. Claude plugin parity

@@ -183,6 +183,9 @@ also have other advisor teammates.
       specified). Fix errors before proceeding. Then read .popcorn-xp/{team-name}/ADVICE.md
       one final time. Engage with any open OBJECTIONs (the TaskCompleted hook blocks on these).
       Other open items won't block you, but resolve them if you can — it helps the next driver.
+      Do not treat the first runtime fix as done if the navigator or advisor has raised
+      semantics, accessibility, or copy issues on the same slice; either address them in
+      this task or reject them explicitly with reasoning before completion.
       Include explicit confirmation of each resolved OBJECTION in your completion message:
       "OBJ-{id}: {outcome} ({summary})".
    b. Mark the task completed with TaskUpdate.
