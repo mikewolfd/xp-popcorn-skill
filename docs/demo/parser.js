@@ -46,12 +46,17 @@ function buildFileMap(fileList) {
 /**
  * Parse events.jsonl — newline-delimited JSON events.
  *
- * Returns an array of event objects:
- *   { event, team, recorded_at, payload }
+ * Each line is parsed independently so a truncated or malformed line
+ * (e.g., from an interrupted append) is skipped rather than crashing
+ * the loader. Skipped lines are counted and returned alongside the events.
+ *
+ * Returns { events: Event[], skipped: number }
+ * where Event = { event, team, recorded_at, payload }
  */
 export function parseEventsJsonl(text) {
-  if (!text) return [];
-  return text
+  if (!text) return { events: [], skipped: 0 };
+  let skipped = 0;
+  const events = text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
@@ -59,9 +64,11 @@ export function parseEventsJsonl(text) {
       try {
         return [JSON.parse(line)];
       } catch {
+        skipped += 1;
         return [];
       }
     });
+  return { events, skipped };
 }
 
 /**
@@ -508,10 +515,15 @@ export async function parseSessionFolder(fileList) {
     }),
   );
 
+  const { events, skipped: eventsSkipped } = parseEventsJsonl(eventsText);
+  if (eventsSkipped > 0) {
+    errors.push(`events.jsonl: skipped ${eventsSkipped} malformed line${eventsSkipped !== 1 ? "s" : ""}`);
+  }
+
   return {
     teamName,
     runtimeMode: parseRuntimeMode(runtimeModeText),
-    events: parseEventsJsonl(eventsText),
+    events,
     tasks,
     advice: parseAdvice(adviceText),
     log: parseLog(logText),
