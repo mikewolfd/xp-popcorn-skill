@@ -104,6 +104,23 @@ Typical check-in pattern for a project that runs Popcorn XP on Codex:
 
 Popcorn XP’s Claude plugin paths (`.claude/`, `hooks/hooks.json` in the plugin) remain the source for **team mode** and for **reference hook scripts**; a Codex port **reuses or adapts shell logic** and **does not assume** the same hook event names or tool matchers.
 
+### Reference layout in this repository (implemented)
+
+The popcorn-xp repo ships a **copy-paste / merge** layout you can drop into another project (with `bin/session` and `hooks/scripts` vendored alongside):
+
+| Path | Purpose |
+|------|---------|
+| [`.codex/config.toml`](../.codex/config.toml) | Enables `codex_hooks`, sets `[agents]` defaults |
+| [`.codex/hooks.json`](../.codex/hooks.json) | `SessionStart` → [`codex/hooks/codex-session-start.sh`](../codex/hooks/codex-session-start.sh); `Stop` → [`codex/hooks/codex-stop-advice.sh`](../codex/hooks/codex-stop-advice.sh) |
+| [`codex/skills/popcorn-xp-protocol-core/`](../codex/skills/popcorn-xp-protocol-core/SKILL.md) | Layer A — shared core |
+| [`codex/skills/popcorn-xp-protocol-subagent/`](../codex/skills/popcorn-xp-protocol-subagent/SKILL.md) | Layer B — subagent transport |
+| [`.codex/agents/`](../.codex/agents/) | Example agents with `[[skills.config]]` pointing at the two skills |
+| [`codex/README.md`](../codex/README.md) | Install notes and assumptions |
+
+Hook commands use `$(git rev-parse --show-toplevel)` so the **git root** must contain both `codex/hooks/` and `hooks/scripts/`. **`codex-stop-advice.sh`** resolves `check-advice-on-complete.sh` from the hook file’s parent repo (two levels above `codex/hooks/`), so it still works when `cwd` in the hook JSON is not the repo root.
+
+Regression tests: **`CX-*`** cases in [`tests/test-hooks.sh`](../tests/test-hooks.sh).
+
 ## Non-goals on Codex
 
 - **Parity with `team` mode** without a Codex-native team transport.
