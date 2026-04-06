@@ -17,7 +17,6 @@ The current repository mixes those concerns. Some folders are organized by artif
 - `agents/` contains shared personas, not host-specific agents, but the name is generic enough to look runtime-specific.
 - The docs mix product shape, runtime transport, historical proposals, and vendored install notes in the same flat `docs/` directory.
 - The repo still describes a `plugin.json`-style mental model in places even though the checked-in Claude marketplace artifact is `.claude-plugin/marketplace.json`.
-- Tracked `.claude/projects/.../memory` files look like local workspace state, not product source.
 
 ## Refactor Goals
 
@@ -130,8 +129,6 @@ The current split between `.codex/` and `codex/` should collapse into one visibl
 ### Hidden Directories
 
 Hidden directories such as `.codex/` and `.claude-plugin/` should be treated as install artifacts, mirrors, or checked examples. They should not be the only source of truth for the product.
-
-`.claude/projects/...` should not be versioned. That is local workspace memory, not reusable project source.
 
 ## Current-to-Target Mapping
 

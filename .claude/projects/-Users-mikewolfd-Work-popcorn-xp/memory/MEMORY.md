@@ -1,5 +1,0 @@
-- [Haiku discipline](feedback_haiku_discipline.md) — Haiku agents create junk, overwrite scripts, resist shutdown; opus/sonnet are clean
-- [Pairing mandatory](feedback_pairing_mandatory.md) — Never spawn solo drivers; navigators are the quality mechanism
-- [Session scope cap](feedback_session_scope.md) — Cap at 20-25 findings; 51 overwhelmed the lead
-- [Session script fragility](project_session_script_fragility.md) — Per-team wrapper gets overwritten by haiku agents
-- [Scout should advise](feedback_scout_advisor.md) — User prefers scout as advisor role, not tester
