@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Popcorn XP Streamboard</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Popcorn XP / Subagent Replay Surface</p>
+          <h1>See the pair work while the file bus keeps score.</h1>
+          <p class="hero-summary">
+            A mission-control demo for watching active driver, navigator, and advisor
+            streams during a Popcorn XP session. The surface makes subagent mode
+            explicit: task chat, append-only logs, and typed advice move through durable
+            files rather than native peer messaging.
+          </p>
+          <div class="hero-actions">
+            <div class="filter-group" aria-label="Filter visible activity stream">
+              <button class="filter-chip is-active" data-filter="all" type="button" aria-pressed="true">All streams</button>
+              <button class="filter-chip" data-filter="driver" type="button" aria-pressed="false">Driver</button>
+              <button class="filter-chip" data-filter="navigator" type="button" aria-pressed="false">Navigator</button>
+              <button class="filter-chip" data-filter="advisor" type="button" aria-pressed="false">Advisor</button>
+            </div>
+            <div class="toggle-group">
+              <button class="control-chip" id="pause-toggle" type="button" aria-pressed="false">Pause replay</button>
+              <button class="control-chip" id="replay-feed" type="button">Replay from start</button>
+            </div>
+          </div>
+          <ul class="transport-strip" aria-label="Durable session files">
+            <li><span>LOG.md</span> checkpoints and task narrative</li>
+            <li><span>ADVICE.md</span> typed objections, smells, steers, and FYIs</li>
+            <li><span>tasks/T7</span> active driver lane</li>
+            <li><span>tasks/T8</span> navigator READY and read-ahead</li>
+          </ul>
+        </div>
+        <aside class="hero-panel" aria-labelledby="session-summary-title">
+          <div class="panel-glow"></div>
+          <p class="panel-kicker" id="session-summary-title">Session Snapshot</p>
+          <h2 id="headline-status">sweep-v85-v95 / mocked live replay</h2>
+          <div class="summary-metrics" id="summary-metrics"></div>
+          <p class="panel-note">
+            This demo is a replay of believable session activity grounded in the current
+            repository vocabulary. It is intentionally labeled as mocked rather than wired
+            to live hooks.
+          </p>
+        </aside>
+      </header>
+
+      <main class="workspace">
+        <section class="section-head">
+          <div>
+            <p class="section-kicker">Current / Future / Past</p>
+            <h2>Role lanes</h2>
+          </div>
+          <p class="section-copy">
+            Popcorn XP keeps one active write seat. The navigator reads ahead, and the
+            advisor reviews what landed.
+          </p>
+        </section>
+        <section class="lane-grid" id="role-lanes" aria-label="Role lanes"></section>
+
+        <div class="content-grid">
+          <section class="stream-stage" aria-labelledby="stream-title">
+            <div class="stage-head">
+              <div>
+                <p class="section-kicker">Durable activity</p>
+                <h2 id="stream-title">Live stream</h2>
+              </div>
+              <div class="stage-indicator">
+                <span class="indicator-dot" aria-hidden="true"></span>
+                <span id="stream-status">Replay running</span>
+              </div>
+            </div>
+            <ol class="stream-list" id="stream-list" aria-live="polite"></ol>
+          </section>
+
+          <aside class="advice-stage" aria-labelledby="advice-title">
+            <div class="stage-head">
+              <div>
+                <p class="section-kicker">Typed advice</p>
+                <h2 id="advice-title">Advice rail</h2>
+              </div>
+            </div>
+            <div class="advice-summary" id="advice-summary"></div>
+            <ul class="advice-list" id="advice-list"></ul>
+          </aside>
+        </div>
+
+        <section class="health-stage" aria-labelledby="health-title">
+          <div class="section-head section-head-tight">
+            <div>
+              <p class="section-kicker">Session discipline</p>
+              <h2 id="health-title">Session health</h2>
+            </div>
+            <p class="section-copy">
+              The replay shows what a healthy subagent run makes visible: write-seat
+              ownership, task-bus coverage, review cursors, and open advice pressure.
+            </p>
+          </div>
+          <div class="health-grid" id="health-grid"></div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>
