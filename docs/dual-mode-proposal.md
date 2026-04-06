@@ -541,8 +541,9 @@ Suggested interface:
 
 Suggested default:
 
-- default to `subagent` only when the task can tolerate asynchronous coordination, permissions are already broad enough, and no mid-flight user clarification is likely
-- switch to `team` when the user explicitly asks for live pairing, when the task truly benefits from direct low-latency coordination, or when background-subagent permission friction would dominate
+- **Operationally, default to `subagent` for new Claude Code sessions** until native **team** mode stops exhibiting runaway token use from current platform behavior (treat **team** as explicit opt-in with that risk understood).
+- Prefer `subagent` when the task can tolerate asynchronous coordination, permissions are already broad enough, and no mid-flight user clarification is likely.
+- Switch to `team` only when the user explicitly wants live pairing and accepts the current token-cost risk, or when the task truly benefits from direct low-latency coordination enough to justify it.
 
 That default is pragmatic. Reliability is the safer baseline than cleverness.
 
@@ -593,7 +594,7 @@ First, extend `bin/session` into a durable task-bus API, preserve the existing i
 
 | Area | Shipped behavior |
 |------|------------------|
-| Mode switch | `.runtime-mode` file + `session mode team` or `subagent` |
+| Mode switch | `.runtime-mode` + `session mode team` or `subagent`; **if the file is missing, mode is `subagent`** (write `team` to opt into Agent Teams) |
 | Task bus | `tasks/T{n}/meta.json`, `back-forth.md`, revision + `advisor_session_default`, per-agent chat cursors |
 | Claims | `task-claim` with session lock, single-driver rules, rotation, optional expected-revision CAS |
 | Closeout | `close-check` + `session close` → `.closed.json`; **`subagent`:** `close` also requires `RETRO.md` (≥5 lines); **`close --force`** skips `close-check` and `RETRO.md`; session dir retained |
