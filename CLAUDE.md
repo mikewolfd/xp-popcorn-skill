@@ -27,7 +27,7 @@ Single test file, no external dependencies beyond bash 4+. Tests validate all ho
 
 ### Plugin Structure
 
-**Claude Code:** `platforms/claude/subagent/` registers three components: `agents/` (teammate definitions), `skills/` (lead workflow + protocol), `hooks/hooks.json` (lifecycle enforcement).
+**Claude Code:** `platforms/claude/subagent/` registers **`agents/`** (teammate definitions), **`skills/`** (lead workflow + protocol), **`hooks/hooks.json`** (lifecycle enforcement), and **`.claude-plugin/plugin.json`** (stable plugin id **`popcorn-xp`** for install/namespacing).
 
 **Codex:** Parallel layout under **`platforms/codex/subagent/`** plus generated **`.codex/`** install output — see **`platforms/codex/subagent/README.md`**.
 

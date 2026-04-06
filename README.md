@@ -169,7 +169,7 @@ popcorn-xp/
 └── README.md
 ```
 
-Claude Code reads the checked-in source tree under `platforms/claude/subagent/` via the marketplace pointer in `.claude-plugin/marketplace.json`. Codex uses `platforms/codex/subagent/` and **`.codex/`**, produced by **`./install/codex/generate.sh`**. This tree is the full source. If you install only the lead skill tarball, add hooks and agents yourself.
+Claude Code reads the checked-in source tree under `platforms/claude/subagent/` via the marketplace pointer in `.claude-plugin/marketplace.json`. The plugin manifest at **`platforms/claude/subagent/.claude-plugin/plugin.json`** sets the stable plugin id **`popcorn-xp`** (see [research/official/claude/plugin.md](./research/official/claude/plugin.md) — manifest **`name`** sets the plugin id). Codex uses `platforms/codex/subagent/` and **`.codex/`**, produced by **`./install/codex/generate.sh`**. This tree is the full source. If you install only the lead skill tarball, add hooks and agents yourself.
 
 ---
 
