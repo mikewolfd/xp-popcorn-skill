@@ -5,7 +5,7 @@ description: Popcorn XP shared core for Codex — advice types, file boundaries,
 
 # Popcorn XP — protocol core (transport-agnostic)
 
-Load **`popcorn-xp-protocol-subagent`** next when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`** (default on Codex). Full single-file protocol for Claude Code teammates: `skills/popcorn-xp-protocol/SKILL.md` in the popcorn-xp plugin repo.
+Load **`popcorn-xp-protocol-subagent`** next when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`** (default on Codex). This vendored bundle includes **core + subagent** skills only; the Claude Code plugin’s full single-file teammate skill lives upstream (`skills/popcorn-xp-protocol/SKILL.md`) if you need **team**-transport text.
 
 ## Durable files (both modes)
 
@@ -35,4 +35,4 @@ Valid outcomes: **FIXED**, **REJECTED**, **INCORPORATED**, **NOTED** (case-insen
 
 ## When unsure
 
-Read **`skills/popcorn-xp-protocol/SKILL.md`** in this repository for the full rules, examples, and team-mode SendMessage patterns you can ignore on Codex subagent runs.
+Re-read **`codex/skills/popcorn-xp-protocol-subagent/SKILL.md`** for task-bus commands, then **`codex/COMPANION.md`**. For the complete teammate protocol (including Claude **team** mode), open the **popcorn-xp** upstream repository’s **`skills/popcorn-xp-protocol/SKILL.md`** — not part of the minimal Codex vendor set.

@@ -3,11 +3,12 @@ description = "Popcorn XP lead/orchestrator on Codex: session setup, subagent mo
 developer_instructions = """
 You are the **lead** for a Popcorn XP session on Codex (no Agent Teams API).
 
-1. Read `skills/popcorn-xp/SKILL.md` in this repo for the full lead workflow (team vs subagent table). On Codex default to **subagent**.
-2. After creating `.popcorn-xp/{team}/`, run `printf 'subagent\\n' > .popcorn-xp/{team}/.runtime-mode`.
-3. Use `./bin/session` for retro-request, task-init, and orchestration; spawn custom agents (`popcorn_xp_driver`, `popcorn_xp_navigator`, `popcorn_xp_advisor`) per user request.
-4. Before session end: `session close-check`, append RETRO.md if required, then `session close` (or `close --force` only if you accept skipping gates).
-5. Point teammates at `codex/skills/` protocol layers if their [[skills.config]] paths need fixing for their checkout path.
+1. Follow **`codex/LEAD-WORKFLOW.md`** in this repository for setup, task bus, and closeout (subagent-first). Read **`codex/COMPANION.md`** for project-root / hook behavior.
+2. After creating `.popcorn-xp/{team}/`, run `printf 'subagent\\n' > .popcorn-xp/{team}/.runtime-mode` (or omit `.runtime-mode` if your `bin/session` defaults to subagent).
+3. Use the vendored **`bin/session`** (absolute path under the git root) for retro-request, task-init, and orchestration; spawn custom agents (`popcorn_xp_driver`, `popcorn_xp_navigator`, `popcorn_xp_advisor`) per user request.
+4. Preferred spawn defaults on Codex: `model="gpt-5.4-mini"` with `reasoning_effort="xhigh"` for routine paired work; escalate to `model="gpt-5.4"` with `reasoning_effort="medium"` when the task is broader, more coupled, or repeated retries suggest a stronger model is cheaper overall.
+5. Before session end: `session close-check`, append RETRO.md if required, then `session close` (or `close --force` only if you accept skipping gates).
+6. Point teammates at **`codex/skills/`** protocol layers if their [[skills.config]] paths need fixing for their checkout path.
 """
 
 [[skills.config]]

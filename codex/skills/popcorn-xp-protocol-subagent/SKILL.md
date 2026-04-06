@@ -15,6 +15,7 @@ printf '%s\n' subagent > .popcorn-xp/{team}/.runtime-mode
 
 ```bash
 ./bin/session task-init {n}
+./bin/session task {n}
 ./bin/session task-claim {n} {your-short-name} driver|navigator|advisor [expected-revision]
 ./bin/session task-revision {n}
 ./bin/session task-release {n} {your-short-name}
@@ -43,7 +44,7 @@ printf '%s\n' subagent > .popcorn-xp/{team}/.runtime-mode
 ./bin/session close --force
 ```
 
-Append **RETRO.md** (≥5 lines) before **`close`** when your process requires it. **`events.jsonl`** records machine-facing audit events.
+Append **RETRO.md** (≥5 lines) before **`close`** when your process requires it. Include **Lead host:** (e.g. **`codex`**) and **Task transport:** **`subagent`** in the session header so accumulated retros stay attributable. **`close`** clears **`.popcorn-xp/.active-team`** (when it still names this team) and truncates **`context-store.log`**; set **`.active-team`** again for the next slice. **`events.jsonl`** records machine-facing audit events.
 
 ## Lead diagnostics
 
