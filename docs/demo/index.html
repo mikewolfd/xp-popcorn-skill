@@ -9,7 +9,7 @@
   </head>
   <body>
     <!--
-      Folder picker — two visual states, one element.
+      Folder picker — two visual states.
       Empty state:  .loader-stage is full-screen prominent (pre-load)
       Loaded state: body[data-loaded] collapses it to a slim toolbar row
     -->
@@ -56,134 +56,129 @@
     </section>
 
     <div class="page-shell" id="page-shell" hidden aria-hidden="true">
-      <header class="hero">
+
+      <!-- Session hero / overview -->
+      <header class="hero" id="sec-overview">
         <div class="hero-story">
-          <p class="eyebrow">Popcorn XP / Subagent replay surface</p>
-          <h1>Watch the pair move through the file bus.</h1>
-          <p class="hero-summary">
-            A static replay demo for driver, navigator, and advisor work in subagent mode.
-            It keeps LOG.md, ADVICE.md, task chat, and role rotation visible without
-            pretending to be native team messaging.
+          <p class="eyebrow">Popcorn XP / Session viewer</p>
+          <h1 id="hero-team-name">Session</h1>
+          <p class="hero-summary" id="hero-summary">
+            Load a <code>.popcorn-xp/{team}/</code> folder to see real session artifacts.
           </p>
           <p class="hero-status-line">
-            <span class="hero-status-label">Replay status</span>
-            <strong id="headline-status">sweep-v85-v95 / mocked replay</strong>
-          </p>
-          <div class="hero-actions">
-            <div class="filter-group" aria-label="Filter visible activity stream">
-              <button class="filter-chip is-active" data-filter="all" type="button" aria-pressed="true">All streams</button>
-              <button class="filter-chip" data-filter="driver" type="button" aria-pressed="false">Driver</button>
-              <button class="filter-chip" data-filter="navigator" type="button" aria-pressed="false">Navigator</button>
-              <button class="filter-chip" data-filter="advisor" type="button" aria-pressed="false">Advisor</button>
-            </div>
-            <div class="toggle-group">
-              <button class="control-chip" id="pause-toggle" type="button" aria-pressed="false">Pause replay</button>
-              <button class="control-chip" id="replay-feed" type="button">Replay from start</button>
-            </div>
-          </div>
-          <ul class="transport-strip" aria-label="Durable session files">
-            <li><span>subagent</span> default runtime; one lead, rotating pair, durable state</li>
-            <li><span>file bus</span> task chat and session files carry the work between turns</li>
-            <li><span>LOG.md</span> checkpoints, claims, and handoffs stay append-only</li>
-            <li><span>ADVICE.md</span> objections, smells, steers, and FYIs stay typed</li>
-          </ul>
-        </div>
-        <aside class="hero-topology" aria-labelledby="session-summary-title">
-          <p class="panel-kicker" id="session-summary-title">Session topology</p>
-          <div class="topology-stage" aria-hidden="true">
-            <div class="topology-core">
-              <span>file bus</span>
-              <strong>Lead</strong>
-              <em>shared session state</em>
-            </div>
-            <div class="topology-node topology-node-driver">
-              <span>Driver</span>
-              <strong>Current</strong>
-              <em>write seat</em>
-            </div>
-            <div class="topology-node topology-node-navigator">
-              <span>Navigator</span>
-              <strong>Future</strong>
-              <em>read-ahead</em>
-            </div>
-            <div class="topology-node topology-node-advisor">
-              <span>Advisor</span>
-              <strong>Past</strong>
-              <em>review lane</em>
-            </div>
-            <div class="topology-line topology-line-driver"></div>
-            <div class="topology-line topology-line-navigator"></div>
-            <div class="topology-line topology-line-advisor"></div>
-          </div>
-          <p class="panel-note">
-            One write seat, one read-ahead seat, one review seat. The file bus keeps state
-            durable across turns.
+            <span class="hero-status-label">Runtime mode</span>
+            <strong id="hero-runtime-mode">—</strong>
           </p>
           <div class="summary-metrics" id="summary-metrics"></div>
+        </div>
+        <aside class="hero-agents" aria-labelledby="agents-title">
+          <p class="panel-kicker" id="agents-title">Agent roster</p>
+          <div id="agent-state-cards" class="agent-cards"></div>
         </aside>
       </header>
 
-      <main class="workspace">
-        <section class="section-head">
-          <div>
-            <p class="section-kicker">Current / Future / Past</p>
-            <h2>Three-role topology</h2>
-          </div>
-          <p class="section-copy">
-            Popcorn XP keeps one active write seat, one read-ahead seat, and one review
-            seat. The lanes below are annotated as a workflow, not a card wall.
-          </p>
-        </section>
-        <section class="lane-grid" id="role-lanes" aria-label="Role lanes"></section>
-        <div class="topology-annotations" aria-label="Role annotations">
-          <p><span>Driver</span>Current write seat. Owns the edit surface and checkpoints meaningful change.</p>
-          <p><span>Navigator</span>Future read-ahead. Keeps the pair oriented and surfaces risks early.</p>
-          <p><span>Advisor</span>Past review lane. Tracks landed work, open advice, and closure quality.</p>
-        </div>
+      <!-- Layout: sidebar nav + scrollable content -->
+      <div class="viewer-layout">
+        <nav class="sidebar-nav" aria-label="Section navigation">
+          <ul class="nav-list">
+            <li><a class="nav-link" href="#sec-overview" data-section="sec-overview">Overview</a></li>
+            <li><a class="nav-link" href="#sec-health" data-section="sec-health">Health</a></li>
+            <li><a class="nav-link" href="#sec-events" data-section="sec-events">Events</a></li>
+            <li><a class="nav-link" href="#sec-tasks" data-section="sec-tasks">Tasks</a></li>
+            <li><a class="nav-link" href="#sec-advice" data-section="sec-advice">Advice</a></li>
+            <li><a class="nav-link" href="#sec-log" data-section="sec-log">Log</a></li>
+            <li><a class="nav-link" href="#sec-retro" data-section="sec-retro">Retro</a></li>
+          </ul>
+        </nav>
 
-        <div class="content-grid">
-          <section class="stream-stage" aria-labelledby="stream-title">
-            <div class="stage-head">
+        <main class="viewer-content">
+
+          <!-- Health dashboard -->
+          <section class="content-section health-stage" id="sec-health" aria-labelledby="health-title">
+            <div class="section-head section-head-tight">
               <div>
-                <p class="section-kicker">Durable replay</p>
-                <h2 id="stream-title">Mocked replay ledger</h2>
-              </div>
-              <div class="stage-indicator" role="status" aria-live="polite" aria-atomic="true">
-                <span class="indicator-dot" aria-hidden="true"></span>
-                <span id="stream-status">Mocked replay stepping</span>
+                <p class="section-kicker">Session discipline</p>
+                <h2 id="health-title">Session health</h2>
               </div>
             </div>
-            <ol class="stream-list" id="stream-list"></ol>
+            <div class="health-grid" id="health-grid">
+              <div class="empty-state">Load a session folder to see health metrics.</div>
+            </div>
           </section>
 
-          <aside class="advice-stage" aria-labelledby="advice-title">
+          <!-- Events timeline -->
+          <section class="content-section stream-stage" id="sec-events" aria-labelledby="events-title">
+            <div class="stage-head">
+              <div>
+                <p class="section-kicker">Chronological timeline</p>
+                <h2 id="events-title">Events</h2>
+              </div>
+              <div class="events-filters" id="events-filters" role="group" aria-label="Filter events"></div>
+            </div>
+            <ol class="stream-list" id="events-list">
+              <li class="empty-state">No events loaded.</li>
+            </ol>
+            <button class="show-more-btn" id="events-show-more" hidden type="button">Show more</button>
+          </section>
+
+          <!-- Task board -->
+          <section class="content-section" id="sec-tasks" aria-labelledby="tasks-title">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="section-kicker">Task bus</p>
+                <h2 id="tasks-title">Tasks</h2>
+              </div>
+            </div>
+            <div class="task-board" id="task-board">
+              <div class="empty-state">No tasks loaded.</div>
+            </div>
+          </section>
+
+          <!-- Advice ledger -->
+          <section class="content-section advice-section" id="sec-advice" aria-labelledby="advice-section-title">
             <div class="stage-head">
               <div>
                 <p class="section-kicker">Typed advice</p>
-                <h2 id="advice-title">Advice ledger</h2>
+                <h2 id="advice-section-title">Advice ledger</h2>
               </div>
             </div>
             <div class="advice-summary" id="advice-summary"></div>
-            <ul class="advice-list" id="advice-list"></ul>
-          </aside>
-        </div>
+            <ul class="advice-list" id="advice-list">
+              <li class="empty-state">No advice loaded.</li>
+            </ul>
+          </section>
 
-        <section class="health-stage" aria-labelledby="health-title">
-          <div class="section-head section-head-tight">
-            <div>
-              <p class="section-kicker">Session discipline</p>
-              <h2 id="health-title">Session health</h2>
+          <!-- Log viewer -->
+          <section class="content-section" id="sec-log" aria-labelledby="log-title">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="section-kicker">Checkpoint log</p>
+                <h2 id="log-title">LOG.md</h2>
+              </div>
             </div>
-            <p class="section-copy">
-              The replay shows what a healthy subagent run makes visible: write-seat
-              ownership, task-bus coverage, review cursors, and open advice pressure.
-            </p>
-          </div>
-          <div class="health-grid" id="health-grid"></div>
-        </section>
-      </main>
+            <div class="log-viewer" id="log-viewer">
+              <div class="empty-state">No log loaded.</div>
+            </div>
+          </section>
+
+          <!-- Retro viewer -->
+          <section class="content-section" id="sec-retro" aria-labelledby="retro-title">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="section-kicker">Retrospective</p>
+                <h2 id="retro-title">RETRO.md</h2>
+              </div>
+            </div>
+            <div class="retro-viewer" id="retro-viewer">
+              <div class="empty-state">No retro loaded.</div>
+            </div>
+          </section>
+
+        </main>
+      </div>
     </div>
+
     <script type="module" src="./loader.js"></script>
-    <script defer src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>
