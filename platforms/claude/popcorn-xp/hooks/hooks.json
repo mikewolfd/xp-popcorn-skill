@@ -1,0 +1,52 @@
+{
+  "description": "Popcorn XP (subagent / file-bus) — SubagentStop advice gate, TeammateIdle discipline, compaction; no Agent Teams TaskUpdate/TeamDelete/context-store hooks",
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/advice/check-advice-on-subagent-stop.sh",
+            "timeout": 10,
+            "statusMessage": "Checking advice before subagent stop..."
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lifecycle/enforce-no-idle.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lifecycle/mark-compact-pending.sh",
+            "timeout": 5,
+            "statusMessage": "Recording context compaction..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lifecycle/record-compact-summary.sh",
+            "timeout": 5,
+            "statusMessage": "Persisting compact summary..."
+          }
+        ]
+      }
+    ]
+  }
+}

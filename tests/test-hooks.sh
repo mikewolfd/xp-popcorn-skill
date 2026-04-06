@@ -12,9 +12,21 @@ set -euo pipefail
 # Requires: bash 4+, no other dependencies
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/platforms/claude/subagent/hooks/scripts"
+HOOKS_DIR="$SCRIPT_DIR/platforms/claude/shared/hooks/scripts"
 BIN_DIR="$SCRIPT_DIR/shared/runtime/bin"
 FIXTURES_DIR="$SCRIPT_DIR/tests/fixtures"
+
+# Hook scripts live in advice/, team/, or lifecycle/ under HOOKS_DIR
+hook_resolve() {
+  local script="$1" d
+  for d in advice team lifecycle; do
+    if [[ -f "$HOOKS_DIR/$d/$script" ]]; then
+      echo "$HOOKS_DIR/$d/$script"
+      return 0
+    fi
+  done
+  echo "$HOOKS_DIR/$script"
+}
 
 # --- Test harness ---
 
@@ -86,11 +98,12 @@ assert_stdout_not_contains() {
 run_hook() {
   local script="$1"
   shift
-  local stdout_file stderr_file
+  local stdout_file stderr_file hp
+  hp=$(hook_resolve "$script")
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
   local rc=0
-  env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$HOOKS_DIR/$script" "$@" \
+  env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$hp" "$@" \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -102,11 +115,12 @@ run_hook() {
 run_hook_stdin() {
   local script="$1" stdin_data="$2"
   shift 2
-  local stdout_file stderr_file
+  local stdout_file stderr_file hp
+  hp=$(hook_resolve "$script")
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
   local rc=0
-  echo "$stdin_data" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$HOOKS_DIR/$script" "$@" \
+  echo "$stdin_data" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$hp" "$@" \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -117,11 +131,12 @@ run_hook_stdin() {
 run_hook_stdin_file() {
   local script="$1" fixture="$2"
   shift 2
-  local stdout_file stderr_file
+  local stdout_file stderr_file hp
+  hp=$(hook_resolve "$script")
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
   local rc=0
-  cat "$fixture" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$HOOKS_DIR/$script" "$@" \
+  cat "$fixture" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$hp" "$@" \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -632,9 +647,10 @@ echo "--- Output channel consistency ---"
 
 # No script should ever output systemMessage
 for script in check-advice-on-complete.sh enforce-no-idle.sh check-retro-before-delete.sh; do
-  if grep -q 'systemMessage' "$HOOKS_DIR/$script"; then
+  _hpr=$(hook_resolve "$script")
+  if grep -q 'systemMessage' "$_hpr"; then
     # Allow in comments only
-    if grep 'systemMessage' "$HOOKS_DIR/$script" | grep -vq '^#'; then
+    if grep 'systemMessage' "$_hpr" | grep -vq '^#'; then
       FAIL=$((FAIL + 1))
       ERRORS="${ERRORS}\n  FAIL: $script contains systemMessage in non-comment line"
     else
@@ -800,31 +816,31 @@ echo "--- V45: write set path normalization ---"
 
 # Relative path in write set matches absolute incoming file_path
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/claude/subagent/hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/claude/shared/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/shared/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 relative write set matches absolute path" 0 "$LAST_RC"
 
 # Absolute path in write set still matches absolute incoming path (no regression)
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/bar.sh"'"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/platforms/claude/shared/hooks/scripts/bar.sh"'"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/shared/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 absolute write set matches absolute path" 0 "$LAST_RC"
 
 # File not in write set is still blocked
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/claude/subagent/hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/claude/shared/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/shared/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 file outside write set is blocked" 2 "$LAST_RC"
 assert_stderr_contains "V45 outside write set message" "outside the declared write set" "$LAST_STDERR"
 
 # dot-slash prefix in write set matches absolute path (V45-dot-prefix fix)
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./platforms/claude/subagent/hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./platforms/claude/shared/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/subagent/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/claude/shared/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 dot-slash write set matches absolute path" 0 "$LAST_RC"
 
 # ============================================================
@@ -1025,7 +1041,7 @@ else
 fi
 
 # writeset records owned files
-run_session writeset craftsman 7 platforms/claude/subagent/hooks/hooks.json tests/test-hooks.sh
+run_session writeset craftsman 7 platforms/claude/popcorn-xp-team/hooks/hooks.json tests/test-hooks.sh
 WRITE_COUNT=$(jq -r '.write_set | length' "$POPCORN/$TEAM/agent-state/craftsman.json" 2>/dev/null || echo 0)
 if [ "$WRITE_COUNT" = "2" ]; then
   PASS=$((PASS + 1))
@@ -2323,7 +2339,7 @@ fi
 rm -rf "$CX6_ROOT"
 
 # CX-7: vendored Codex bundle entrypoints exist; lead agent does not point at Claude-only skill path
-for CX7f in platforms/codex/subagent/LEAD-WORKFLOW.md platforms/codex/subagent/COMPANION.md shared/runtime/lib/resolve-project-dir.sh; do
+for CX7f in platforms/codex/subagent/skills/popcorn-xp/SKILL.md shared/runtime/lib/resolve-project-dir.sh; do
   if [ -f "$SCRIPT_DIR/$CX7f" ]; then
     PASS=$((PASS + 1))
   else
@@ -2331,9 +2347,9 @@ for CX7f in platforms/codex/subagent/LEAD-WORKFLOW.md platforms/codex/subagent/C
     ERRORS="${ERRORS}\n  FAIL: CX-7 missing $CX7f"
   fi
 done
-if grep -q 'platforms/claude/subagent/skills/popcorn-xp/SKILL.md' "$SCRIPT_DIR/platforms/codex/subagent/agents/popcorn-xp-lead.toml" 2>/dev/null; then
+if grep -q 'platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md' "$SCRIPT_DIR/platforms/codex/subagent/agents/popcorn-xp-lead.toml" 2>/dev/null; then
   FAIL=$((FAIL + 1))
-  ERRORS="${ERRORS}\n  FAIL: CX-7 lead.toml should not reference platforms/claude/subagent/skills/popcorn-xp/SKILL.md"
+  ERRORS="${ERRORS}\n  FAIL: CX-7 lead.toml should not reference platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md"
 else
   PASS=$((PASS + 1))
 fi

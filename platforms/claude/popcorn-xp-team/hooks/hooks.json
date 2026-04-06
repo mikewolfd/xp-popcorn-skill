@@ -1,0 +1,142 @@
+{
+  "description": "Popcorn XP (Agent Teams) — TaskUpdate/TeamDelete/context-store hooks, TaskCompleted advice gate, TeammateIdle, compaction; install popcorn-xp for file-bus subagent mode only",
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/advice/check-advice-on-complete.sh",
+            "timeout": 10,
+            "statusMessage": "Checking advice before task completion..."
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/advice/check-advice-on-subagent-stop.sh",
+            "timeout": 10,
+            "statusMessage": "Checking advice before subagent stop..."
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lifecycle/enforce-no-idle.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lifecycle/mark-compact-pending.sh",
+            "timeout": 5,
+            "statusMessage": "Recording context compaction..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lifecycle/record-compact-summary.sh",
+            "timeout": 5,
+            "statusMessage": "Persisting compact summary..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "TeamDelete",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/check-retro-before-delete.sh",
+            "timeout": 10,
+            "statusMessage": "Checking for retrospective..."
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/context-store-check.sh",
+            "timeout": 5,
+            "statusMessage": "Checking context store..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/context-store-mark-dirty.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/context-store-mark-dirty.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/check-task-claim.sh",
+            "timeout": 5,
+            "statusMessage": "Checking task claim..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "TeamDelete",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/cleanup-context-store.sh",
+            "timeout": 5,
+            "statusMessage": "Cleaning up context store..."
+          }
+        ]
+      },
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/team/update-task-state.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

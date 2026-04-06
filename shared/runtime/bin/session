@@ -519,7 +519,7 @@ case "$cmd" in
       echo "session task-complete: task $TS is abandoned" >&2
       exit 2
     fi
-    if ! env CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}" bash "$REPO_ROOT/platforms/claude/subagent/hooks/scripts/check-advice-on-complete.sh" < /dev/null; then
+    if ! env CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}" bash "$REPO_ROOT/platforms/claude/shared/hooks/scripts/advice/check-advice-on-complete.sh" < /dev/null; then
       exit 2
     fi
     px_session_acquire_lock || exit 2

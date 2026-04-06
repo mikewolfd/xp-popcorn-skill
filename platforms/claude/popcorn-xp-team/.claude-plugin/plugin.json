@@ -1,0 +1,4 @@
+{
+  "name": "popcorn-xp-team",
+  "description": "Popcorn XP for Claude Code Agent Teams: coordinator lead, TaskUpdate/SendMessage, context-store hooks, and team lifecycle. Do not enable alongside the popcorn-xp plugin (duplicate hooks)."
+}

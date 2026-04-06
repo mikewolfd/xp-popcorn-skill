@@ -1,0 +1,1 @@
+**Set up the full dependency chain upfront.** Use `TaskUpdate({ addBlockedBy: [...] })` on drive tasks so they auto-unblock in order. Navigate tasks do not need formal blocking dependencies — they are assigned alongside their paired drive task and the navigator starts immediately.

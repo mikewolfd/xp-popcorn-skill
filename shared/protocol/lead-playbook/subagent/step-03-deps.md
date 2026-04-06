@@ -1,0 +1,1 @@
+**Set up the full dependency chain upfront.** Encode drive-task order in your plan and **LOG.md** / session notes; use **`session task-init`** and claims so only one driver owns the active write task at a time. Navigate tasks do not need separate bus rows — they are assigned alongside their paired drive task and the navigator starts immediately.

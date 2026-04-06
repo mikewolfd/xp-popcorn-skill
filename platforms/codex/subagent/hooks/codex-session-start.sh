@@ -26,7 +26,7 @@ TEAM=$(cat "$POPCORN/.active-team" 2>/dev/null || true)
 [ ! -d "$POPCORN/$TEAM" ] && exit 0
 
 SESSION_BIN="${CLAUDE_PROJECT_DIR}/shared/runtime/bin/session"
-CTX="Popcorn XP: active team \"${TEAM}\" — session root ${CLAUDE_PROJECT_DIR}/.popcorn-xp/${TEAM}. Use \"${SESSION_BIN}\" (or .popcorn-xp/${TEAM}/session) for LOG, ADVICE, state, and task bus. Subagent: set .runtime-mode to subagent. Vendored notes: platforms/codex/subagent/COMPANION.md."
+CTX="Popcorn XP: active team \"${TEAM}\" — session root ${CLAUDE_PROJECT_DIR}/.popcorn-xp/${TEAM}. Use \"${SESSION_BIN}\" (or .popcorn-xp/${TEAM}/session) for LOG, ADVICE, state, and task bus. Subagent: set .runtime-mode to subagent. Lead playbook: popcorn-xp skill (platforms/codex/subagent/skills/popcorn-xp/SKILL.md)."
 
 jq -nc \
   --arg ctx "$CTX" \

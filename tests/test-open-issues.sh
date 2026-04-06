@@ -5,7 +5,18 @@ set -euo pipefail
 # Runs hook scripts with crafted inputs to prove or disprove each issue.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/platforms/claude/subagent/hooks/scripts"
+HOOKS_DIR="$SCRIPT_DIR/platforms/claude/shared/hooks/scripts"
+
+hook_resolve() {
+  local script="$1" d
+  for d in advice team lifecycle; do
+    if [[ -f "$HOOKS_DIR/$d/$script" ]]; then
+      echo "$HOOKS_DIR/$d/$script"
+      return 0
+    fi
+  done
+  echo "$HOOKS_DIR/$script"
+}
 
 # --- Test harness (same as test-hooks.sh) ---
 
@@ -66,11 +77,12 @@ assert_stderr_not_contains() {
 run_hook() {
   local script="$1"
   shift
-  local stdout_file stderr_file
+  local stdout_file stderr_file hp
+  hp=$(hook_resolve "$script")
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
   local rc=0
-  env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$HOOKS_DIR/$script" "$@" \
+  env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$hp" "$@" \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -81,11 +93,12 @@ run_hook() {
 run_hook_stdin() {
   local script="$1" stdin_data="$2"
   shift 2
-  local stdout_file stderr_file
+  local stdout_file stderr_file hp
+  hp=$(hook_resolve "$script")
   stdout_file=$(mktemp)
   stderr_file=$(mktemp)
   local rc=0
-  echo "$stdin_data" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$HOOKS_DIR/$script" "$@" \
+  echo "$stdin_data" | env CLAUDE_PROJECT_DIR="$TMPDIR_ROOT" bash "$hp" "$@" \
     >"$stdout_file" 2>"$stderr_file" || rc=$?
   LAST_STDOUT=$(cat "$stdout_file")
   LAST_STDERR=$(cat "$stderr_file")
@@ -98,7 +111,7 @@ run_hook_stdin() {
 TMPDIR_ROOT=$(mktemp -d)
 TEAM="test-team"
 POPCORN="$TMPDIR_ROOT/.popcorn-xp"
-AGENTS_DIR="$SCRIPT_DIR/platforms/claude/subagent/agents"
+AGENTS_DIR="$SCRIPT_DIR/platforms/claude/shared/agents"
 
 setup_session() {
   rm -rf "$POPCORN"
@@ -119,7 +132,7 @@ trap teardown EXIT
 
 echo "--- AA10: lockf usage in context store scripts ---"
 
-if grep -q 'lockf' "$HOOKS_DIR/context-store-mark-dirty.sh" || grep -q 'lockf' "$HOOKS_DIR/context-store-check.sh" || grep -q 'lockf' "$HOOKS_DIR/cleanup-context-store.sh"; then
+if grep -q 'lockf' "$(hook_resolve context-store-mark-dirty.sh)" || grep -q 'lockf' "$(hook_resolve context-store-check.sh)" || grep -q 'lockf' "$(hook_resolve cleanup-context-store.sh)"; then
   FAIL=$((FAIL + 1))
   ERRORS="${ERRORS}\n  FAIL: AA10 — lockf still present in current context-store scripts"
 else

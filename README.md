@@ -1,8 +1,8 @@
 # Popcorn XP
 
-Popcorn XP supports **extreme programming-style pair work** in multi-agent coding. The canonical source tree is `shared/`, `platforms/claude/subagent/`, and `platforms/codex/subagent/`; generated bundles such as `.claude-plugin/` and `.codex/` are outputs, not source.
+Popcorn XP supports **extreme programming-style pair work** in multi-agent coding. The canonical source tree is `shared/`, `platforms/claude/` (**`popcorn-xp`**, **`popcorn-xp-team`**, **`shared/`** hook scripts + agents), and `platforms/codex/subagent/`; generated bundles such as `.claude-plugin/` and `.codex/` are outputs, not source.
 
-The repo ships a [Claude Code](https://claude.ai/code) source tree (`platforms/claude/subagent/`) and an **OpenAI Codex** source tree (`platforms/codex/subagent/`). Hooks, skills, and notes match what each product exposes; see [platforms/codex/subagent/README.md](./platforms/codex/subagent/README.md) and [CLAUDE.md](./CLAUDE.md).
+The repo ships [Claude Code](https://claude.ai/code) plugins **`popcorn-xp`** (default, file-bus) and **`popcorn-xp-team`** (Agent Teams) under `platforms/claude/`, plus an **OpenAI Codex** source tree (`platforms/codex/subagent/`). Enable **only one** Claude plugin at a time. Hooks, skills, and notes match what each product exposes; see [platforms/codex/subagent/README.md](./platforms/codex/subagent/README.md) and [CLAUDE.md](./CLAUDE.md).
 
 > [!WARNING]
 > **Native `team` mode** (Claude Agent Teams and peer messaging) burns **very large** token budgets because of a **Claude Code bug**. Prefer **`subagent`** for daily work: leave `.runtime-mode` unset or set it to `subagent`, and coordinate with files and `shared/runtime/bin/session`. Choose `team` only if you want live peer messaging and accept the cost.
@@ -68,7 +68,7 @@ Many multi-agent setups route every decision through one hub. Popcorn XP keeps *
 
 ## Hooks
 
-`platforms/claude/subagent/hooks/hooks.json` registers lifecycle and tool hooks. With no active session (no `.popcorn-xp/.active-team`), they no-op.
+`platforms/claude/popcorn-xp/hooks/hooks.json` and `platforms/claude/popcorn-xp-team/hooks/hooks.json` register lifecycle and tool hooks (split by transport). With no active session (no `.popcorn-xp/.active-team`), they no-op.
 
 In **subagent** mode, scripts that exist only for Agent Teams transport—including context-store pairing with `TaskUpdate`—no-op. Idle, retro, shutdown, compaction, and subagent-stop checks still run where they apply.
 
@@ -93,7 +93,7 @@ Split work into **pairs**: a drive task and a matching navigate task so the boar
 
 ## Agent personas
 
-Teammates live under [`platforms/claude/subagent/agents/`](./platforms/claude/subagent/agents/) as Markdown with YAML frontmatter. Labels such as **scout**, **craftsman**, and **tester** name a *lens*, not a fixed seat. After rotation, any persona can drive or navigate.
+Teammates live under [`platforms/claude/shared/agents/`](./platforms/claude/shared/agents/) as Markdown with YAML frontmatter (symlinked into each Claude plugin). Labels such as **scout**, **craftsman**, and **tester** name a *lens*, not a fixed seat. After rotation, any persona can drive or navigate.
 
 ---
 
@@ -115,7 +115,7 @@ Restart after saving. Subagent-default sessions need **not** run the lead coordi
 Install the lead skill from the canonical Claude source tree:
 
 ```bash
-npx skills add /path/to/popcorn-xp/platforms/claude/subagent --skill popcorn-xp
+npx skills add /path/to/popcorn-xp/platforms/claude/popcorn-xp --skill popcorn-xp
 npx skills add https://github.com/mikewolfd/xp-popcorn-skill --skill popcorn-xp
 ```
 
@@ -154,7 +154,9 @@ popcorn-xp/
 ├── shared/runtime/bin/session    # Session CLI
 ├── shared/protocol/core.md        # Transport-agnostic protocol
 ├── shared/protocol/templates.md   # Lead-facing prompts and spawn templates
-├── platforms/claude/subagent/     # Claude source tree
+├── platforms/claude/popcorn-xp/   # Claude plugin (default / file-bus)
+├── platforms/claude/popcorn-xp-team/ # Claude plugin (Agent Teams)
+├── platforms/claude/shared/       # Shared hook scripts + agents + protocol skill
 ├── platforms/codex/subagent/      # Codex source tree
 ├── install/codex/generate.sh      # Writes .codex/ from platforms/codex/subagent/
 ├── docs/architecture/             # Active design + dual-mode docs
@@ -169,14 +171,14 @@ popcorn-xp/
 └── README.md
 ```
 
-Claude Code reads the checked-in source tree under `platforms/claude/subagent/` via the marketplace pointer in `.claude-plugin/marketplace.json`. The plugin manifest at **`platforms/claude/subagent/.claude-plugin/plugin.json`** sets the stable plugin id **`popcorn-xp`** (see [research/official/claude/plugin.md](./research/official/claude/plugin.md) — manifest **`name`** sets the plugin id). Codex uses `platforms/codex/subagent/` and **`.codex/`**, produced by **`./install/codex/generate.sh`**. This tree is the full source. If you install only the lead skill tarball, add hooks and agents yourself.
+Claude Code reads plugin roots from `.claude-plugin/marketplace.json` (`popcorn-xp` and `popcorn-xp-team`). Each has **`.claude-plugin/plugin.json`** (manifest **`name`** is the plugin id; see [research/official/claude/plugin.md](./research/official/claude/plugin.md)). Codex uses `platforms/codex/subagent/` and **`.codex/`**, produced by **`./install/codex/generate.sh`**. This tree is the full source. If you install only the lead skill tarball, add hooks and agents yourself.
 
 ---
 
 ## Limitations
 
 - Agent Teams and coordinator behavior are **experimental** and may change.
-- **Two surfaces** — Claude Code (`platforms/claude/subagent/` + marketplace pointer) and Codex (`platforms/codex/subagent/` + generated `.codex/`). Behavior tracks each platform’s APIs; [CLAUDE.md](./CLAUDE.md) notes the gaps.
+- **Two surfaces** — Claude Code (`platforms/claude/popcorn-xp/`, `popcorn-xp-team/`, `shared/` + marketplace) and Codex (`platforms/codex/subagent/` + generated `.codex/`). Behavior tracks each platform’s APIs; [CLAUDE.md](./CLAUDE.md) notes the gaps.
 - Several agents mean several contexts; **team** mode costs most until the upstream bug is fixed.
 - Teammates do not share one model window. Put important facts in files or explicit messages.
 - Team message history is capped; **LOG.md** and **ADVICE.md** persist.
@@ -208,8 +210,9 @@ Draws on Claude Code **Agent Teams** and **Coordinator Mode**, with a **subagent
 
 | Topic | Where |
 |-------|--------|
-| Lead workflow (spawn, tasks, shutdown) | [platforms/claude/subagent/skills/popcorn-xp/SKILL.md](./platforms/claude/subagent/skills/popcorn-xp/SKILL.md) |
-| Teammate rules, advice format, task bus | [platforms/claude/subagent/skills/popcorn-xp-protocol/SKILL.md](./platforms/claude/subagent/skills/popcorn-xp-protocol/SKILL.md) |
+| Lead workflow (file-bus / subagent) | [platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md](./platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md) |
+| Lead workflow (Agent Teams) | [platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md](./platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md) |
+| Teammate rules, advice format, task bus | [platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md](./platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md) |
 | Long-form prompts and shared core notes | [shared/protocol/templates.md](./shared/protocol/templates.md), [shared/protocol/core.md](./shared/protocol/core.md) |
 | System design, hook tables, folder map | [docs/architecture/architecture.md](./docs/architecture/architecture.md) |
 | Dual-mode proposal, Codex companion, repo layout | [docs/architecture/dual-mode-proposal.md](./docs/architecture/dual-mode-proposal.md), [docs/architecture/dual-mode-codex-companion.md](./docs/architecture/dual-mode-codex-companion.md), [docs/architecture/repo-structure-refactor.md](./docs/architecture/repo-structure-refactor.md) |

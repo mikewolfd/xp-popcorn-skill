@@ -6,8 +6,13 @@
     "plugins": [
         {
             "name": "popcorn-xp",
-            "description": "XP pair programming for Claude Code agents. One driver edits, one navigator steers, they rotate, advice has teeth.",
-            "source": "./platforms/claude/subagent"
+            "description": "XP pair programming (default): file task bus, subagent hooks, durable session. Recommended.",
+            "source": "./platforms/claude/popcorn-xp"
+        },
+        {
+            "name": "popcorn-xp-team",
+            "description": "Same lenses and session files, but Agent Teams transport: TaskUpdate, context-store, TeamDelete hooks. Explicit opt-in; enable only one of popcorn-xp or popcorn-xp-team.",
+            "source": "./platforms/claude/popcorn-xp-team"
         }
     ]
 }

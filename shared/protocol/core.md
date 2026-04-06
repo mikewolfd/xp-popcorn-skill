@@ -1,7 +1,9 @@
 # Popcorn XP Shared Core
 
-This file defines the transport-agnostic Popcorn XP protocol. It is the shared
-source for both Claude Code and Codex packaging.
+This file is a **short** transport-agnostic summary. The **full teammate playbook**
+that ships in skills lives under **`shared/protocol/teammate/*.md`**. The **Codex lead**
+skill is built from **`shared/protocol/codex-lead/*.md`**. Run **`./scripts/build-skills.sh`**
+to regenerate vendored **`SKILL.md`** files (Claude + Codex).
 
 ## Seats
 

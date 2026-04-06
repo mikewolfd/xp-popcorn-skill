@@ -2,7 +2,7 @@
 
 Lead-facing prompt reference for Popcorn XP. Shared core rules live in
 `shared/protocol/core.md`; the full Claude plugin teammate protocol lives in
-`platforms/claude/subagent/skills/popcorn-xp-protocol/SKILL.md`. This file
+`platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md`. This file
 exists to provide spawn templates and a compact summary the lead can reuse.
 
 ## Runtime mode

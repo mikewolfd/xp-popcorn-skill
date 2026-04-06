@@ -731,7 +731,7 @@ else
   add_result "gen_codex" "warning" "absent or incomplete"
 fi
 
-# --- Test 10: shared/runtime session (Codex COMPANION dependency) ---
+# --- Test 10: shared/runtime session (Codex / vendored session helper) ---
 log_info "Test 10: shared/runtime/bin/session..."
 
 SESS="$REPO_ROOT/shared/runtime/bin/session"

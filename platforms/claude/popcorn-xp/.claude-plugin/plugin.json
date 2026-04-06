@@ -1,0 +1,4 @@
+{
+  "name": "popcorn-xp",
+  "description": "Popcorn XP (subagent / file-bus default): lead skill, teammates, protocol, SubagentStop + idle hooks. For native Agent Teams + TaskUpdate hooks, install popcorn-xp-team instead (enable only one plugin)."
+}

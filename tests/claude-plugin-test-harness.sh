@@ -19,12 +19,12 @@ set +e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PLUGIN_ROOT="$REPO_ROOT/platforms/claude/subagent"
 MARKETPLACE_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
-PLUGIN_JSON="$PLUGIN_ROOT/.claude-plugin/plugin.json"
-PLUGIN_META_DIR="$PLUGIN_ROOT/.claude-plugin"
-HOOKS_JSON="$PLUGIN_ROOT/hooks/hooks.json"
-RESULTS_FILE="$SCRIPT_DIR/test-results.json"
+PLUGIN_ROOTS=(
+  "$REPO_ROOT/platforms/claude/popcorn-xp"
+  "$REPO_ROOT/platforms/claude/popcorn-xp-team"
+)
+RESULTS_FILE="$SCRIPT_DIR/claude-plugin-test-results.json"
 DOC_REF="research/official/claude/plugin.md (+ userConfig/channels) + hooks-ref.md + agents-anthro.md + skills-anthro.md (+ bang-backtick preprocessing)"
 
 RED='\033[0;31m'
@@ -149,7 +149,37 @@ echo -e "${BLUE}  ($DOC_REF)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 log_info "REPO_ROOT=$REPO_ROOT"
-log_info "PLUGIN_ROOT=$PLUGIN_ROOT"
+log_info "PLUGIN_ROOTS=${PLUGIN_ROOTS[*]}"
+echo ""
+
+# Regenerate Claude SKILL.md files from shared sources; fail if repo was out of sync.
+if [[ -x "$REPO_ROOT/scripts/build-skills.sh" ]]; then
+  log_info "Regenerating Claude skills (scripts/build-skills.sh)..."
+  if ! "$REPO_ROOT/scripts/build-skills.sh" >/dev/null; then
+    log_failure "scripts/build-skills.sh failed"
+    add_result "build_skills" "failed" "build-skills.sh exit nonzero"
+  else
+    # All outputs of scripts/build-skills.sh (3 Claude + 3 Codex); keep in sync when adding targets.
+    SKILL_SYNC=(
+      "platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md"
+      "platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md"
+      "platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md"
+      "platforms/codex/subagent/skills/popcorn-xp-protocol-core/SKILL.md"
+      "platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/SKILL.md"
+      "platforms/codex/subagent/skills/popcorn-xp/SKILL.md"
+    )
+    if git -C "$REPO_ROOT" diff --quiet -- "${SKILL_SYNC[@]}" 2>/dev/null; then
+      log_success "Generated SKILL.md files match index (sources in sync)"
+      add_result "build_skills" "passed" "no drift after build-skills.sh"
+    else
+      log_failure "SKILL.md drift: run scripts/build-skills.sh and commit all six generated skills"
+      add_result "build_skills" "failed" "git diff after build-skills.sh"
+    fi
+  fi
+else
+  log_warning "scripts/build-skills.sh missing or not executable"
+  add_result "build_skills" "skipped" "no build script"
+fi
 echo ""
 
 # --- Test 1: Repo marketplace file ---
@@ -163,7 +193,6 @@ if [[ -f "$MARKETPLACE_JSON" ]]; then
       log_success "Marketplace JSON is valid"
       add_result "marketplace_json" "passed" "Valid JSON"
       MP_NAME=$(jq -r '.name // empty' "$MARKETPLACE_JSON")
-      SRC=$(jq -r '.plugins[0].source // empty' "$MARKETPLACE_JSON")
       if [[ -n "$MP_NAME" ]]; then
         log_success "Marketplace name: $MP_NAME"
         add_result "marketplace_name" "passed" "name=$MP_NAME"
@@ -171,22 +200,27 @@ if [[ -f "$MARKETPLACE_JSON" ]]; then
         log_failure "Marketplace .name missing"
         add_result "marketplace_name" "failed" "Missing .name"
       fi
-      if [[ -n "$SRC" ]]; then
+      MP_SRC_FAIL=0
+      while IFS= read -r SRC; do
+        [[ -z "$SRC" ]] && continue
         case "$SRC" in
           ./*) RESOLVED="$REPO_ROOT/${SRC#./}" ;;
           /*) RESOLVED="$SRC" ;;
           *) RESOLVED="$REPO_ROOT/$SRC" ;;
         esac
         if [[ -d "$RESOLVED" ]]; then
-          log_success "plugins[0].source resolves: $SRC -> $RESOLVED"
-          add_result "marketplace_source" "passed" "source exists"
+          log_success "Marketplace plugin source resolves: $SRC -> $RESOLVED"
+          add_result "marketplace_source" "passed" "$SRC"
         else
-          log_failure "plugins[0].source path missing: $SRC (resolved: $RESOLVED)"
-          add_result "marketplace_source" "failed" "Directory not found"
+          log_failure "Marketplace plugin source missing: $SRC (resolved: $RESOLVED)"
+          add_result "marketplace_source" "failed" "$SRC"
+          MP_SRC_FAIL=1
         fi
-      else
-        log_failure "plugins[0].source missing"
-        add_result "marketplace_source" "failed" "Empty source"
+      done < <(jq -r '.plugins[]?.source // empty' "$MARKETPLACE_JSON")
+      NPLUG=$(jq '.plugins | length' "$MARKETPLACE_JSON" 2>/dev/null || echo 0)
+      if [[ "${NPLUG:-0}" -eq 0 ]]; then
+        log_failure "Marketplace .plugins empty or missing"
+        add_result "marketplace_plugins_count" "failed" "0"
       fi
     else
       log_failure "Invalid marketplace JSON"
@@ -200,6 +234,13 @@ else
   log_failure "Missing $MARKETPLACE_JSON"
   add_result "marketplace_exists" "failed" "File not found"
 fi
+
+for PLUGIN_ROOT in "${PLUGIN_ROOTS[@]}"; do
+  PLUGIN_JSON="$PLUGIN_ROOT/.claude-plugin/plugin.json"
+  PLUGIN_META_DIR="$PLUGIN_ROOT/.claude-plugin"
+  HOOKS_JSON="$PLUGIN_ROOT/hooks/hooks.json"
+  echo ""
+  log_info "========== $(basename "$PLUGIN_ROOT") =========="
 
 # --- Test 2: plugin.json (manifest: name required; version optional) ---
 log_info "Test 2: .claude-plugin/plugin.json under plugin root (manifest schema)..."
@@ -395,7 +436,7 @@ log_info "Test 4: agents/*.md (default location + frontmatter)..."
 AGENTS_DIR="$PLUGIN_ROOT/agents"
 AGENT_FM_FAIL=0
 if [[ -d "$AGENTS_DIR" ]]; then
-  AGENT_COUNT=$(find "$AGENTS_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+  AGENT_COUNT=$(find -L "$AGENTS_DIR" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${AGENT_COUNT:-0}" -gt 0 ]]; then
     while IFS= read -r -d '' agent_md; do
       ablock=$(agent_frontmatter_block "$agent_md")
@@ -409,7 +450,7 @@ if [[ -d "$AGENTS_DIR" ]]; then
         log_failure "Agent frontmatter needs name: and description: (agents-anthro.md): $agent_md"
         AGENT_FM_FAIL=$((AGENT_FM_FAIL + 1))
       fi
-    done < <(find "$AGENTS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
+    done < <(find -L "$AGENTS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
     if [[ "$AGENT_FM_FAIL" -eq 0 ]]; then
       log_success "Agent definitions: $AGENT_COUNT; name+description; no disallowed plugin fields"
       add_result "agents" "passed" "count=$AGENT_COUNT"
@@ -452,7 +493,7 @@ if [[ -d "$SKILLS_DIR" ]]; then
       log_warning "SKILL.md uses !\`...\` shell preprocessing (runs before model sees content; skills-anthro.md): $skill_md"
       SKILL_BANG_COUNT=$((SKILL_BANG_COUNT + 1))
     fi
-  done < <(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' -print0 2>/dev/null)
+  done < <(find -L "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -type f -name 'SKILL.md' -print0 2>/dev/null)
   if [[ "$SKILL_COUNT" -gt 0 && "$SKILL_FM_FAIL" -eq 0 ]]; then
     log_success "Skills with SKILL.md: $SKILL_COUNT; frontmatter valid (description recommended)"
     add_result "skills" "passed" "count=$SKILL_COUNT"
@@ -576,7 +617,7 @@ if [[ -n "$HOOK_SRC_JSON" ]]; then
     add_result "hooks_commands" "skipped" "no jq"
     add_result "hooks_executable" "skipped" "no jq"
   fi
-  HOOK_SCRIPT_COUNT=$(find "$PLUGIN_ROOT/hooks/scripts" -type f -name '*.sh' 2>/dev/null | wc -l | tr -d ' ')
+  HOOK_SCRIPT_COUNT=$(find -L "$PLUGIN_ROOT/hooks/scripts" -type f -name '*.sh' 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${HOOK_SCRIPT_COUNT:-0}" -gt 0 ]]; then
     log_success "hooks/scripts/*.sh count: $HOOK_SCRIPT_COUNT"
     add_result "hook_scripts" "passed" "count=$HOOK_SCRIPT_COUNT"
@@ -587,7 +628,7 @@ if [[ -n "$HOOK_SRC_JSON" ]]; then
         log_warning "Hook script shebang should be #!/bin/bash or #!/usr/bin/env bash (hooks-anthro.md): $hs"
         SHB_WARN=$((SHB_WARN + 1))
       fi
-    done < <(find "$PLUGIN_ROOT/hooks/scripts" -type f -name '*.sh' -print0 2>/dev/null)
+    done < <(find -L "$PLUGIN_ROOT/hooks/scripts" -type f -name '*.sh' -print0 2>/dev/null)
     if [[ "$SHB_WARN" -gt 0 ]]; then
       add_result "hooks_shebang" "warning" "$SHB_WARN scripts"
     else
@@ -636,20 +677,31 @@ log_info "Test 7: claude plugin validate (official CLI)..."
 if command -v claude &>/dev/null; then
   VAL_OUT=$(claude plugin validate "$PLUGIN_ROOT" 2>&1)
   VAL_EC=$?
+  PBASE=$(basename "$PLUGIN_ROOT")
   if [[ $VAL_EC -eq 0 ]]; then
     log_success "claude plugin validate \"$PLUGIN_ROOT\" exited 0"
-    add_result "claude_validate_plugin" "passed" "OK"
+    add_result "claude_validate_plugin" "passed" "OK $PBASE"
     if echo "$VAL_OUT" | grep -qi warning; then
-      log_warning "Validate reported warnings (version/author etc. per upstream — see output above)"
+      log_warning "Validate reported warnings ($PBASE)"
       echo "$VAL_OUT" | head -15
-      add_result "claude_validate_plugin_warnings" "warning" "see log"
+      add_result "claude_validate_plugin_warnings" "warning" "see log $PBASE"
     fi
   else
-    log_failure "claude plugin validate plugin root failed (ec=$VAL_EC)"
+    log_failure "claude plugin validate plugin root failed ($PBASE ec=$VAL_EC)"
     echo "$VAL_OUT" | head -20
-    add_result "claude_validate_plugin" "failed" "exit $VAL_EC"
+    add_result "claude_validate_plugin" "failed" "exit $VAL_EC $PBASE"
   fi
+fi
 
+done # PLUGIN_ROOTS — Tests 2–7 per Claude plugin tree
+
+if ! command -v claude &>/dev/null; then
+  log_warning "claude CLI not in PATH; skipped per-plugin validate (Test 7)"
+  add_result "claude_validate_plugin" "skipped" "no CLI"
+fi
+
+if command -v claude &>/dev/null; then
+  log_info "Test 7b: claude plugin validate marketplace (repo root)..."
   VALM_OUT=$(claude plugin validate "$REPO_ROOT" 2>&1)
   VALM_EC=$?
   if [[ $VALM_EC -eq 0 ]]; then
@@ -666,8 +718,6 @@ if command -v claude &>/dev/null; then
     add_result "claude_validate_marketplace" "failed" "exit $VALM_EC"
   fi
 else
-  log_warning "claude CLI not in PATH; skipping claude plugin validate"
-  add_result "claude_validate_plugin" "skipped" "no CLI"
   add_result "claude_validate_marketplace" "skipped" "no CLI"
 fi
 
@@ -698,36 +748,39 @@ else
 fi
 
 if [[ "$CLAUDE_AVAILABLE" == true ]]; then
-  log_info "Test 10: Plugin load smoke (--plugin-dir=$PLUGIN_ROOT)..."
+  for PLUGIN_ROOT in "${PLUGIN_ROOTS[@]}"; do
+    PBASE=$(basename "$PLUGIN_ROOT")
+    log_info "Test 10: Plugin load smoke (--plugin-dir=$PLUGIN_ROOT)..."
 
-  LOAD_OUTPUT=$(run_limited_60 claude \
-    --print "Reply with exactly PLUGIN_LOAD_OK and nothing else." \
-    --max-turns 1 \
-    --plugin-dir "$PLUGIN_ROOT" </dev/null 2>&1) || true
+    LOAD_OUTPUT=$(run_limited_60 claude \
+      --print "Reply with exactly PLUGIN_LOAD_OK and nothing else." \
+      --max-turns 1 \
+      --plugin-dir "$PLUGIN_ROOT" </dev/null 2>&1) || true
 
-  if echo "$LOAD_OUTPUT" | grep -q "PLUGIN_LOAD_OK"; then
-    log_success "Claude responded with PLUGIN_LOAD_OK"
-    add_result "claude_plugin_load" "passed" "Smoke OK"
-  else
-    log_warning "Load smoke inconclusive"
-    echo "$LOAD_OUTPUT" | head -8
-    add_result "claude_plugin_load" "warning" "No PLUGIN_LOAD_OK"
-  fi
+    if echo "$LOAD_OUTPUT" | grep -q "PLUGIN_LOAD_OK"; then
+      log_success "Claude responded with PLUGIN_LOAD_OK ($PBASE)"
+      add_result "claude_plugin_load" "passed" "Smoke OK $PBASE"
+    else
+      log_warning "Load smoke inconclusive ($PBASE)"
+      echo "$LOAD_OUTPUT" | head -8
+      add_result "claude_plugin_load" "warning" "No PLUGIN_LOAD_OK $PBASE"
+    fi
 
-  log_info "Test 11: Popcorn-xp context hint..."
+    log_info "Test 11: Popcorn-xp context hint ($PBASE)..."
 
-  SK_OUT=$(run_limited_60 claude \
-    --print "Name one skill or capability related to pair programming, popcorn-xp, or XP sessions if you see it. One short phrase only." \
-    --max-turns 1 \
-    --plugin-dir "$PLUGIN_ROOT" </dev/null 2>&1) || true
+    SK_OUT=$(run_limited_60 claude \
+      --print "Name one skill or capability related to pair programming, popcorn-xp, or XP sessions if you see it. One short phrase only." \
+      --max-turns 1 \
+      --plugin-dir "$PLUGIN_ROOT" </dev/null 2>&1) || true
 
-  if echo "$SK_OUT" | grep -qiE 'popcorn|pair|xp|advice|navigator|driver|scout|craftsman'; then
-    log_success "Output mentions popcorn-xp–related terms"
-    add_result "claude_plugin_context" "passed" "Keyword match"
-  else
-    log_warning "Could not confirm plugin context from model reply"
-    add_result "claude_plugin_context" "warning" "No keyword match"
-  fi
+    if echo "$SK_OUT" | grep -qiE 'popcorn|pair|xp|advice|navigator|driver|scout|craftsman'; then
+      log_success "Output mentions popcorn-xp–related terms ($PBASE)"
+      add_result "claude_plugin_context" "passed" "Keyword match $PBASE"
+    else
+      log_warning "Could not confirm plugin context from model reply ($PBASE)"
+      add_result "claude_plugin_context" "warning" "No keyword match $PBASE"
+    fi
+  done
 else
   add_result "claude_plugin_load" "skipped" "No CLI"
   add_result "claude_plugin_context" "skipped" "No CLI"

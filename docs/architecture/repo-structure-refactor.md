@@ -14,7 +14,7 @@ The current repository mixes artifact type and runtime target. The same concept 
 ## Problems in the Current Layout
 
 - The shared runtime now lives in `shared/runtime/`, with the session helper at `shared/runtime/bin/session` and shell libraries under `shared/runtime/lib/`.
-- Claude source lives in `platforms/claude/subagent/`; Codex source lives in `platforms/codex/subagent/`.
+- Claude plugins live in `platforms/claude/popcorn-xp/`, `popcorn-xp-team/`, and `shared/`; Codex source lives in `platforms/codex/subagent/`.
 - The mode-specific rules are split between the shared protocol core, the lead template docs, and the Claude/Codex source trees.
 - The docs mix product shape, runtime transport, historical proposals, and install notes in one flat `docs/` directory.
 - The checked-in Claude marketplace pointer is `.claude-plugin/marketplace.json`; there is no root `plugin.json` in this checkout.
@@ -78,7 +78,7 @@ This is the product core. Anything that defines Popcorn XP independent of host r
 
 If a file would still exist after removing all Claude- and Codex-specific packaging, it belongs in `shared/`.
 
-### `platforms/claude/subagent/`
+### `platforms/claude/` (popcorn-xp, popcorn-xp-team, shared)
 
 This contains the Claude source tree for the durable file-bus path:
 
@@ -114,11 +114,12 @@ Hidden directories such as `.codex/` and `.claude-plugin/` are generated install
 | `bin/session` | `shared/runtime/bin/session` | Canonical shared runtime API |
 | `hooks/scripts/session-common.sh` | `shared/runtime/lib/session-common.sh` | Shared shell library |
 | `hooks/scripts/px-resolve-claude-project-dir.sh` | `shared/runtime/lib/resolve-project-dir.sh` | Shared path resolution |
-| `agents/*.md` | `platforms/claude/subagent/agents/*.md` | Claude teammate definitions |
+| `agents/*.md` | `platforms/claude/shared/agents/*.md` | Claude teammate definitions |
 | `references/protocol.md` | `shared/protocol/templates.md` | Long-form reference material |
-| `skills/popcorn-xp-protocol/SKILL.md` | `shared/protocol/core.md`, `shared/protocol/templates.md`, `platforms/claude/subagent/skills/popcorn-xp-protocol/SKILL.md` | Separate shared rules from Claude packaging |
-| `skills/popcorn-xp/SKILL.md` | `platforms/claude/subagent/skills/popcorn-xp/SKILL.md` | Lead workflow and spawn templates |
-| `hooks/hooks.json` | `platforms/claude/subagent/hooks/hooks.json` | Claude lifecycle enforcement |
+| `skills/popcorn-xp-protocol/SKILL.md` | `shared/protocol/core.md`, `shared/protocol/templates.md`, `platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md` | Separate shared rules from Claude packaging |
+| `skills/popcorn-xp/SKILL.md` | `platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md` | Lead workflow (file-bus) |
+| `skills/popcorn-xp-team/SKILL.md` | `platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md` | Lead workflow (Agent Teams) |
+| `hooks/hooks.json` | `platforms/claude/popcorn-xp/hooks/hooks.json`, `popcorn-xp-team/hooks/hooks.json` | Claude lifecycle enforcement (split by transport) |
 | `.codex/*` and `codex/*` | `platforms/codex/subagent/*` | One visible Codex source tree |
 | `docs/*.md` | grouped under `docs/architecture/`, `docs/guides/`, `docs/archive/` | Separate active docs from history |
 
@@ -148,7 +149,7 @@ The docs separate by purpose:
 
 ### Phase 1: Create the new canonical tree
 
-- Create `shared/runtime/`, `shared/protocol/`, `platforms/claude/subagent/`, and `platforms/codex/subagent/`
+- Create `shared/runtime/`, `shared/protocol/`, `platforms/claude/{popcorn-xp,popcorn-xp-team,shared}/`, and `platforms/codex/subagent/`
 - Move the shared shell/runtime files and protocol docs into their final locations
 
 ### Phase 2: Update all references
