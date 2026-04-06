@@ -1,0 +1,24 @@
+{
+  "name": "popcorn-xp",
+  "version": "1.0.0",
+  "description": "Popcorn XP supports **extreme programming-style pair work** in multi-agent coding. The canonical source tree is `shared/`, `platforms/claude/` (**`popcorn-xp`**, **`popcorn-xp-team`**, **`shared/`** hook scripts + agents), and `platforms/codex/subagent/`; generated bundles such as `.claude-plugin/` and `.codex/` are outputs, not source.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikewolfd/xp-popcorn-skill.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mikewolfd/xp-popcorn-skill/issues"
+  },
+  "homepage": "https://github.com/mikewolfd/xp-popcorn-skill#readme"
+}
