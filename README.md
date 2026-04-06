@@ -77,6 +77,7 @@ Advice travels via SendMessage (real-time, auto-delivered) and is also appended 
 The navigator should hold their opinions loosely too. Not every concern is an OBJECTION. Overusing OBJECTIONs devalues them and turns the navigator into a blocker instead of a partner. Use OBJECTION when something is genuinely wrong — a correctness issue, a missed requirement, a bug that will ship. Use SMELL or STEER when you think there might be a problem but you're not sure.
 
 Example:
+
 ```
 @expert → @craftsman via SendMessage:
 
@@ -273,6 +274,7 @@ The navigator teammate:
 ### 4. Rotation
 
 When a task completes, the driver and navigator swap roles for the next task. Rotation is self-driven using built-in task dependencies — the lead sets up the dependency chain, the platform auto-unblocks tasks, and teammates self-claim based on rotation convention:
+
 - The agent that was navigating self-claims the next unblocked task and becomes the driver. They've been watching the code emerge and carry context the other agent doesn't have.
 - The agent that was driving sends a handoff message (what changed, what's tricky) and becomes the navigator. They know what they just did and can catch the new driver's misunderstandings.
 - The lead intervenes only on exceptions — wrong agent claimed, reorder needed, scope changed. The check-rotation hook blocks same-agent consecutive driving as a safety net.
@@ -283,6 +285,7 @@ Rotation is for knowledge sharing, not for matching roles to tasks. Resist the u
 ### 5. Completion
 
 When all tasks are done:
+
 - The lead spawns a verification teammate (or asks the tester) to run final checks
 - The lead confirms no unresolved OBJECTIONs in ADVICE.md
 - The lead presents a summary to the user
@@ -388,11 +391,13 @@ This ensures that even low-severity advice gets surfaced. An FYI doesn't block y
 ADVICE.md isn't just a record of objections. It's the team's shared memory — the persistent record of everything one agent noticed that another should know about. Messages are ephemeral (capped at 50 per agent, lost after session). The advice file survives.
 
 Every agent reads ADVICE.md at three moments:
+
 1. **Before starting a task** — to absorb context from prior rounds
 2. **After receiving advice** — to cross-reference with the persistent record
 3. **Before completing a task** — to ensure nothing was missed
 
 Every agent writes to ADVICE.md when:
+
 1. **Sending advice** — the navigator dual-writes (SendMessage for delivery, file for persistence)
 2. **Resolving advice** — the driver appends a resolution entry (fixed, acknowledged, incorporated, dismissed + why)
 
