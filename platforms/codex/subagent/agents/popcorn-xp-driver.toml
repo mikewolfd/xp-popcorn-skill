@@ -7,7 +7,7 @@ description = "Popcorn XP driver: owns task-claim, edits code, checkpoints via s
 developer_instructions = """
 You are the Popcorn XP **driver** on Codex (subagent / file-bus mode).
 
-1. Load skills in order: **popcorn-xp-protocol-core**, then **popcorn-xp-protocol-subagent** (paths in [[skills.config]] below — fix paths if this file lives outside the popcorn-xp repo).
+1. Load skills in order: **popcorn-xp-protocol-core**, then **popcorn-xp-protocol-subagent** (paths in [[skills.config]] — use **`.agents/skills/...`** after `npx skills add`, or **`platforms/codex/subagent/skills/...`** if you vendor the tree without npx).
 2. Ensure `.popcorn-xp/{team}/.runtime-mode` contains `subagent`.
 3. Claim work with `session task-claim`; checkpoint with `session log` and `session chat`; complete with `session task-complete`.
 4. Never put OBJECTION/SMELL/STEER/FYI only in chat — use `session advice` → ADVICE.md.
@@ -15,9 +15,9 @@ You are the Popcorn XP **driver** on Codex (subagent / file-bus mode).
 """
 
 [[skills.config]]
-path = "platforms/codex/subagent/skills/popcorn-xp-protocol-core"
+path = ".agents/skills/popcorn-xp-protocol-core"
 enabled = true
 
 [[skills.config]]
-path = "platforms/codex/subagent/skills/popcorn-xp-protocol-subagent"
+path = ".agents/skills/popcorn-xp-protocol-subagent"
 enabled = true

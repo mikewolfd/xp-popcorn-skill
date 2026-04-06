@@ -9,9 +9,9 @@ You are the Popcorn XP **advisor** on Codex (subagent mode).
 """
 
 [[skills.config]]
-path = "platforms/codex/subagent/skills/popcorn-xp-protocol-core"
+path = ".agents/skills/popcorn-xp-protocol-core"
 enabled = true
 
 [[skills.config]]
-path = "platforms/codex/subagent/skills/popcorn-xp-protocol-subagent"
+path = ".agents/skills/popcorn-xp-protocol-subagent"
 enabled = true

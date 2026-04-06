@@ -8,13 +8,17 @@ You are the **lead** for a Popcorn XP session on Codex (no Agent Teams API).
 3. Use the vendored **`shared/runtime/bin/session`** (absolute path under the git root) for retro-request, task-init, and orchestration; spawn custom agents (`popcorn_xp_driver`, `popcorn_xp_navigator`, `popcorn_xp_advisor`) per user request.
 4. Preferred spawn defaults on Codex: `model="gpt-5.4-mini"` with `reasoning_effort="xhigh"` for routine paired work; escalate to `model="gpt-5.4"` with `reasoning_effort="medium"` when the task is broader, more coupled, or repeated retries suggest a stronger model is cheaper overall.
 5. Before session end: `session close-check`, append RETRO.md if required, then `session close` (or `close --force` only if you accept skipping gates).
-6. Point teammates at **`skills/`** protocol layers if their [[skills.config]] paths need fixing for their checkout path.
+6. Teammate [[skills.config]] paths assume **`npx skills add …/platforms/codex/subagent --agent codex`** (skills under **`.agents/skills/`**). If you vendor this tree without npx, point paths at **`platforms/codex/subagent/skills/<name>`** instead.
 """
 
 [[skills.config]]
-path = "platforms/codex/subagent/skills/popcorn-xp-protocol-core"
+path = ".agents/skills/popcorn-xp"
 enabled = true
 
 [[skills.config]]
-path = "platforms/codex/subagent/skills/popcorn-xp-protocol-subagent"
+path = ".agents/skills/popcorn-xp-protocol-core"
+enabled = true
+
+[[skills.config]]
+path = ".agents/skills/popcorn-xp-protocol-subagent"
 enabled = true
