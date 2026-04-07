@@ -6,12 +6,15 @@
  *
  * Sections:
  *   - Session overview / hero (team name, runtime mode, agent roster, counts)
+ *   - Session lifecycle (signal files, derived state badge)
  *   - Health dashboard (computed metrics)
  *   - Events timeline (chronological, filterable, show-more)
- *   - Task board (cards with expandable chat threads)
+ *   - Context store (cross-agent file awareness, filterable, show-more)
+ *   - Task board (cards with write set, next action, expandable chat threads)
  *   - Advice ledger (open/resolved badges, type counts)
  *   - Log viewer (LOG.md sections by task)
  *   - Retro viewer (RETRO.md sections)
+ *   - Agent documents (per-agent retro, handoff, snapshot, compact signals)
  *
  * Architecture: sidebar nav with IntersectionObserver scroll-spy.
  * No framework, no aria-live on bulk-replaced containers.
@@ -34,9 +37,21 @@ const adviceList       = document.getElementById("advice-list");
 const logViewer        = document.getElementById("log-viewer");
 const retroViewer      = document.getElementById("retro-viewer");
 
+// New section refs
+const lifecycleStateBadge      = document.getElementById("lifecycle-state-badge");
+const lifecycleActiveDriver    = document.getElementById("lifecycle-active-driver-value");
+const lifecycleRetroIndicator  = document.getElementById("lifecycle-retro-indicator");
+const lifecycleShutdownIndicator = document.getElementById("lifecycle-shutdown-indicator");
+const lifecycleCheckpointCursor = document.getElementById("lifecycle-checkpoint-cursor-value");
+const lifecycleClosedValue     = document.getElementById("lifecycle-closed-value");
+const contextStoreFilters      = document.getElementById("context-store-filters");
+const contextStoreTable        = document.getElementById("context-store-table");
+const agentDocsGrid            = document.getElementById("agent-docs-grid");
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const EVENTS_INITIAL_CAP = 20;
+const EVENTS_INITIAL_CAP  = 20;
+const CONTEXT_INITIAL_CAP = 20;
 const ADVICE_TYPES = ["OBJECTION", "SMELL", "STEER", "FYI"];
 
 const ROLE_COLORS = {
@@ -110,6 +125,64 @@ function renderOverview(session) {
   `).join("");
 }
 
+// ─── Session lifecycle ────────────────────────────────────────────────────────
+
+/**
+ * Derive the single-value lifecycle state from signal fields.
+ * Priority: closed > shutdown > retro-pending > active > open
+ */
+function deriveLifecycleState(session) {
+  if (session.closed) return "closed";
+  if (session.shutdown) return "shutdown";
+  if (session.retroRequested) return "retro-pending";
+  const hasActiveTask = Object.values(session.tasks).some(
+    t => t.meta?.status === "in_progress"
+  );
+  return hasActiveTask ? "active" : "open";
+}
+
+function renderLifecycle(session) {
+  // State badge
+  const state = deriveLifecycleState(session);
+  lifecycleStateBadge.textContent = state;
+  lifecycleStateBadge.dataset.state = state;
+
+  // Active driver
+  if (session.activeDriver?.agent) {
+    lifecycleActiveDriver.textContent =
+      `${session.activeDriver.agent} on ${session.activeDriver.task_id || "—"}`;
+  } else {
+    lifecycleActiveDriver.textContent = "—";
+  }
+
+  // Retro indicator
+  const retroOn = Boolean(session.retroRequested);
+  lifecycleRetroIndicator.textContent = retroOn ? "on" : "off";
+  lifecycleRetroIndicator.dataset.active = String(retroOn);
+  lifecycleRetroIndicator.setAttribute(
+    "aria-label",
+    retroOn ? "Retro has been requested" : "Retro not requested"
+  );
+
+  // Shutdown indicator
+  const shutdownOn = Boolean(session.shutdown);
+  lifecycleShutdownIndicator.textContent = shutdownOn ? "on" : "off";
+  lifecycleShutdownIndicator.dataset.active = String(shutdownOn);
+  lifecycleShutdownIndicator.setAttribute(
+    "aria-label",
+    shutdownOn ? "Shutdown signal present" : "No shutdown signal"
+  );
+
+  // Checkpoint cursor (team mode only; absent in subagent)
+  lifecycleCheckpointCursor.textContent =
+    session.checkpointCursor != null ? String(session.checkpointCursor) : "—";
+
+  // Closed timestamp
+  lifecycleClosedValue.textContent = session.closed?.closed_at
+    ? fmtTimestamp(session.closed.closed_at)
+    : "—";
+}
+
 // ─── Agent state cards ───────────────────────────────────────────────────────
 
 function renderAgentCards(session) {
@@ -141,7 +214,175 @@ function renderAgentCards(session) {
   }).join("");
 }
 
+// ─── Context store ────────────────────────────────────────────────────────────
+
+const contextState = {
+  agentFilter: "all",
+  typeFilter:  "all",
+  cap: CONTEXT_INITIAL_CAP,
+};
+
+function getFilteredContextEntries(entries) {
+  return entries.filter(e => {
+    const agentMatch = contextState.agentFilter === "all"
+      || e.agent === contextState.agentFilter;
+    const typeMatch  = contextState.typeFilter === "all"
+      || e.event === contextState.typeFilter;
+    return agentMatch && typeMatch;
+  });
+}
+
+function renderContextStoreTable(entries) {
+  const filtered = getFilteredContextEntries(entries);
+  const visible  = filtered.slice(0, contextState.cap);
+
+  if (!visible.length) {
+    contextStoreTable.innerHTML = `<div class="empty-state">No context store entries match this filter.</div>`;
+    // Remove any stale show-more button
+    const existing = document.getElementById("context-show-more");
+    if (existing) existing.remove();
+    return;
+  }
+
+  const rows = visible.map(e => `
+    <tr>
+      <td class="cs-col-time"><code>${esc(e.time)}</code></td>
+      <td class="cs-col-event"><span class="cs-event-badge cs-event-${esc(e.event.toLowerCase())}">${esc(e.event)}</span></td>
+      <td class="cs-col-agent"><span class="stream-role">${esc(e.agent)}</span></td>
+      <td class="cs-col-file"><code class="cs-file">${esc(e.file)}</code></td>
+      <td class="cs-col-detail">${e.detail ? `<span class="cs-detail">${esc(e.detail)}</span>` : ""}</td>
+    </tr>
+  `).join("");
+
+  contextStoreTable.innerHTML = `
+    <table class="cs-table" aria-label="Context store entries">
+      <thead>
+        <tr>
+          <th scope="col">Time</th>
+          <th scope="col">Event</th>
+          <th scope="col">Agent</th>
+          <th scope="col">File</th>
+          <th scope="col">Detail</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  // Show-more button: inject after the table container
+  let showMoreBtn = document.getElementById("context-show-more");
+  if (!showMoreBtn) {
+    showMoreBtn = document.createElement("button");
+    showMoreBtn.id = "context-show-more";
+    showMoreBtn.className = "show-more-btn";
+    showMoreBtn.type = "button";
+    contextStoreTable.after(showMoreBtn);
+    showMoreBtn.addEventListener("click", () => {
+      contextState.cap += CONTEXT_INITIAL_CAP;
+      if (window.sessionData) renderContextStoreTable(window.sessionData.contextStore);
+    });
+  }
+
+  if (filtered.length > contextState.cap) {
+    showMoreBtn.hidden = false;
+    showMoreBtn.textContent = `Show more (${filtered.length - contextState.cap} remaining)`;
+  } else {
+    showMoreBtn.hidden = true;
+  }
+}
+
+function renderContextStore(session) {
+  const entries = session.contextStore || [];
+
+  if (!entries.length) {
+    contextStoreFilters.innerHTML = "";
+    contextStoreTable.innerHTML = `<div class="empty-state">No context store entries in this session.</div>`;
+    return;
+  }
+
+  // Unique agents and event types for filter chips
+  const agents    = [...new Set(entries.map(e => e.agent).filter(Boolean))];
+  const eventTypes = [...new Set(entries.map(e => e.event).filter(Boolean))];
+
+  // Agent chips
+  const agentChips = [
+    { label: "All agents", value: "all", kind: "agent" },
+    ...agents.map(a => ({ label: a, value: a, kind: "agent" })),
+  ];
+
+  // Event type chips
+  const typeChips = eventTypes.map(t => ({ label: t, value: t, kind: "type" }));
+
+  const allChips = [...agentChips, ...typeChips];
+
+  contextStoreFilters.innerHTML = allChips.map(c => {
+    const isActive = c.kind === "agent"
+      ? contextState.agentFilter === c.value
+      : contextState.typeFilter  === c.value;
+    return `
+      <button
+        class="filter-chip${isActive ? " is-active" : ""}"
+        data-filter-kind="${esc(c.kind)}"
+        data-filter-value="${esc(c.value)}"
+        type="button"
+        aria-pressed="${isActive}"
+      >${esc(c.label)}</button>
+    `;
+  }).join("");
+
+  contextStoreFilters.querySelectorAll(".filter-chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const kind  = btn.dataset.filterKind;
+      const value = btn.dataset.filterValue;
+      if (kind === "agent") {
+        contextState.agentFilter = value;
+      } else {
+        // Toggle type filter: clicking active type resets to "all"
+        contextState.typeFilter = contextState.typeFilter === value ? "all" : value;
+      }
+      contextState.cap = CONTEXT_INITIAL_CAP;
+      if (window.sessionData) renderContextStore(window.sessionData);
+    });
+  });
+
+  renderContextStoreTable(entries);
+}
+
 // ─── Health dashboard ─────────────────────────────────────────────────────────
+
+/**
+ * Detect rotation violations: how many consecutive tasks the same agent drove.
+ * A pair of consecutive completed tasks with the same driver = violation.
+ * Returns { maxStreak, violatingAgent } or null if no violation.
+ */
+function detectRotationViolation(tasks) {
+  const sorted = Object.entries(tasks)
+    .filter(([, t]) => t.meta?.driver)
+    .sort(([a], [b]) => {
+      const n = s => parseInt(s.slice(1), 10);
+      return n(a) - n(b);
+    });
+
+  let maxStreak = 1;
+  let currentStreak = 1;
+  let violatingAgent = null;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prevDriver = sorted[i - 1][1].meta.driver;
+    const currDriver = sorted[i][1].meta.driver;
+    if (currDriver && currDriver === prevDriver) {
+      currentStreak++;
+      if (currentStreak > maxStreak) {
+        maxStreak = currentStreak;
+        violatingAgent = currDriver;
+      }
+    } else {
+      currentStreak = 1;
+    }
+  }
+
+  return maxStreak > 1 ? { maxStreak, agent: violatingAgent } : null;
+}
 
 function renderHealth(session) {
   const taskIds    = Object.keys(session.tasks);
@@ -155,6 +396,21 @@ function renderHealth(session) {
     const s = session.agentStates[n];
     return s.phase && s.phase !== "completed" && s.phase !== "bench" && s.phase !== "shutdown";
   });
+
+  // Rotation discipline
+  const rotationViolation = detectRotationViolation(session.tasks);
+
+  // Context store activity
+  const csEntries = session.contextStore || [];
+  const csEdits   = csEntries.filter(e => e.event === "EDIT").length;
+  const csReads   = csEntries.filter(e => e.event === "READ").length;
+
+  // Lifecycle state
+  const lifecycleState = deriveLifecycleState(session);
+
+  // Handoff and retro submission counts
+  const handoffCount = Object.keys(session.handoffs || {}).length;
+  const retroSubCount = Object.keys(session.retroSubmissions || {}).length;
 
   const cards = [
     {
@@ -194,6 +450,41 @@ function renderHealth(session) {
       value:  String(session.errors.length),
       detail: session.errors.length ? session.errors.slice(0, 2).join("; ") : "Clean parse.",
       warn:   session.errors.length > 0,
+    },
+    // ─── New health cards ───────────────────────────────────────────────────
+    {
+      label:  "Rotation discipline",
+      value:  rotationViolation ? `${rotationViolation.maxStreak}× streak` : "OK",
+      detail: rotationViolation
+        ? `@${rotationViolation.agent} drove ${rotationViolation.maxStreak} consecutive tasks.`
+        : "No consecutive same-driver violations detected.",
+      warn:   rotationViolation != null,
+    },
+    {
+      label:  "Context store",
+      value:  String(csEntries.length),
+      detail: csEntries.length
+        ? `${csEdits} EDIT${csEdits !== 1 ? "s" : ""}, ${csReads} READ${csReads !== 1 ? "s" : ""}.`
+        : "No context store activity.",
+      warn:   false,
+    },
+    {
+      label:  "Session state",
+      value:  lifecycleState,
+      detail: session.closed
+        ? `Closed at ${fmtTimestamp(session.closed.closed_at)}.`
+        : session.shutdown
+        ? "Shutdown signal present."
+        : session.retroRequested
+        ? "Retro has been requested."
+        : "Session is ongoing.",
+      warn:   false,
+    },
+    {
+      label:  "Agent documents",
+      value:  String(handoffCount + retroSubCount),
+      detail: `${handoffCount} handoff${handoffCount !== 1 ? "s" : ""}, ${retroSubCount} retro submission${retroSubCount !== 1 ? "s" : ""}.`,
+      warn:   false,
     },
   ];
 
@@ -316,9 +607,26 @@ function renderTasks(tasks) {
     const navigator = meta?.navigator || "—";
     const advisor   = meta?.advisor  || "";
     const updated   = meta?.updated_at ? fmtTimestamp(meta.updated_at) : "";
-    const statusClass = status === "completed" ? "status-done"
-                      : status === "active"    ? "status-active"
+    const statusClass = status === "completed"  ? "status-done"
+                      : status === "in_progress" ? "status-active"
+                      : status === "active"       ? "status-active"
+                      : status === "abandoned"    ? "status-abandoned"
+                      : status === "open"         ? "status-open"
                       : "status-other";
+
+    // Write set tags
+    const writeSet = Array.isArray(meta?.write_set) ? meta.write_set : [];
+    const writeSetHtml = writeSet.length
+      ? `<div class="task-write-set" aria-label="Write set">
+          ${writeSet.map(f => `<code class="write-set-file">${esc(f)}</code>`).join("")}
+        </div>`
+      : "";
+
+    // Next action note
+    const nextAction = meta?.next_action || "";
+    const nextActionHtml = nextAction
+      ? `<p class="task-next-action"><span class="role-label">next</span> ${esc(nextAction)}</p>`
+      : "";
 
     const chatHtml = chat.length
       ? chat.map(m => `
@@ -346,6 +654,8 @@ function renderTasks(tasks) {
             ${advisor ? `<span><span class="role-label">advisor</span> <strong>${esc(advisor)}</strong></span>` : ""}
           </div>
           ${updated ? `<div class="task-updated">Updated ${esc(updated)}</div>` : ""}
+          ${writeSetHtml}
+          ${nextActionHtml}
         </div>
         <details class="task-chat">
           <summary class="task-chat-toggle">
@@ -465,18 +775,127 @@ function renderRetro(retro) {
   retroViewer.innerHTML = preambleHtml + (sectionsHtml || `<p class="empty-state">No sections parsed.</p>`);
 }
 
+// ─── Agent documents ──────────────────────────────────────────────────────────
+
+/**
+ * Render a collapsible sub-section within an agent card.
+ * Uses <details>/<summary> for progressive disclosure.
+ * bodyHtml may be a <pre> block or a key-value list — caller decides.
+ */
+function agentDocSection(title, bodyHtml) {
+  return `
+    <details class="agent-doc-section">
+      <summary class="agent-doc-section-title">${esc(title)}</summary>
+      <div class="agent-doc-section-body">${bodyHtml}</div>
+    </details>
+  `;
+}
+
+function renderAgentDocs(session) {
+  // Collect all unique agent names across all 5 doc maps
+  const agentSets = [
+    session.retroSubmissions || {},
+    session.handoffs         || {},
+    session.snapshots        || {},
+    session.compactPending   || {},
+    session.compactStop      || {},
+  ];
+  const allAgents = [...new Set(agentSets.flatMap(map => Object.keys(map)))].sort();
+
+  if (!allAgents.length) {
+    agentDocsGrid.innerHTML = `<div class="empty-state">No agent documents found in this session.</div>`;
+    return;
+  }
+
+  agentDocsGrid.innerHTML = allAgents.map(agent => {
+    const sections = [];
+
+    // Retro submission
+    const retro = session.retroSubmissions?.[agent];
+    if (retro) {
+      sections.push(agentDocSection(
+        "Retro submission",
+        `<pre class="agent-doc-pre">${esc(retro)}</pre>`
+      ));
+    }
+
+    // Handoff
+    const handoff = session.handoffs?.[agent];
+    if (handoff) {
+      sections.push(agentDocSection(
+        "Handoff",
+        `<pre class="agent-doc-pre">${esc(handoff)}</pre>`
+      ));
+    }
+
+    // Snapshot
+    const snapshot = session.snapshots?.[agent];
+    if (snapshot) {
+      sections.push(agentDocSection(
+        "Snapshot",
+        `<pre class="agent-doc-pre">${esc(snapshot)}</pre>`
+      ));
+    }
+
+    // Compact pending — render key fields as a definition list
+    const cp = session.compactPending?.[agent];
+    if (cp) {
+      const cpFields = [
+        cp.trigger     && ["Trigger",    cp.trigger],
+        cp.created_at  && ["Created",    fmtTimestamp(cp.created_at)],
+        cp.state       && ["State",      cp.state],
+        cp.transcript_path && ["Transcript", cp.transcript_path],
+      ].filter(Boolean);
+      const cpHtml = cpFields.length
+        ? `<dl class="agent-doc-dl">${cpFields.map(([k, v]) =>
+            `<div class="agent-doc-row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`
+          ).join("")}</dl>`
+        : `<p class="empty-state">No fields parsed.</p>`;
+      sections.push(agentDocSection("Compact pending", cpHtml));
+    }
+
+    // Compact stop — render key fields as a definition list
+    const cs = session.compactStop?.[agent];
+    if (cs) {
+      const csFields = [
+        cs.trigger     && ["Trigger",  cs.trigger],
+        cs.task_id     && ["Task",     cs.task_id],
+        cs.phase       && ["Phase",    cs.phase],
+        cs.created_at  && ["Created",  fmtTimestamp(cs.created_at)],
+        cs.summary_log && ["Log",      cs.summary_log],
+      ].filter(Boolean);
+      const csHtml = csFields.length
+        ? `<dl class="agent-doc-dl">${csFields.map(([k, v]) =>
+            `<div class="agent-doc-row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`
+          ).join("")}</dl>`
+        : `<p class="empty-state">No fields parsed.</p>`;
+      sections.push(agentDocSection("Compact stop", csHtml));
+    }
+
+    return `
+      <article class="agent-doc-card">
+        <h3 class="agent-doc-name">@${esc(agent)}</h3>
+        ${sections.join("") || `<p class="empty-state">No documents for this agent.</p>`}
+      </article>
+    `;
+  }).join("");
+}
+
 // ─── Main render ──────────────────────────────────────────────────────────────
 
 function renderAll(session) {
   renderOverview(session);
+  renderLifecycle(session);
   renderAgentCards(session);
   renderHealth(session);
   renderEventsFilters(session.events);
   renderEvents(session.events);
+  renderContextStore(session);
   renderTasks(session.tasks);
   renderAdvice(session.advice);
   renderLog(session.log);
   renderRetro(session.retro);
+  renderAgentDocs(session);
 }
 
 // ─── Scroll-spy (IntersectionObserver) ───────────────────────────────────────

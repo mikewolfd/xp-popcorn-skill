@@ -1854,3 +1854,231 @@ body[data-loaded] .loader-empty {
     padding: 24px 0;
   }
 }
+
+/* ─── Task status extensions ────────────────────────────────────────────────── */
+
+.status-abandoned {
+  background: rgba(255, 107, 107, 0.1);
+  color: #ff8a8a;
+  border: 1px solid rgba(255, 107, 107, 0.2);
+}
+
+.status-open {
+  background: rgba(125, 216, 255, 0.06);
+  color: var(--cyan);
+  border: 1px solid rgba(125, 216, 255, 0.16);
+}
+
+/* ─── Task write set ─────────────────────────────────────────────────────────── */
+
+.task-write-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.write-set-file {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.task-next-action {
+  margin: 6px 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ─── Context store table ────────────────────────────────────────────────────── */
+
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.cs-table th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: middle;
+}
+
+.cs-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cs-col-time {
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.cs-col-time code {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.cs-col-file code {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.cs-detail {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Event type badges */
+.cs-event-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+.cs-event-edit {
+  background: rgba(255, 208, 122, 0.1);
+  color: var(--amber);
+  border-color: rgba(255, 208, 122, 0.22);
+}
+
+.cs-event-read {
+  background: rgba(125, 216, 255, 0.06);
+  color: var(--cyan);
+  border-color: rgba(125, 216, 255, 0.16);
+}
+
+/* ─── Agent documents grid ───────────────────────────────────────────────────── */
+
+.agent-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 18px;
+}
+
+.agent-doc-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px 14px;
+}
+
+.agent-doc-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.agent-doc-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px 0;
+}
+
+.agent-doc-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.agent-doc-section-title {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.agent-doc-section-title::marker,
+.agent-doc-section-title::-webkit-details-marker {
+  display: none;
+}
+
+.agent-doc-section-title::before {
+  content: "+ ";
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+details[open] > .agent-doc-section-title::before {
+  content: "− ";
+}
+
+.agent-doc-section-body {
+  padding-top: 10px;
+}
+
+.agent-doc-pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 10px 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Compact signal fields */
+.agent-doc-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 0;
+}
+
+.agent-doc-row {
+  display: contents;
+}
+
+.agent-doc-row dt {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 12px 4px 0;
+  white-space: nowrap;
+}
+
+.agent-doc-row dd {
+  font-size: 0.82rem;
+  color: var(--text);
+  margin: 0;
+  padding: 4px 0;
+  word-break: break-all;
+}
