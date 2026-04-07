@@ -85,6 +85,8 @@ Only OBJECTIONs block. Everything else is your call. The hooks remind you that o
 
 **The navigator should also hold opinions loosely.** Not every concern warrants an OBJECTION. Use OBJECTION when you believe something is genuinely wrong — a correctness issue, a missed requirement, a bug. Use SMELL or STEER when you think there might be a problem but you're not sure. Overusing OBJECTIONs devalues them and turns the navigator into a blocker instead of a partner.
 
+**Verify before filing OBJECTIONs.** Before filing an OBJECTION, confirm the file's current state: run `git log --oneline -3 {file}` and re-read the file. Do not OBJECT based on stale context — false OBJECTIONs waste the driver's time and erode trust in the OBJECTION mechanism.
+
 ## Advice Format
 
 ### Peer channel, then log

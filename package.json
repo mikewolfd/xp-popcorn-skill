@@ -8,7 +8,13 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "./scripts/build-skills.sh",
+    "test": "./tests/test-hooks.sh",
+    "test:hooks": "./tests/test-hooks.sh",
+    "test:claude-plugin": "./tests/claude-plugin-test-harness.sh",
+    "test:codex-plugin": "./tests/codex-plugin-test-harness.sh",
+    "test:open-issues": "./tests/test-open-issues.sh",
+    "test:all": "./tests/test-hooks.sh && ./tests/claude-plugin-test-harness.sh && ./tests/codex-plugin-test-harness.sh"
   },
   "repository": {
     "type": "git",

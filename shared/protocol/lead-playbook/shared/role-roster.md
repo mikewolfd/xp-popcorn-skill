@@ -59,6 +59,16 @@ Native agents carry project-specific context, conventions, and tool configuratio
 
 A native agent doesn't need to match perfectly — it needs to serve the same lens. A `flutter-architect` can fill the craftsman role for a Flutter project. An `elixir-phoenix-social` can fill the expert role for an Elixir service. A `code-scout` (or similar explore agent) maps to **scout** — **prefer for the standing advisor seat**. A `test-engineer` is a direct replacement for **tester** (verification lens).
 
+**How to spawn — default popcorn-xp agents vs native agents vs plugin agents:**
+
+Default popcorn-xp agents (from the roster tables above) do **not** need `subagent_type` — the plugin registers them and auto-loads the protocol via their `skills` field. Just pass `name` and `model`:
+
+```
+Agent(name: "expert", model: "{model}", team_name: "{team-name}", prompt: "...")
+```
+
+> **Plugin agent naming (double namespace):** If you do need to pass `subagent_type` for a plugin-registered agent, the format is `popcorn-xp:popcorn-xp:{agent}` — the plugin namespace appears twice (once for the plugin, once from the agent's `name` field which is already prefixed). For example, `subagent_type: "popcorn-xp:popcorn-xp:expert"`. Using the single-namespace form (`popcorn-xp:expert`) will fail to match. In practice, you rarely need this — just omit `subagent_type` for default agents.
+
 **How to spawn a native agent as a teammate:**
 
 Use the native agent's `subagent_type`. The native agent definition provides "how I think about this domain"; the popcorn-xp protocol provides "how I collaborate in a pair session."

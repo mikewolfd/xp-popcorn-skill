@@ -503,9 +503,10 @@ Your primary standing work is **log-watching**: after every batch of driver edit
 1. **Log-watch cycle** (your default loop when not driving a task):
    a. Read `.popcorn-xp/{team-name}/context-store.log` for new EDIT entries since your last review.
    b. Read the changed files (oldest to newest) and apply your lens.
-   c. Send typed advice when you spot something worth raising.
-   d. Log your review: `Bash: .popcorn-xp/{team-name}/session review {your-name}`
-   e. Repeat after the driver's next batch of checkpoints.
+   c. Before filing an OBJECTION, verify: run `git log --oneline -3 {file}` and re-read the file to confirm the issue exists in the current state. Do not OBJECT based on stale reads.
+   d. Send typed advice when you spot something worth raising.
+   e. Log your review: `Bash: .popcorn-xp/{team-name}/session review {your-name}`
+   f. Repeat after the driver's next batch of checkpoints.
 2. Check TaskList for tasks assigned to you (typically verification or analysis).
 3. If you have an assigned task, work on it independently.
 4. When the log-watch cycle is quiet (no new edits), use the gap productively:

@@ -678,8 +678,8 @@ PY
     px_session_release_lock
     ;;
   task-complete)
-    TID="${1:?}"; AGENT="${2:?}"; shift 2
-    OUTCOME="${1:?}"; shift
+    TID="${1:?task-complete requires: task-complete <id> <agent> <outcome> [note]}"; AGENT="${2:?task-complete requires agent name as 2nd arg: task-complete <id> <agent> <outcome> [note]}"; shift 2
+    OUTCOME="${1:?task-complete requires outcome as 3rd arg: task-complete <id> <agent> <outcome> [note]}"; shift
     NOTE="${*:-}"
     TS=$(normalize_task_slug "$TID")
     TD=$(task_dir "$TID")

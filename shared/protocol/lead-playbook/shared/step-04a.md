@@ -19,6 +19,8 @@ Agent(
 )
 ```
 
+> **Naming reminder:** Default popcorn-xp agents (craftsman, expert, scout, etc.) do not need `subagent_type` — omit it. Native agents use their own name as `subagent_type` (e.g., `"test-engineer"`). If you ever need to reference a plugin agent by type, the format is `popcorn-xp:popcorn-xp:{agent}` (double namespace) — see the Role Roster for details.
+
 **Example: native agent filling a persona slot**
 
 ```
