@@ -5,7 +5,7 @@ set -euo pipefail
 # Runs hook scripts with crafted inputs to prove or disprove each issue.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/platforms/claude/shared/hooks/scripts"
+HOOKS_DIR="$SCRIPT_DIR/platforms/shared/hooks/scripts"
 
 hook_resolve() {
   local script="$1" d
@@ -111,7 +111,7 @@ run_hook_stdin() {
 TMPDIR_ROOT=$(mktemp -d)
 TEAM="test-team"
 POPCORN="$TMPDIR_ROOT/.popcorn-xp"
-AGENTS_DIR="$SCRIPT_DIR/platforms/claude/shared/agents"
+AGENTS_DIR="$SCRIPT_DIR/platforms/shared/agents"
 
 setup_session() {
   rm -rf "$POPCORN"

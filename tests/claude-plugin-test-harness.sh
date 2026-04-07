@@ -163,7 +163,7 @@ if [[ -x "$REPO_ROOT/scripts/build-skills.sh" ]]; then
     SKILL_SYNC=(
       "platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md"
       "platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md"
-      "platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md"
+      "platforms/shared/skills/popcorn-xp-protocol/SKILL.md"
       "platforms/codex/subagent/skills/popcorn-xp-protocol-core/SKILL.md"
       "platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/SKILL.md"
       "platforms/codex/subagent/skills/popcorn-xp/SKILL.md"

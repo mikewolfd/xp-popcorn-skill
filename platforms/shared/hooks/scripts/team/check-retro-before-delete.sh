@@ -9,8 +9,8 @@ set -euo pipefail
 # Subagent mode: no-op — closeout uses session close-check / session close (which enforces RETRO.md ≥5 lines), not TeamDelete.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../../.." && pwd)"
-# shellcheck source=../../../../../../shared/runtime/lib/session-common.sh
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+# shellcheck source=../../../../shared/runtime/lib/session-common.sh
 source "$REPO_ROOT/shared/runtime/lib/session-common.sh"
 
 POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"

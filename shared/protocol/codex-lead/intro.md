@@ -30,6 +30,6 @@ Wire via **`[[skills.config]]`** in **`agents/*.toml`** (typically under **`.age
 
 ## Before you vendor
 
-1. Plan to vendor **`shared/runtime/bin/session`** (and **`shared/runtime/lib/`**) plus **`platforms/claude/shared/hooks/scripts/advice/check-advice-on-complete.sh`** if you use the Codex **Stop** hook that shells into it.
+1. Plan to vendor **`shared/runtime/bin/session`** (and **`shared/runtime/lib/`**) plus **`platforms/shared/hooks/scripts/advice/check-advice-on-complete.sh`** if you use the Codex **Stop** hook that shells into it.
 2. Add **`.codex/`** hooks and agents: run **`install/codex/generate.sh`** from a **popcorn-xp** checkout whose git root is that tree, or copy **`manifests/*`** and **`agents/*.toml`** from **`platforms/codex/subagent/`** into your project’s **`.codex/`**.
 3. Ensure teammate **`.toml`** files load **`popcorn-xp-protocol-core`** and **`popcorn-xp-protocol-subagent`** (see **Setup** in **`platforms/codex/subagent/README.md`**).

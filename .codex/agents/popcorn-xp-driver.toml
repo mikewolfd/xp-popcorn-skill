@@ -1,5 +1,5 @@
 # Example Popcorn XP driver for Codex (subagent / file-bus).
-# Copy or sync this tree into a consumer repo with shared/runtime/bin/session + platforms/claude/shared/hooks/scripts vendored.
+# Copy or sync this tree into a consumer repo with shared/runtime/bin/session + platforms/shared/hooks/scripts vendored.
 # Set [[skills.config]] paths to absolute directories if Codex does not resolve relative paths.
 
 name = "popcorn_xp_driver"

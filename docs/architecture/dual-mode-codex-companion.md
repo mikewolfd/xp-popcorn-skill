@@ -69,7 +69,7 @@ Popcorn XP has **one product model** (pairing, typed advice, durable files) and 
 
    - **B — One protocol with two top-level sections:** a single `SKILL.md`-style doc headed **Team transport** and **Subagent transport**, with shared core above or inlined once. Easier for a single `skills.config` pointer, slightly easier to skim wrong if sections blur together.
 
-   In the Claude repo, the long-form templates live in `shared/protocol/templates.md` (shared + mode-specific addenda); the auto-loaded teammate skill is `platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md`. A Codex port should **mirror that shape**: either two small skills under `skills.config` or one skill with two clear sections — not interleaved “subagent:” footnotes on every bullet.
+   In the Claude repo, the long-form templates live in `shared/protocol/templates.md` (shared + mode-specific addenda); the auto-loaded teammate skill is `platforms/shared/skills/popcorn-xp-protocol/SKILL.md`. A Codex port should **mirror that shape**: either two small skills under `skills.config` or one skill with two clear sections — not interleaved “subagent:” footnotes on every bullet.
 
 4. **Reference implementation stays bash-first.** `shared/runtime/bin/session` and hook scripts are the contract; prompts only **describe** how to call them. Codex uses the same shared shell logic — it does not redefine closeout or advice semantics in prose.
 
@@ -102,7 +102,7 @@ Typical check-in pattern for a project that runs Popcorn XP on Codex:
 - `.codex/hooks.json` — `SessionStart` / `Stop` (and optional `PreToolUse` / `PostToolUse` only if you have a concrete, narrow policy).
 - `.codex/agents/*.toml` — driver, navigator, advisor (or mapped names). Prefer **short** `developer_instructions` that point at one or two packaged skills/files (**shared core** + **subagent transport**), per [Skills and prompts: layer transport, don’t fork the product](#skills-and-prompts-layer-transport-dont-fork-the-product) — avoid pasting divergent full protocols into three TOML files.
 
-Popcorn XP’s Claude trees (`platforms/claude/popcorn-xp-team/`, `platforms/claude/shared/hooks/scripts/{advice,team,lifecycle}/`) remain the source for **team mode** and **reference hook scripts**; a Codex port **reuses or adapts shell logic** and **does not assume** the same hook event names or tool matchers.
+Popcorn XP’s Claude trees (`platforms/claude/popcorn-xp-team/`, `platforms/shared/hooks/scripts/{advice,team,lifecycle}/`) remain the source for **team mode** and **reference hook scripts**; a Codex port **reuses or adapts shell logic** and **does not assume** the same hook event names or tool matchers.
 
 ### Reference layout in this repository (implemented)
 

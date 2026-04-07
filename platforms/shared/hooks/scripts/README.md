@@ -8,4 +8,4 @@ Bash hooks for both Claude plugins (`popcorn-xp`, `popcorn-xp-team`). Plugin `ho
 | **`team/`** | Agent Teams transport: `TaskUpdate` / context-store / `TeamDelete` hooks + `context-store-log.sh` (sourced by team hooks and by `lifecycle/enforce-no-idle.sh` for team-mode checkpoint logic) |
 | **`lifecycle/`** | `enforce-no-idle.sh`, `mark-compact-pending.sh`, `record-compact-summary.sh` |
 
-`REPO_ROOT` in each script is six levels up from the script file (`…/platforms/claude/shared/hooks/scripts/<dir>/file.sh` → repo root).
+`REPO_ROOT` in each script is six levels up from the script file (`…/platforms/shared/hooks/scripts/<dir>/file.sh` → repo root).

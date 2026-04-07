@@ -93,7 +93,7 @@ Split work into **pairs**: a drive task and a matching navigate task so the boar
 
 ## Agent personas
 
-Teammates live under [`platforms/claude/shared/agents/`](./platforms/claude/shared/agents/) as Markdown with YAML frontmatter (symlinked into each Claude plugin). Labels such as **scout**, **craftsman**, and **tester** name a *lens*, not a fixed seat. After rotation, any persona can drive or navigate.
+Teammates live under [`platforms/shared/agents/`](./platforms/shared/agents/) as Markdown with YAML frontmatter (symlinked into each Claude plugin). Labels such as **scout**, **craftsman**, and **tester** name a *lens*, not a fixed seat. After rotation, any persona can drive or navigate.
 
 ---
 
@@ -156,7 +156,7 @@ popcorn-xp/
 ├── shared/protocol/templates.md   # Lead-facing prompts and spawn templates
 ├── platforms/claude/popcorn-xp/   # Claude plugin (default / file-bus)
 ├── platforms/claude/popcorn-xp-team/ # Claude plugin (Agent Teams)
-├── platforms/claude/shared/       # Shared hook scripts + agents + protocol skill
+├── platforms/shared/       # Shared hook scripts + agents + protocol skill
 ├── platforms/codex/subagent/      # Codex source tree
 ├── install/codex/generate.sh      # Writes .codex/ from platforms/codex/subagent/
 ├── docs/architecture/             # Active design + dual-mode docs
@@ -212,7 +212,7 @@ Draws on Claude Code **Agent Teams** and **Coordinator Mode**, with a **subagent
 |-------|--------|
 | Lead workflow (file-bus / subagent) | [platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md](./platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md) |
 | Lead workflow (Agent Teams) | [platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md](./platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md) |
-| Teammate rules, advice format, task bus | [platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md](./platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md) |
+| Teammate rules, advice format, task bus | [platforms/shared/skills/popcorn-xp-protocol/SKILL.md](./platforms/shared/skills/popcorn-xp-protocol/SKILL.md) |
 | Long-form prompts and shared core notes | [shared/protocol/templates.md](./shared/protocol/templates.md), [shared/protocol/core.md](./shared/protocol/core.md) |
 | System design, hook tables, folder map | [docs/architecture/architecture.md](./docs/architecture/architecture.md) |
 | Dual-mode proposal, Codex companion, repo layout | [docs/architecture/dual-mode-proposal.md](./docs/architecture/dual-mode-proposal.md), [docs/architecture/dual-mode-codex-companion.md](./docs/architecture/dual-mode-codex-companion.md), [docs/architecture/repo-structure-refactor.md](./docs/architecture/repo-structure-refactor.md) |

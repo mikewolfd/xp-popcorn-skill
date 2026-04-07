@@ -20,7 +20,7 @@ export CLAUDE_PROJECT_DIR
 
 # Resolve check-advice script from this hook's checkout (platforms/codex/subagent/hooks/ → repo root), not from cwd/git,
 # so Codex sessions whose cwd is a temp or subfolder still find the vendored plugin scripts.
-ADVICE_SCRIPT="$_REPO_ROOT/platforms/claude/shared/hooks/scripts/advice/check-advice-on-complete.sh"
+ADVICE_SCRIPT="$_REPO_ROOT/platforms/shared/hooks/scripts/advice/check-advice-on-complete.sh"
 
 POPCORN="${CLAUDE_PROJECT_DIR}/.popcorn-xp"
 TEAM=$(cat "$POPCORN/.active-team" 2>/dev/null || true)

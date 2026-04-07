@@ -7,8 +7,8 @@ set -euo pipefail
 # No-op when no active popcorn-xp session or not a claim/status change.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../../.." && pwd)"
-# shellcheck source=../../../../../../shared/runtime/lib/session-common.sh
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+# shellcheck source=../../../../shared/runtime/lib/session-common.sh
 source "$REPO_ROOT/shared/runtime/lib/session-common.sh"
 px_load_session || exit 0
 px_is_subagent_mode && exit 0

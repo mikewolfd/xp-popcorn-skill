@@ -1,11 +1,25 @@
 ## 1. Session setup
 
+**Choose the teammate model.** Ask the user which model to use for teammates:
+
+> What model should I use for the teammates? Options:
+>
+> - **gpt-5.4-mini xhigh** — fast and cheap, good default for most tasks *(default)*
+> - **gpt-5.4 low** — full model, minimal reasoning
+> - **gpt-5.4 medium** — full model, moderate reasoning
+> - **gpt-5.4 high** — full model, maximum reasoning
+>
+> (Default: gpt-5.4-mini xhigh)
+
+Store their choice as `{model}` and `{reasoning_effort}` and pass both to every subagent spawn call. If the user doesn't have a preference, default to `model="gpt-5.4-mini"` with `reasoning_effort="xhigh"`.
+
+**Set up the session:**
+
 1. Pick a short team name (e.g. `fix-auth`).
 2. Create **`.popcorn-xp/{team}/`**, **`LOG.md`**, **`ADVICE.md`**, and a **`session`** wrapper that **`exec`**s your vendored **`shared/runtime/bin/session`**.
 3. **`echo {team} > .popcorn-xp/.active-team`**
 4. **`printf 'subagent\n' > .popcorn-xp/{team}/.runtime-mode`** (or omit **`.runtime-mode`** if **`shared/runtime/bin/session`** defaults to subagent).
-5. Spawn **three** teammates (driver, navigator, advisor) with **`skills/...`** wired via **`[[skills.config]]`** in **`agents/*.toml`**.
-6. Preferred Codex teammate defaults: `model="gpt-5.4-mini"` with `reasoning_effort="xhigh"` for normal pair work; escalate to `model="gpt-5.4"` with `reasoning_effort="medium"` when the slice is broader or repeated recovery suggests the cheaper path is false economy.
+5. Spawn **three** teammates (driver, navigator, advisor) with **`skills/...`** wired via **`[[skills.config]]`** in **`agents/*.toml`**, using the chosen `{model}` and `{reasoning_effort}`.
 
 ## 2. Tasks and pairing
 

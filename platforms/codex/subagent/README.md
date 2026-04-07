@@ -28,14 +28,14 @@ Design notes: [docs/architecture/dual-mode-codex-companion.md](../../../docs/arc
 | `manifests/config.toml` | `codex_hooks = true`, `[agents]` limits |
 | `manifests/hooks.json` | `SessionStart` + `Stop` → `hooks/*.sh` |
 | `hooks/codex-session-start.sh` | Injects session reminder when `.popcorn-xp/.active-team` exists |
-| `hooks/codex-stop-advice.sh` | OBJECTION gate via `platforms/claude/shared/hooks/scripts/advice/check-advice-on-complete.sh` |
+| `hooks/codex-stop-advice.sh` | OBJECTION gate via `platforms/shared/hooks/scripts/advice/check-advice-on-complete.sh` |
 | `skills/popcorn-xp/` | Lead skill (`npx skills` / **`.agents/skills/popcorn-xp`**) |
 | `skills/popcorn-xp-protocol-core/` | Shared core (advice, files, phases) |
 | `skills/popcorn-xp-protocol-subagent/` | File-bus commands (`task-init`, `chat`, `close`, …) |
 | `skills/popcorn-xp/SKILL.md` | Codex lead playbook (**built** from **`shared/protocol/codex-lead/*.md`**) |
 | `agents/*.toml` | Short `developer_instructions` + `[[skills.config]]` |
 
-**Consumer projects** should vendor **`shared/runtime/`**, **`platforms/claude/shared/hooks/scripts/`** (for the advice gate), and this **`platforms/codex/subagent/`** tree. Use **`npx skills add …/platforms/codex/subagent --agent codex`** for skills, then **`generate.sh`** or a manual copy into **`.codex/`** as above. Hooks resolve **`.popcorn-xp`** from **`git -C <hook-cwd> rev-parse --show-toplevel`** when **`CLAUDE_PROJECT_DIR`** is unset, so sessions may start in a **subdirectory** of the repo.
+**Consumer projects** should vendor **`shared/runtime/`**, **`platforms/shared/hooks/scripts/`** (for the advice gate), and this **`platforms/codex/subagent/`** tree. Use **`npx skills add …/platforms/codex/subagent --agent codex`** for skills, then **`generate.sh`** or a manual copy into **`.codex/`** as above. Hooks resolve **`.popcorn-xp`** from **`git -C <hook-cwd> rev-parse --show-toplevel`** when **`CLAUDE_PROJECT_DIR`** is unset, so sessions may start in a **subdirectory** of the repo.
 
 If you **vendor this tree without `npx skills`**, change **`[[skills.config]].path`** in **`agents/*.toml`** to **`platforms/codex/subagent/skills/<skill-name>`** (repo-root-relative), or set **absolute** paths to each folder that contains **`SKILL.md`**.
 

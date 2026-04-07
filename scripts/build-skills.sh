@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRAG="$REPO_ROOT/shared/protocol/lead-playbook"
 TM_FRAG="$REPO_ROOT/shared/protocol/teammate"
 CX_LEAD="$REPO_ROOT/shared/protocol/codex-lead"
-PROTO_OUT_CLAUDE="$REPO_ROOT/platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md"
+PROTO_OUT_CLAUDE="$REPO_ROOT/platforms/shared/skills/popcorn-xp-protocol/SKILL.md"
 PROTO_OUT_CODEX_CORE="$REPO_ROOT/platforms/codex/subagent/skills/popcorn-xp-protocol-core/SKILL.md"
 PROTO_OUT_CODEX_SUBAGENT="$REPO_ROOT/platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/SKILL.md"
 PROTO_OUT_CODEX_LEAD="$REPO_ROOT/platforms/codex/subagent/skills/popcorn-xp/SKILL.md"
@@ -62,7 +62,7 @@ description: Popcorn XP shared core for Codex — advice types, file boundaries,
 
 # Popcorn XP — protocol core (transport-agnostic)
 
-Load **`popcorn-xp-protocol-subagent`** next when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`** (default on Codex). This vendored bundle includes **core + subagent** skills only. Full teammate playbook (including Claude **team** mode) is built from **`shared/protocol/teammate/`** into **`platforms/claude/shared/skills/popcorn-xp-protocol/SKILL.md`** in this repo — run **`scripts/build-skills.sh`** after edits.
+Load **`popcorn-xp-protocol-subagent`** next when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`** (default on Codex). This vendored bundle includes **core + subagent** skills only. Full teammate playbook (including Claude **team** mode) is built from **`shared/protocol/teammate/`** into **`platforms/shared/skills/popcorn-xp-protocol/SKILL.md`** in this repo — run **`scripts/build-skills.sh`** after edits.
 
 EOF
     cat "$TM_FRAG/common.md"

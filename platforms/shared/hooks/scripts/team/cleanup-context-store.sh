@@ -7,8 +7,8 @@ set -euo pipefail
 # Subagent mode: no-op — team transport / soft-lock log is not used.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../../.." && pwd)"
-# shellcheck source=../../../../../../shared/runtime/lib/session-common.sh
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+# shellcheck source=../../../../shared/runtime/lib/session-common.sh
 source "$REPO_ROOT/shared/runtime/lib/session-common.sh"
 
 POPCORN_DIR="${CLAUDE_PROJECT_DIR:-.}/.popcorn-xp"
