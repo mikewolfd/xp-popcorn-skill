@@ -32,7 +32,7 @@ description: Popcorn XP pair-programming protocol — core rules, advice lifecyc
 
 **Popcorn-xp** agent definitions auto-load this skill via the `skills` field. **Native agents** from other plugins should invoke `Skill('popcorn-xp-protocol')` as their first action. **Codex** agents load the same skill via `[[skills.config]]`.
 
-- **`shared/skill-sources/core.md`** — short transport-agnostic summary.
+- **`shared/skill-sources/README.md`** — short transport-agnostic summary.
 - **`shared/skill-sources/templates.md`** — long teammate prompt snippets for the lead.
 
 The body below is the **teammate playbook** (built from fragments in **`shared/skill-sources/teammate/`**). It covers **core rules** and **subagent transport**. Agent Teams (**team**) transport is only in the `popcorn-xp-team` plugin variant.
@@ -61,7 +61,7 @@ description: Popcorn XP pair-programming protocol — core rules, advice lifecyc
 
 **Popcorn-xp** agent definitions auto-load this skill via the `skills` field. **Native agents** from other plugins should invoke `Skill('popcorn-xp-protocol')` as their first action.
 
-- **`shared/skill-sources/core.md`** — short transport-agnostic summary.
+- **`shared/skill-sources/README.md`** — short transport-agnostic summary.
 - **`shared/skill-sources/templates.md`** — long teammate prompt snippets for the lead.
 
 The body below is the **teammate playbook** (built from fragments in **`shared/skill-sources/teammate/`**). This variant includes both **subagent** and **Agent Teams (team)** transports.

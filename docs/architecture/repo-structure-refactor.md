@@ -116,7 +116,7 @@ Hidden directories such as `.codex/` and `.claude-plugin/` are generated install
 | `hooks/scripts/px-resolve-claude-project-dir.sh` | `shared/runtime/lib/resolve-project-dir.sh` | Shared path resolution |
 | `agents/*.md` | `shared/agents/*.md` | Claude teammate definitions |
 | `references/protocol.md` | `shared/skill-sources/templates.md` | Long-form reference material |
-| `skills/popcorn-xp-protocol/SKILL.md` | `shared/skill-sources/core.md`, `shared/skill-sources/templates.md`, `shared/skills/popcorn-xp-protocol/SKILL.md` | Separate shared rules from Claude packaging |
+| `skills/popcorn-xp-protocol/SKILL.md` | `shared/skill-sources/README.md`, `shared/skill-sources/templates.md`, `shared/skills/popcorn-xp-protocol/SKILL.md` | Separate shared rules from Claude packaging |
 | `skills/popcorn-xp/SKILL.md` | `platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md` | Lead workflow (file-bus) |
 | `skills/popcorn-xp-team/SKILL.md` | `platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md` | Lead workflow (Agent Teams) |
 | `hooks/hooks.json` | `platforms/claude/popcorn-xp/hooks/hooks.json`, `popcorn-xp-team/hooks/hooks.json` | Claude lifecycle enforcement (split by transport) |

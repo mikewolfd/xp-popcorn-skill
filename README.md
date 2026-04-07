@@ -87,7 +87,7 @@ Append-only `.popcorn-xp/context-store.log` records who touched which paths and 
 
 ## Paired tasks
 
-Split work into **pairs**: a drive task and a matching navigate task so the board shows pairing. Navigators stay with the driver through the cycle and finish when satisfied. The lead skill spells out assignments; see [shared/skill-sources/templates.md](./shared/skill-sources/templates.md) and [shared/skill-sources/core.md](./shared/skill-sources/core.md).
+Split work into **pairs**: a drive task and a matching navigate task so the board shows pairing. Navigators stay with the driver through the cycle and finish when satisfied. The lead skill spells out assignments; see [shared/skill-sources/templates.md](./shared/skill-sources/templates.md) and [shared/skill-sources/README.md](./shared/skill-sources/README.md).
 
 ---
 
@@ -152,7 +152,7 @@ Bash 4+ only. Covers hook exit codes, advice gates, idle and shutdown behavior, 
 ```
 popcorn-xp/
 ├── shared/runtime/bin/session    # Session CLI
-├── shared/skill-sources/core.md        # Transport-agnostic protocol
+├── shared/skill-sources/README.md        # Transport-agnostic protocol
 ├── shared/skill-sources/templates.md   # Lead-facing prompts and spawn templates
 ├── platforms/claude/popcorn-xp/   # Claude plugin (default / file-bus)
 ├── platforms/claude/popcorn-xp-team/ # Claude plugin (Agent Teams)
@@ -213,7 +213,7 @@ Draws on Claude Code **Agent Teams** and **Coordinator Mode**, with a **subagent
 | Lead workflow (file-bus / subagent) | [platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md](./platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md) |
 | Lead workflow (Agent Teams) | [platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md](./platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md) |
 | Teammate rules, advice format, task bus | [shared/skills/popcorn-xp-protocol/SKILL.md](./shared/skills/popcorn-xp-protocol/SKILL.md) |
-| Long-form prompts and shared core notes | [shared/skill-sources/templates.md](./shared/skill-sources/templates.md), [shared/skill-sources/core.md](./shared/skill-sources/core.md) |
+| Long-form prompts and shared core notes | [shared/skill-sources/templates.md](./shared/skill-sources/templates.md), [shared/skill-sources/README.md](./shared/skill-sources/README.md) |
 | System design, hook tables, folder map | [docs/architecture/architecture.md](./docs/architecture/architecture.md) |
 | Dual-mode proposal, Codex companion, repo layout | [docs/architecture/dual-mode-proposal.md](./docs/architecture/dual-mode-proposal.md), [docs/architecture/dual-mode-codex-companion.md](./docs/architecture/dual-mode-codex-companion.md), [docs/architecture/repo-structure-refactor.md](./docs/architecture/repo-structure-refactor.md) |
 | Living backlog | [docs/guides/backlog.md](./docs/guides/backlog.md) |

@@ -130,7 +130,7 @@ Regression tests: **`CX-*`** cases in [`tests/test-hooks.sh`](../../tests/test-h
 ## References
 
 - [dual-mode-proposal.md](./dual-mode-proposal.md) — full product proposal.
-- [shared/skill-sources/core.md](../../shared/skill-sources/core.md) and [shared/skill-sources/templates.md](../../shared/skill-sources/templates.md) — long-form teammate templates (shared core + mode-specific addenda); mirror this layering in Codex-packaged skills.
+- [shared/skill-sources/README.md](../../shared/skill-sources/README.md) and [shared/skill-sources/templates.md](../../shared/skill-sources/templates.md) — long-form teammate templates (shared core + mode-specific addenda); mirror this layering in Codex-packaged skills.
 - `research/official/codex/subagents.md` — subagents and custom agents.
 - `research/official/codex/hooks.md` — hook events and limitations.
 - `research/official/codex/config.md` — `features.multi_agent`, `features.codex_hooks`, and other keys.
