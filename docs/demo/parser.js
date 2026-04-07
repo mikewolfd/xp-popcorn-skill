@@ -382,6 +382,145 @@ export function parseRuntimeMode(text) {
   return trimmed === "team" ? "team" : "subagent";
 }
 
+/**
+ * Parse context-store.log — append-only log of EDIT/READ events.
+ *
+ * Log line format (fixed-width columns, space-padded):
+ *   HH:MM:SS  EVENT      AGENT                        SHORT_FILE                     (detail)
+ *
+ * Fields are whitespace-separated; detail is the parenthesised last token.
+ * We parse loosely: split on whitespace, treat col[0] as time, col[1] as event,
+ * col[2] as agent, col[3] as file, and anything in parens at the end as detail.
+ *
+ * Returns an array of log entry objects:
+ *   { time, event, agent, file, detail }
+ */
+export function parseContextStore(text) {
+  if (!text) return [];
+
+  const entries = [];
+  // Match: TIME  EVENT  AGENT  FILE  (optional detail in parens)
+  const lineRe = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+\(([^)]*)\))?/;
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const match = line.match(lineRe);
+    if (!match) continue;
+    entries.push({
+      time: match[1],
+      event: match[2].toUpperCase(),
+      agent: match[3],
+      file: match[4],
+      detail: match[5] || null,
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Parse .closed.json — session close marker.
+ *
+ * Shape: { closed_at, runtime_mode, close_check_skipped }
+ * Returns the parsed object or null on failure.
+ */
+export function parseClosedJson(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse .checkpoint-cursor — numeric line count position.
+ *
+ * Written by `session log` in team mode; contains a single integer.
+ * Returns the number or null if absent/unparseable.
+ */
+export function parseCheckpointCursor(text) {
+  if (!text) return null;
+  const n = parseInt(text.trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Parse .active-driver.json — JSON object identifying the current driver.
+ *
+ * Shape: { task_id, agent }
+ * Returns the parsed object or null on failure.
+ */
+export function parseActiveDriver(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse a per-agent retro submission file (.retro-{agent}.md).
+ *
+ * Returns the trimmed markdown text, or null if absent.
+ */
+export function parseRetroSubmission(text) {
+  if (!text) return null;
+  return text.trim() || null;
+}
+
+/**
+ * Parse a handoff document (handoff-{agent}.md).
+ *
+ * Returns the trimmed markdown text, or null if absent.
+ */
+export function parseHandoff(text) {
+  if (!text) return null;
+  return text.trim() || null;
+}
+
+/**
+ * Parse a snapshot document (snapshot-{agent}.md).
+ *
+ * Returns the trimmed markdown text, or null if absent.
+ */
+export function parseSnapshot(text) {
+  if (!text) return null;
+  return text.trim() || null;
+}
+
+/**
+ * Parse a .compact-pending-{agent}.json file.
+ *
+ * Shape: { agent, trigger, transcript_path, created_at, state }
+ * Returns the parsed object or null on failure.
+ */
+export function parseCompactPending(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse a .compact-stop-{agent}.json file.
+ *
+ * Shape: { agent, trigger, task_id, phase, created_at, summary_log }
+ * Returns the parsed object or null on failure.
+ */
+export function parseCompactStop(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Task discovery ──────────────────────────────────────────────────────────
 
 /**
@@ -414,6 +553,72 @@ function discoverAgentStateFiles(fileMap) {
   return names;
 }
 
+/**
+ * Discover all .retro-{agent}.md files.
+ * Returns [{ key, agent }] where agent is the name extracted from the filename.
+ */
+function discoverRetroSubmissions(fileMap) {
+  const results = [];
+  const retroRe = /^\.retro-(.+)\.md$/i;
+  for (const key of fileMap.keys()) {
+    const match = key.match(retroRe);
+    if (match) results.push({ key, agent: match[1] });
+  }
+  return results;
+}
+
+/**
+ * Discover all handoff-{agent}.md files.
+ */
+function discoverHandoffs(fileMap) {
+  const results = [];
+  const handoffRe = /^handoff-(.+)\.md$/i;
+  for (const key of fileMap.keys()) {
+    const match = key.match(handoffRe);
+    if (match) results.push({ key, agent: match[1] });
+  }
+  return results;
+}
+
+/**
+ * Discover all snapshot-{agent}.md files.
+ */
+function discoverSnapshots(fileMap) {
+  const results = [];
+  const snapshotRe = /^snapshot-(.+)\.md$/i;
+  for (const key of fileMap.keys()) {
+    const match = key.match(snapshotRe);
+    if (match) results.push({ key, agent: match[1] });
+  }
+  return results;
+}
+
+/**
+ * Discover all .compact-pending-{agent}.json files.
+ */
+function discoverCompactPending(fileMap) {
+  const results = [];
+  const re = /^\.compact-pending-(.+)\.json$/i;
+  for (const key of fileMap.keys()) {
+    const match = key.match(re);
+    if (match) results.push({ key, agent: match[1] });
+  }
+  return results;
+}
+
+/**
+ * Discover all .compact-stop-{agent}.json files.
+ */
+function discoverCompactStop(fileMap) {
+  const results = [];
+  const re = /^\.compact-stop-(.+)\.json$/i;
+  for (const key of fileMap.keys()) {
+    const match = key.match(re);
+    if (match) results.push({ key, agent: match[1] });
+  }
+  return results;
+}
+
 // ─── Main entry point ────────────────────────────────────────────────────────
 
 /**
@@ -424,7 +629,7 @@ function discoverAgentStateFiles(fileMap) {
  *
  * SessionData shape:
  * {
- *   teamName: string,          // derived from the root folder name
+ *   teamName: string,            // derived from the root folder name
  *   runtimeMode: "subagent"|"team",
  *   events: Event[],
  *   tasks: {
@@ -437,8 +642,28 @@ function discoverAgentStateFiles(fileMap) {
  *   log: LogSection[],
  *   retro: RetroData | null,
  *   agentStates: { [agentName]: AgentState },
- *   loadedAt: string,          // ISO timestamp
- *   errors: string[],          // non-fatal parse warnings
+ *
+ *   // Signal files
+ *   retroRequested: boolean,     // true when .retro-requested exists
+ *   shutdown: boolean,           // true when .shutdown exists
+ *   checkpointCursor: number|null,  // numeric position from .checkpoint-cursor
+ *   activeDriver: ActiveDriver|null, // parsed .active-driver.json
+ *   closed: ClosedData|null,     // parsed .closed.json (present when session is closed)
+ *
+ *   // Per-agent documents (keyed by agent name)
+ *   retroSubmissions: { [agentName]: string },  // .retro-{agent}.md
+ *   handoffs: { [agentName]: string },          // handoff-{agent}.md
+ *   snapshots: { [agentName]: string },         // snapshot-{agent}.md
+ *
+ *   // Compaction signals (keyed by agent name)
+ *   compactPending: { [agentName]: CompactPending },   // .compact-pending-{agent}.json
+ *   compactStop: { [agentName]: CompactStop },         // .compact-stop-{agent}.json
+ *
+ *   // Context store
+ *   contextStore: ContextStoreEntry[],  // parsed context-store.log
+ *
+ *   loadedAt: string,            // ISO timestamp
+ *   errors: string[],            // non-fatal parse warnings
  * }
  */
 export async function parseSessionFolder(fileList) {
@@ -467,23 +692,33 @@ export async function parseSessionFolder(fileList) {
     logText,
     retroText,
     runtimeModeText,
+    contextStoreText,
+    closedJsonText,
+    checkpointCursorText,
+    activeDriverText,
   ] = await Promise.all([
     read("events.jsonl"),
     read("ADVICE.md"),
     read("LOG.md"),
     read("RETRO.md"),
     read(".runtime-mode"),
+    read("context-store.log"),
+    read(".closed.json"),
+    read(".checkpoint-cursor"),
+    read(".active-driver.json"),
   ]);
+
+  // Signal files that are boolean presence indicators (exist = true)
+  const retroRequested = fileMap.has(".retro-requested");
+  const shutdown = fileMap.has(".shutdown");
 
   // Tasks
   const taskIds = discoverTaskIds(fileMap);
   const tasks = {};
   await Promise.all(
     taskIds.map(async (id) => {
-      const lc = id.toLowerCase();
       const [metaText, chatText] = await Promise.all([
         read(`tasks/${id}/meta.json`),
-        // Task IDs in the file system may be mixed case; try both
         read(`tasks/${id}/back-forth.md`),
       ]);
 
@@ -515,6 +750,75 @@ export async function parseSessionFolder(fileList) {
     }),
   );
 
+  // Per-agent retro submissions (.retro-{agent}.md)
+  const retroSubmissionFiles = discoverRetroSubmissions(fileMap);
+  const retroSubmissions = {};
+  await Promise.all(
+    retroSubmissionFiles.map(async ({ key, agent }) => {
+      const text = await read(key);
+      const submission = parseRetroSubmission(text);
+      if (submission !== null) {
+        retroSubmissions[agent] = submission;
+      }
+    }),
+  );
+
+  // Handoff documents (handoff-{agent}.md)
+  const handoffFiles = discoverHandoffs(fileMap);
+  const handoffs = {};
+  await Promise.all(
+    handoffFiles.map(async ({ key, agent }) => {
+      const text = await read(key);
+      const doc = parseHandoff(text);
+      if (doc !== null) {
+        handoffs[agent] = doc;
+      }
+    }),
+  );
+
+  // Snapshot documents (snapshot-{agent}.md)
+  const snapshotFiles = discoverSnapshots(fileMap);
+  const snapshots = {};
+  await Promise.all(
+    snapshotFiles.map(async ({ key, agent }) => {
+      const text = await read(key);
+      const doc = parseSnapshot(text);
+      if (doc !== null) {
+        snapshots[agent] = doc;
+      }
+    }),
+  );
+
+  // Compact pending signals (.compact-pending-{agent}.json)
+  const compactPendingFiles = discoverCompactPending(fileMap);
+  const compactPending = {};
+  await Promise.all(
+    compactPendingFiles.map(async ({ key, agent }) => {
+      const text = await read(key);
+      const data = parseCompactPending(text);
+      if (data) {
+        compactPending[agent] = data;
+      } else {
+        errors.push(`Could not parse ${key}`);
+      }
+    }),
+  );
+
+  // Compact stop signals (.compact-stop-{agent}.json)
+  const compactStopFiles = discoverCompactStop(fileMap);
+  const compactStop = {};
+  await Promise.all(
+    compactStopFiles.map(async ({ key, agent }) => {
+      const text = await read(key);
+      const data = parseCompactStop(text);
+      if (data) {
+        compactStop[agent] = data;
+      } else {
+        errors.push(`Could not parse ${key}`);
+      }
+    }),
+  );
+
   const { events, skipped: eventsSkipped } = parseEventsJsonl(eventsText);
   if (eventsSkipped > 0) {
     errors.push(`events.jsonl: skipped ${eventsSkipped} malformed line${eventsSkipped !== 1 ? "s" : ""}`);
@@ -529,6 +833,26 @@ export async function parseSessionFolder(fileList) {
     log: parseLog(logText),
     retro: parseRetro(retroText),
     agentStates,
+
+    // Signal files
+    retroRequested,
+    shutdown,
+    checkpointCursor: parseCheckpointCursor(checkpointCursorText),
+    activeDriver: parseActiveDriver(activeDriverText),
+    closed: parseClosedJson(closedJsonText),
+
+    // Per-agent documents
+    retroSubmissions,
+    handoffs,
+    snapshots,
+
+    // Compaction signals
+    compactPending,
+    compactStop,
+
+    // Context store
+    contextStore: parseContextStore(contextStoreText),
+
     loadedAt: new Date().toISOString(),
     errors,
   };
