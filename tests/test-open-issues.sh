@@ -5,7 +5,7 @@ set -euo pipefail
 # Runs hook scripts with crafted inputs to prove or disprove each issue.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/platforms/shared/hooks/scripts"
+HOOKS_DIR="$SCRIPT_DIR/shared/hooks/scripts"
 
 hook_resolve() {
   local script="$1" d
@@ -111,7 +111,7 @@ run_hook_stdin() {
 TMPDIR_ROOT=$(mktemp -d)
 TEAM="test-team"
 POPCORN="$TMPDIR_ROOT/.popcorn-xp"
-AGENTS_DIR="$SCRIPT_DIR/platforms/shared/agents"
+AGENTS_DIR="$SCRIPT_DIR/shared/agents"
 
 setup_session() {
   rm -rf "$POPCORN"
@@ -209,7 +209,7 @@ echo "--- AA9: Protocol references in agent bodies ---"
 
 AA9_COUNT=0
 for agent_file in "$AGENTS_DIR"/*.md; do
-  if grep -q 'shared/protocol/' "$agent_file"; then
+  if grep -q 'shared/skill-sources/' "$agent_file"; then
     AA9_COUNT=$((AA9_COUNT + 1))
   fi
 done

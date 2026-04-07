@@ -12,7 +12,7 @@ set -euo pipefail
 # Requires: bash 4+, no other dependencies
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/platforms/shared/hooks/scripts"
+HOOKS_DIR="$SCRIPT_DIR/shared/hooks/scripts"
 BIN_DIR="$SCRIPT_DIR/shared/runtime/bin"
 FIXTURES_DIR="$SCRIPT_DIR/tests/fixtures"
 
@@ -816,31 +816,31 @@ echo "--- V45: write set path normalization ---"
 
 # Relative path in write set matches absolute incoming file_path
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/shared/hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["shared/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/shared/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/shared/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 relative write set matches absolute path" 0 "$LAST_RC"
 
 # Absolute path in write set still matches absolute incoming path (no regression)
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/platforms/shared/hooks/scripts/bar.sh"'"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["'"$TMPDIR_ROOT/shared/hooks/scripts/bar.sh"'"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/shared/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/shared/hooks/scripts/bar.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 absolute write set matches absolute path" 0 "$LAST_RC"
 
 # File not in write set is still blocked
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["platforms/shared/hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["shared/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/shared/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/shared/hooks/scripts/other.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 file outside write set is blocked" 2 "$LAST_RC"
 assert_stderr_contains "V45 outside write set message" "outside the declared write set" "$LAST_STDERR"
 
 # dot-slash prefix in write set matches absolute path (V45-dot-prefix fix)
 setup_session
-write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./platforms/shared/hooks/scripts/foo.sh"]'
+write_state "craftsman" "driver" "driving" "9" "" "Implement feature" false "" "" '["./shared/hooks/scripts/foo.sh"]'
 run_hook_stdin "context-store-mark-dirty.sh" \
-  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/platforms/shared/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
+  '{"tool_input":{"file_path":"'"$TMPDIR_ROOT/shared/hooks/scripts/foo.sh"'"},"agent_type":"popcorn-xp:craftsman"}'
 assert_exit "V45 dot-slash write set matches absolute path" 0 "$LAST_RC"
 
 # ============================================================

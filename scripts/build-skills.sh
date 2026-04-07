@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # Regenerate Claude and Codex SKILL.md files from shared sources.
-# - popcorn-xp-protocol: header + shared/protocol/teammate/*.md
-# - popcorn-xp / popcorn-xp-team: fragments under shared/protocol/lead-playbook/
-# - Codex lead popcorn-xp: fragments under shared/protocol/codex-lead/
+# - popcorn-xp-protocol: header + shared/skill-sources/teammate/*.md
+# - popcorn-xp / popcorn-xp-team: fragments under shared/skill-sources/lead-playbook/
+# - Codex lead popcorn-xp: fragments under shared/skill-sources/codex-lead/
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FRAG="$REPO_ROOT/shared/protocol/lead-playbook"
-TM_FRAG="$REPO_ROOT/shared/protocol/teammate"
-CX_LEAD="$REPO_ROOT/shared/protocol/codex-lead"
-PROTO_OUT_CLAUDE="$REPO_ROOT/platforms/shared/skills/popcorn-xp-protocol/SKILL.md"
-PROTO_OUT_CODEX_CORE="$REPO_ROOT/platforms/codex/subagent/skills/popcorn-xp-protocol-core/SKILL.md"
-PROTO_OUT_CODEX_SUBAGENT="$REPO_ROOT/platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/SKILL.md"
+FRAG="$REPO_ROOT/shared/skill-sources/lead-playbook"
+TM_FRAG="$REPO_ROOT/shared/skill-sources/teammate"
+CX_LEAD="$REPO_ROOT/shared/skill-sources/codex-lead"
+PROTO_OUT_SHARED="$REPO_ROOT/shared/skills/popcorn-xp-protocol/SKILL.md"
+PROTO_OUT_TEAM="$REPO_ROOT/platforms/claude/popcorn-xp-team/skills/popcorn-xp-protocol/SKILL.md"
 PROTO_OUT_CODEX_LEAD="$REPO_ROOT/platforms/codex/subagent/skills/popcorn-xp/SKILL.md"
 
 subst_agents_pkg() {
@@ -19,24 +18,53 @@ subst_agents_pkg() {
   sed "s/__AGENTS_PKG__/${pkg}/g"
 }
 
-build_protocol_skill_claude() {
+build_protocol_skill_shared() {
   local tmp
   tmp="$(mktemp)"
   {
     cat << 'EOF'
 ---
 name: popcorn-xp-protocol
-description: Popcorn XP pair-programming protocol — core rules, advice lifecycle, session file formats, and integration notes for teammates in an XP session. Auto-loaded into popcorn-xp agents via the skills field. Native agents from other plugins should invoke this skill as their first action to load the protocol.
+description: Popcorn XP pair-programming protocol — core rules, advice lifecycle, session file formats, and subagent transport for teammates in an XP session. Auto-loaded into popcorn-xp agents via the skills field. Native agents from other plugins should invoke this skill as their first action to load the protocol.
+---
+
+# Popcorn XP Protocol
+
+**Popcorn-xp** agent definitions auto-load this skill via the `skills` field. **Native agents** from other plugins should invoke `Skill('popcorn-xp-protocol')` as their first action. **Codex** agents load the same skill via `[[skills.config]]`.
+
+- **`shared/skill-sources/core.md`** — short transport-agnostic summary.
+- **`shared/skill-sources/templates.md`** — long teammate prompt snippets for the lead.
+
+The body below is the **teammate playbook** (built from fragments in **`shared/skill-sources/teammate/`**). It covers **core rules** and **subagent transport**. Agent Teams (**team**) transport is only in the `popcorn-xp-team` plugin variant.
+
+EOF
+    cat "$TM_FRAG/intro.md"
+    printf '\n'
+    cat "$TM_FRAG/common.md"
+    printf '\n'
+    cat "$TM_FRAG/subagent.md"
+  } >"$tmp"
+  mv "$tmp" "$PROTO_OUT_SHARED"
+}
+
+build_protocol_skill_team() {
+  local tmp
+  tmp="$(mktemp)"
+  {
+    cat << 'EOF'
+---
+name: popcorn-xp-protocol
+description: Popcorn XP pair-programming protocol — core rules, advice lifecycle, session file formats, subagent and Agent Teams transports for teammates in an XP session. Auto-loaded into popcorn-xp agents via the skills field.
 ---
 
 # Popcorn XP Protocol
 
 **Popcorn-xp** agent definitions auto-load this skill via the `skills` field. **Native agents** from other plugins should invoke `Skill('popcorn-xp-protocol')` as their first action.
 
-- **`shared/protocol/core.md`** — short transport-agnostic summary.
-- **`shared/protocol/templates.md`** — long teammate prompt snippets for the lead.
+- **`shared/skill-sources/core.md`** — short transport-agnostic summary.
+- **`shared/skill-sources/templates.md`** — long teammate prompt snippets for the lead.
 
-The body below is the **teammate playbook** (built from fragments in **`shared/protocol/teammate/`**).
+The body below is the **teammate playbook** (built from fragments in **`shared/skill-sources/teammate/`**). This variant includes both **subagent** and **Agent Teams (team)** transports.
 
 EOF
     cat "$TM_FRAG/intro.md"
@@ -47,59 +75,7 @@ EOF
     printf '\n'
     cat "$TM_FRAG/team.md"
   } >"$tmp"
-  mv "$tmp" "$PROTO_OUT_CLAUDE"
-}
-
-build_protocol_skill_codex_core() {
-  local tmp
-  tmp="$(mktemp)"
-  {
-    cat << 'EOF'
----
-name: popcorn-xp-protocol-core
-description: Popcorn XP shared core for Codex — advice types, file boundaries, state, pairing intent. Use with popcorn-xp-protocol-subagent when runtime is subagent/file-bus. Does not cover SendMessage or Agent Teams (team transport lives in the Claude plugin skill).
----
-
-# Popcorn XP — protocol core (transport-agnostic)
-
-Load **`popcorn-xp-protocol-subagent`** next when `.popcorn-xp/{team}/.runtime-mode` is **`subagent`** (default on Codex). This vendored bundle includes **core + subagent** skills only. Full teammate playbook (including Claude **team** mode) is built from **`shared/protocol/teammate/`** into **`platforms/shared/skills/popcorn-xp-protocol/SKILL.md`** in this repo — run **`scripts/build-skills.sh`** after edits.
-
-EOF
-    cat "$TM_FRAG/common.md"
-  } >"$tmp"
-  mv "$tmp" "$PROTO_OUT_CODEX_CORE"
-}
-
-build_protocol_skill_codex_subagent() {
-  local tmp
-  tmp="$(mktemp)"
-  {
-    cat << 'EOF'
----
-name: popcorn-xp-protocol-subagent
-description: Popcorn XP subagent/file-bus transport for Codex — task-init, task-claim, task chat, cursors, close-check, session health. Requires popcorn-xp-protocol-core. Use when .runtime-mode is subagent.
----
-
-# Popcorn XP — subagent transport (Codex-aligned)
-
-**Prerequisite:** `popcorn-xp-protocol-core`. Set once per session:
-
-```bash
-printf '%s\n' subagent > .popcorn-xp/{team}/.runtime-mode
-```
-
-EOF
-    cat "$TM_FRAG/subagent.md"
-    printf '\n'
-    cat << 'EOF'
-## Reference
-
-- `docs/architecture/dual-mode-codex-companion.md` — Codex vs Claude mapping.
-- `docs/architecture/dual-mode-proposal.md` — full product shape.
-- `shared/protocol/templates.md` — long teammate prompt templates.
-EOF
-  } >"$tmp"
-  mv "$tmp" "$PROTO_OUT_CODEX_SUBAGENT"
+  mv "$tmp" "$PROTO_OUT_TEAM"
 }
 
 build_codex_lead_skill() {
@@ -213,16 +189,14 @@ build_lead_team() {
   mv "$tmp" "$out"
 }
 
-build_protocol_skill_claude
-build_protocol_skill_codex_core
-build_protocol_skill_codex_subagent
+build_protocol_skill_shared
+build_protocol_skill_team
 build_codex_lead_skill
 build_lead_subagent
 build_lead_team
 
-echo "OK: $PROTO_OUT_CLAUDE"
-echo "OK: $PROTO_OUT_CODEX_CORE"
-echo "OK: $PROTO_OUT_CODEX_SUBAGENT"
+echo "OK: $PROTO_OUT_SHARED"
+echo "OK: $PROTO_OUT_TEAM"
 echo "OK: $PROTO_OUT_CODEX_LEAD"
 echo "OK: $REPO_ROOT/platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md"
 echo "OK: $REPO_ROOT/platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md"

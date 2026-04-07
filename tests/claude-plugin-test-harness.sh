@@ -159,13 +159,12 @@ if [[ -x "$REPO_ROOT/scripts/build-skills.sh" ]]; then
     log_failure "scripts/build-skills.sh failed"
     add_result "build_skills" "failed" "build-skills.sh exit nonzero"
   else
-    # All outputs of scripts/build-skills.sh (3 Claude + 3 Codex); keep in sync when adding targets.
+    # All outputs of scripts/build-skills.sh; keep in sync when adding targets.
     SKILL_SYNC=(
       "platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md"
       "platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md"
-      "platforms/shared/skills/popcorn-xp-protocol/SKILL.md"
-      "platforms/codex/subagent/skills/popcorn-xp-protocol-core/SKILL.md"
-      "platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/SKILL.md"
+      "platforms/claude/popcorn-xp-team/skills/popcorn-xp-protocol/SKILL.md"
+      "shared/skills/popcorn-xp-protocol/SKILL.md"
       "platforms/codex/subagent/skills/popcorn-xp/SKILL.md"
     )
     if git -C "$REPO_ROOT" diff --quiet -- "${SKILL_SYNC[@]}" 2>/dev/null; then

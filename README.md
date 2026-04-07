@@ -87,13 +87,13 @@ Append-only `.popcorn-xp/context-store.log` records who touched which paths and 
 
 ## Paired tasks
 
-Split work into **pairs**: a drive task and a matching navigate task so the board shows pairing. Navigators stay with the driver through the cycle and finish when satisfied. The lead skill spells out assignments; see [shared/protocol/templates.md](./shared/protocol/templates.md) and [shared/protocol/core.md](./shared/protocol/core.md).
+Split work into **pairs**: a drive task and a matching navigate task so the board shows pairing. Navigators stay with the driver through the cycle and finish when satisfied. The lead skill spells out assignments; see [shared/skill-sources/templates.md](./shared/skill-sources/templates.md) and [shared/skill-sources/core.md](./shared/skill-sources/core.md).
 
 ---
 
 ## Agent personas
 
-Teammates live under [`platforms/shared/agents/`](./platforms/shared/agents/) as Markdown with YAML frontmatter (symlinked into each Claude plugin). Labels such as **scout**, **craftsman**, and **tester** name a *lens*, not a fixed seat. After rotation, any persona can drive or navigate.
+Teammates live under [`shared/agents/`](./shared/agents/) as Markdown with YAML frontmatter (symlinked into each Claude plugin). Labels such as **scout**, **craftsman**, and **tester** name a *lens*, not a fixed seat. After rotation, any persona can drive or navigate.
 
 ---
 
@@ -131,7 +131,7 @@ Teammates defined outside this source tree still need **popcorn-xp-protocol** (s
 npx skills add /path/to/popcorn-xp/platforms/codex/subagent --agent codex --skill '*' --yes
 ```
 
-Use a **Git URL with `tree/<branch>/platforms/codex/subagent`** when you are not using a local clone. Skills land in **`.agents/skills/`** as **`popcorn-xp`**, **`popcorn-xp-protocol-core`**, and **`popcorn-xp-protocol-subagent`**, matching **`.codex/agents/*.toml`**.
+Use a **Git URL with `tree/<branch>/platforms/codex/subagent`** when you are not using a local clone. Skills land in **`.agents/skills/`** as **`popcorn-xp`** and **`popcorn-xp-protocol`**, matching **`[[skills.config]]`** paths in **`.codex/agents/*.toml`**.
 
 1. **Hooks and agents** — if **this repo is your project root**, run **`./install/codex/generate.sh`**. Otherwise copy **`platforms/codex/subagent/manifests/*`** and **`platforms/codex/subagent/agents/*.toml`** into your project’s **`.codex/`**. Vendor **`shared/runtime/`** and hook dependencies as in [platforms/codex/subagent/README.md](./platforms/codex/subagent/README.md).
 
@@ -152,11 +152,11 @@ Bash 4+ only. Covers hook exit codes, advice gates, idle and shutdown behavior, 
 ```
 popcorn-xp/
 ├── shared/runtime/bin/session    # Session CLI
-├── shared/protocol/core.md        # Transport-agnostic protocol
-├── shared/protocol/templates.md   # Lead-facing prompts and spawn templates
+├── shared/skill-sources/core.md        # Transport-agnostic protocol
+├── shared/skill-sources/templates.md   # Lead-facing prompts and spawn templates
 ├── platforms/claude/popcorn-xp/   # Claude plugin (default / file-bus)
 ├── platforms/claude/popcorn-xp-team/ # Claude plugin (Agent Teams)
-├── platforms/shared/       # Shared hook scripts + agents + protocol skill
+├── shared/       # Shared hook scripts + agents + protocol skill
 ├── platforms/codex/subagent/      # Codex source tree
 ├── install/codex/generate.sh      # Writes .codex/ from platforms/codex/subagent/
 ├── docs/architecture/             # Active design + dual-mode docs
@@ -212,8 +212,8 @@ Draws on Claude Code **Agent Teams** and **Coordinator Mode**, with a **subagent
 |-------|--------|
 | Lead workflow (file-bus / subagent) | [platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md](./platforms/claude/popcorn-xp/skills/popcorn-xp/SKILL.md) |
 | Lead workflow (Agent Teams) | [platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md](./platforms/claude/popcorn-xp-team/skills/popcorn-xp-team/SKILL.md) |
-| Teammate rules, advice format, task bus | [platforms/shared/skills/popcorn-xp-protocol/SKILL.md](./platforms/shared/skills/popcorn-xp-protocol/SKILL.md) |
-| Long-form prompts and shared core notes | [shared/protocol/templates.md](./shared/protocol/templates.md), [shared/protocol/core.md](./shared/protocol/core.md) |
+| Teammate rules, advice format, task bus | [shared/skills/popcorn-xp-protocol/SKILL.md](./shared/skills/popcorn-xp-protocol/SKILL.md) |
+| Long-form prompts and shared core notes | [shared/skill-sources/templates.md](./shared/skill-sources/templates.md), [shared/skill-sources/core.md](./shared/skill-sources/core.md) |
 | System design, hook tables, folder map | [docs/architecture/architecture.md](./docs/architecture/architecture.md) |
 | Dual-mode proposal, Codex companion, repo layout | [docs/architecture/dual-mode-proposal.md](./docs/architecture/dual-mode-proposal.md), [docs/architecture/dual-mode-codex-companion.md](./docs/architecture/dual-mode-codex-companion.md), [docs/architecture/repo-structure-refactor.md](./docs/architecture/repo-structure-refactor.md) |
 | Living backlog | [docs/guides/backlog.md](./docs/guides/backlog.md) |

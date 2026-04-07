@@ -3,16 +3,12 @@ description = "Popcorn XP navigator: read-ahead, READY artifacts, typed advice, 
 developer_instructions = """
 You are the Popcorn XP **navigator** on Codex (subagent mode).
 
-1. Load **popcorn-xp-protocol-core** then **popcorn-xp-protocol-subagent** (see [[skills.config]]).
+1. Load the **popcorn-xp-protocol** skill (see [[skills.config]]).
 2. Publish READY via `session ready`; move to `waiting_on_driver` with `session state`.
 3. After reading new lines in `tasks/T{n}/back-forth.md`, run `session cursor-ack` so Stop/idle semantics stay accurate.
 4. Log all typed advice to ADVICE.md via `session advice`.
 """
 
 [[skills.config]]
-path = ".agents/skills/popcorn-xp-protocol-core"
-enabled = true
-
-[[skills.config]]
-path = ".agents/skills/popcorn-xp-protocol-subagent"
+path = ".agents/skills/popcorn-xp-protocol"
 enabled = true

@@ -69,7 +69,7 @@ Popcorn XP has **one product model** (pairing, typed advice, durable files) and 
 
    - **B — One protocol with two top-level sections:** a single `SKILL.md`-style doc headed **Team transport** and **Subagent transport**, with shared core above or inlined once. Easier for a single `skills.config` pointer, slightly easier to skim wrong if sections blur together.
 
-   In the Claude repo, the long-form templates live in `shared/protocol/templates.md` (shared + mode-specific addenda); the auto-loaded teammate skill is `platforms/shared/skills/popcorn-xp-protocol/SKILL.md`. A Codex port should **mirror that shape**: either two small skills under `skills.config` or one skill with two clear sections — not interleaved “subagent:” footnotes on every bullet.
+   In the Claude repo, the long-form templates live in `shared/skill-sources/templates.md` (shared + mode-specific addenda); the auto-loaded teammate skill is `shared/skills/popcorn-xp-protocol/SKILL.md`. A Codex port should **mirror that shape**: either two small skills under `skills.config` or one skill with two clear sections — not interleaved “subagent:” footnotes on every bullet.
 
 4. **Reference implementation stays bash-first.** `shared/runtime/bin/session` and hook scripts are the contract; prompts only **describe** how to call them. Codex uses the same shared shell logic — it does not redefine closeout or advice semantics in prose.
 
@@ -102,7 +102,7 @@ Typical check-in pattern for a project that runs Popcorn XP on Codex:
 - `.codex/hooks.json` — `SessionStart` / `Stop` (and optional `PreToolUse` / `PostToolUse` only if you have a concrete, narrow policy).
 - `.codex/agents/*.toml` — driver, navigator, advisor (or mapped names). Prefer **short** `developer_instructions` that point at one or two packaged skills/files (**shared core** + **subagent transport**), per [Skills and prompts: layer transport, don’t fork the product](#skills-and-prompts-layer-transport-dont-fork-the-product) — avoid pasting divergent full protocols into three TOML files.
 
-Popcorn XP’s Claude trees (`platforms/claude/popcorn-xp-team/`, `platforms/shared/hooks/scripts/{advice,team,lifecycle}/`) remain the source for **team mode** and **reference hook scripts**; a Codex port **reuses or adapts shell logic** and **does not assume** the same hook event names or tool matchers.
+Popcorn XP’s Claude trees (`platforms/claude/popcorn-xp-team/`, `shared/hooks/scripts/{advice,team,lifecycle}/`) remain the source for **team mode** and **reference hook scripts**; a Codex port **reuses or adapts shell logic** and **does not assume** the same hook event names or tool matchers.
 
 ### Reference layout in this repository (implemented)
 
@@ -112,10 +112,9 @@ The popcorn-xp repo ships a **copy-paste / merge** layout you can drop into anot
 |------|---------|
 | [`.codex/config.toml`](../../.codex/config.toml) | Enables `codex_hooks`, sets `[agents]` defaults |
 | [`.codex/hooks.json`](../../.codex/hooks.json) | `SessionStart` → [`platforms/codex/subagent/hooks/codex-session-start.sh`](../../platforms/codex/subagent/hooks/codex-session-start.sh); `Stop` → [`platforms/codex/subagent/hooks/codex-stop-advice.sh`](../../platforms/codex/subagent/hooks/codex-stop-advice.sh) |
-| [`platforms/codex/subagent/skills/popcorn-xp-protocol-core/`](../../platforms/codex/subagent/skills/popcorn-xp-protocol-core/SKILL.md) | Layer A — shared core |
-| [`platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/`](../../platforms/codex/subagent/skills/popcorn-xp-protocol-subagent/SKILL.md) | Layer B — subagent transport |
-| [`platforms/codex/subagent/skills/popcorn-xp/SKILL.md`](../../platforms/codex/subagent/skills/popcorn-xp/SKILL.md) | Codex lead playbook (**source:** [`shared/protocol/codex-lead/`](../../shared/protocol/codex-lead/README.md), **`scripts/build-skills.sh`**) |
-| [`.codex/agents/`](../../.codex/agents/) | Example agents with `[[skills.config]]` (lead + protocol layers) |
+| [`platforms/codex/subagent/skills/popcorn-xp-protocol/`](../../shared/skills/popcorn-xp-protocol/SKILL.md) | Teammate protocol — core rules + subagent transport (symlink to `shared/`) |
+| [`platforms/codex/subagent/skills/popcorn-xp/SKILL.md`](../../platforms/codex/subagent/skills/popcorn-xp/SKILL.md) | Codex lead playbook (**source:** [`shared/skill-sources/codex-lead/`](../../shared/skill-sources/codex-lead/README.md), **`scripts/build-skills.sh`**) |
+| [`.codex/agents/`](../../.codex/agents/) | Example agents with `[[skills.config]]` (lead + protocol) |
 | [`platforms/codex/subagent/README.md`](../../platforms/codex/subagent/README.md) | Install notes and assumptions |
 
 Hook **commands** in `hooks.json` use `$(git rev-parse --show-toplevel)` so the path resolves from the **current shell cwd** when Codex expands the command. **Inside** the hook handlers, stdin **`cwd`** (often a repo **subdirectory**) is mapped to **`CLAUDE_PROJECT_DIR`** via **`git -C "$cwd" rev-parse --show-toplevel`**, with fallback to **`cwd`** when not in a git work tree — so **`.popcorn-xp`** is found at the **repository root** even when the session cwd is nested. Vendor [`shared/runtime/lib/resolve-project-dir.sh`](../../shared/runtime/lib/resolve-project-dir.sh) alongside the other shared runtime helpers; **`shared/runtime/bin/session`** uses the same resolver when **`CLAUDE_PROJECT_DIR`** is unset.
@@ -131,7 +130,7 @@ Regression tests: **`CX-*`** cases in [`tests/test-hooks.sh`](../../tests/test-h
 ## References
 
 - [dual-mode-proposal.md](./dual-mode-proposal.md) — full product proposal.
-- [shared/protocol/core.md](../../shared/protocol/core.md) and [shared/protocol/templates.md](../../shared/protocol/templates.md) — long-form teammate templates (shared core + mode-specific addenda); mirror this layering in Codex-packaged skills.
+- [shared/skill-sources/core.md](../../shared/skill-sources/core.md) and [shared/skill-sources/templates.md](../../shared/skill-sources/templates.md) — long-form teammate templates (shared core + mode-specific addenda); mirror this layering in Codex-packaged skills.
 - `research/official/codex/subagents.md` — subagents and custom agents.
 - `research/official/codex/hooks.md` — hook events and limitations.
 - `research/official/codex/config.md` — `features.multi_agent`, `features.codex_hooks`, and other keys.

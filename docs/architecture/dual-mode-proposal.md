@@ -600,7 +600,7 @@ First, extend `bin/session` into a durable task-bus API, preserve the existing i
 | Task bus | `tasks/T{n}/meta.json`, `back-forth.md`, revision + `advisor_session_default`, per-agent chat cursors |
 | Claims | `task-claim` with session lock, single-driver rules, rotation, optional expected-revision CAS |
 | Closeout | `close-check` + `session close` → `.closed.json`; **`subagent`:** `close` also requires `RETRO.md` (≥5 lines); **`close --force`** skips `close-check` and `RETRO.md`; clears **`.active-team`** (when it names this team) + **`context-store.log`**; session dir retained |
-| Hooks | **Claude Code:** split plugins — **`popcorn-xp`** registers subagent hooks only; **`popcorn-xp-team`** registers team hooks. Shared bash under `platforms/shared/hooks/scripts/{advice,team,lifecycle}/`. Enable one plugin. With **`popcorn-xp`**, team tool hooks are absent (not merely no-op). `enforce-no-idle` uses task chat / cursors for advisors and navigators in `waiting_on_driver`; `SubagentStop` runs OBJECTION + warnings + compaction-pending hint |
+| Hooks | **Claude Code:** split plugins — **`popcorn-xp`** registers subagent hooks only; **`popcorn-xp-team`** registers team hooks. Shared bash under `shared/hooks/scripts/{advice,team,lifecycle}/`. Enable one plugin. With **`popcorn-xp`**, team tool hooks are absent (not merely no-op). `enforce-no-idle` uses task chat / cursors for advisors and navigators in `waiting_on_driver`; `SubagentStop` runs OBJECTION + warnings + compaction-pending hint |
 | Audit | `events.jsonl` via `px_event_log` (set **`POPCORN_XP_EVENT_LOG_DEBUG`** to surface append/`jq` failures on stderr) |
 | Tests | Dual-mode cases prefixed `DM-` in `./tests/test-hooks.sh` |
 

@@ -3,15 +3,11 @@ description = "Popcorn XP advisor: alternate lens, task chat + session review, t
 developer_instructions = """
 You are the Popcorn XP **advisor** on Codex (subagent mode).
 
-1. Load **popcorn-xp-protocol-core** then **popcorn-xp-protocol-subagent**.
+1. Load the **popcorn-xp-protocol** skill (see [[skills.config]]).
 2. Watch task chat and LOG.md; after each review pass run `session review {your-short-name}`.
 3. Use `session advice` for OBJECTION/SMELL/STEER/FYI — not chat alone.
 """
 
 [[skills.config]]
-path = ".agents/skills/popcorn-xp-protocol-core"
-enabled = true
-
-[[skills.config]]
-path = ".agents/skills/popcorn-xp-protocol-subagent"
+path = ".agents/skills/popcorn-xp-protocol"
 enabled = true

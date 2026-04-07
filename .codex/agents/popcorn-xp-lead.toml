@@ -16,9 +16,5 @@ path = ".agents/skills/popcorn-xp"
 enabled = true
 
 [[skills.config]]
-path = ".agents/skills/popcorn-xp-protocol-core"
-enabled = true
-
-[[skills.config]]
-path = ".agents/skills/popcorn-xp-protocol-subagent"
+path = ".agents/skills/popcorn-xp-protocol"
 enabled = true

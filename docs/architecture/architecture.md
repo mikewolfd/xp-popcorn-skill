@@ -111,7 +111,7 @@ Auto-loaded into every popcorn-xp agent via the `skills` field. Contains:
 
 ## Hooks
 
-Claude **popcorn-xp** and **popcorn-xp-team** plugins each ship a `hooks/hooks.json`; shared scripts live under `platforms/shared/hooks/scripts/` in **`advice/`**, **`team/`**, and **`lifecycle/`**. Enable only one plugin. Every hook checks for `.popcorn-xp/.active-team` first — if no session is active, it exits 0 (no-op).
+Claude **popcorn-xp** and **popcorn-xp-team** plugins each ship a `hooks/hooks.json`; shared scripts live under `shared/hooks/scripts/` in **`advice/`**, **`team/`**, and **`lifecycle/`**. Enable only one plugin. Every hook checks for `.popcorn-xp/.active-team` first — if no session is active, it exits 0 (no-op).
 
 ### Hook Inventory
 
