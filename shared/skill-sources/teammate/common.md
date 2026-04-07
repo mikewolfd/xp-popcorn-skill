@@ -160,6 +160,8 @@ REJECTED is a first-class outcome — a driver who rejects an OBJECTION with sou
 
 Session files live at `.popcorn-xp/{team-name}/`. The lead creates this directory, LOG.md, ADVICE.md, and a `session` helper script during setup. They exist before your first task starts.
 
+**Checkpoint after every file edit.** Log each edit as you go — the idle hook will block you if you have uncheckpointed edits. Do not batch edits and checkpoint later. **Batch exception:** For mechanical, repetitive edits (same pattern across multiple files), batch into one checkpoint stating what you did, how many files, and listing them. Include your agent name in log entries so interleaved checkpoints from parallel work are attributable.
+
 ### ADVICE.md Format
 
 ADVICE.md is an append-only ledger. Use the `session` script — never edit the file directly.
@@ -288,6 +290,14 @@ Before shutdown, the lead asks for retro feedback. When you receive a retro requ
 - What would you change about the rotation or task breakdown?
 
 Do NOT describe what you built or what bugs you found — that's in LOG.md. Focus on the collaboration process: pairing dynamic, advice quality, checkpoint frequency, rotation, communication friction.
+
+Keep it brief (3-5 sentences). "The OBJECTION on depth checking caught a real bug" is useful. "I completed task 3" is not — the lead already knows that from the task list.
+
+Submit your observations using the session script:
+
+```bash
+.popcorn-xp/{team-name}/session retro {your-name} 'What worked? What didn't? What would you change about the process?'
+```
 
 ## Integration Notes
 

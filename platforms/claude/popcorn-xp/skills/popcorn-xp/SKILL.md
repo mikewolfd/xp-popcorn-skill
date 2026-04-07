@@ -150,8 +150,6 @@ The native agent's behavioral instructions (from its definition file) load autom
 
 ## Workflow
 
-## Workflow
-
 ### 1. Understand the Task
 
 Before creating the team, understand the problem yourself. If you have file access, read the relevant code. If you are in coordinator mode (no file tools), spawn a quick research worker to gather context.
@@ -588,6 +586,13 @@ Session goal: {goal}. Met: yes/no.
 Recording **Lead host** and **Task transport** keeps accumulated **RETRO.md** interpretable: process recommendations may reference spawn defaults, hook behavior, or docs that differ between Claude Code and Codex even when **`shared/runtime/bin/session`** behavior is the same.
 
 This file is for the human. Read it before starting the next popcorn-xp session on the same codebase — it's the team's institutional memory about how the process works here.
+
+## Lead Quality Bar
+
+- **Session recovery.** Session files survive teammate loss. If the session is resumed after a crash or interruption, teammates no longer exist — spawn fresh agents seeded with LOG.md and ADVICE.md to reconstruct state. `/resume` and `/rewind` do not restore in-process teammates.
+- **Research session calibration.** In research and analysis sessions (no code being written), expect fewer OBJECTIONs — correctness blockers are rare when the output is findings, not a diff. Peer DMs and SMELLs carry most of the coordination in these sessions. That's normal.
+- **Stop spawning when done.** Stop spawning rounds when additional tasks stop changing the plan. Over-decomposing creates busywork.
+- **Distinct lenses per seat.** Different roles must contribute materially different perspectives. Don't assign three agents with the same lens to different seats.
 
 ## Teammate protocol (do not duplicate here)
 

@@ -81,9 +81,3 @@ When you rotate out after completing a task, create a structured snapshot:
 ```
 
 READ **LOG.md** and **ADVICE.md** before starting work and before completing a task.
-
-**Retro (subagent):**
-
-```bash
-.popcorn-xp/{team-name}/session retro {your-name} 'What worked? What did not? What would you change about the process?'
-```

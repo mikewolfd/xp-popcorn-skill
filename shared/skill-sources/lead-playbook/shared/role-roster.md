@@ -95,5 +95,3 @@ Agent(
 ```
 
 The native agent's behavioral instructions (from its definition file) load automatically via `subagent_type`. The `Skill` invocation loads the collaboration protocol. The prompt adds role assignment and task context.
-
-## Workflow
