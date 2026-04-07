@@ -2279,6 +2279,45 @@ run_session task T2
 run_session task-claim 2 craftsman driver
 assert_exit "DM-30 expert then craftsman drive is allowed" 0 "$LAST_RC"
 
+# DM-31: task-complete updates completing agent agent-state (subagent; mirrors team TaskUpdate terminal transition)
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 5
+run_session task T5
+run_session task-claim 5 alice driver
+run_session state alice driver driving 5 - 'implement feature'
+run_session writeset alice 5 docs/foo.txt
+printf '# Advice\n\n' > "$POPCORN/$TEAM/ADVICE.md"
+run_session task-complete 5 alice done 'all green'
+DM31_PHASE=$(jq -r '.phase // ""' "$POPCORN/$TEAM/agent-state/alice.json")
+DM31_ROLE=$(jq -r '.role // ""' "$POPCORN/$TEAM/agent-state/alice.json")
+DM31_TID=$(jq -r '.task_id // ""' "$POPCORN/$TEAM/agent-state/alice.json")
+DM31_WS=$(jq '(.write_set // []) | length' "$POPCORN/$TEAM/agent-state/alice.json")
+if [ "$DM31_PHASE" = "completed" ] && [ "$DM31_ROLE" = "navigator" ] && [ -z "$DM31_TID" ] && [ "${DM31_WS:-99}" -eq 0 ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-31 task-complete agent-state (phase=$DM31_PHASE role=$DM31_ROLE task_id=$DM31_TID write_set_len=$DM31_WS)"
+fi
+
+# DM-32: task-release moves releasing agent to bench and clears task_id
+setup_session
+printf '%s\n' subagent > "$POPCORN/$TEAM/.runtime-mode"
+run_session task-init 6
+run_session task T6
+run_session task-claim 6 bob driver
+run_session state bob driver driving 6 - 'work in progress'
+run_session writeset bob 6 pkg/x.txt
+run_session task-release 6 bob
+DM32_PHASE=$(jq -r '.phase // ""' "$POPCORN/$TEAM/agent-state/bob.json")
+DM32_TID=$(jq -r '.task_id // ""' "$POPCORN/$TEAM/agent-state/bob.json")
+if [ "$DM32_PHASE" = "bench" ] && [ -z "$DM32_TID" ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  ERRORS="${ERRORS}\n  FAIL: DM-32 task-release agent-state (phase=$DM32_PHASE task_id=$DM32_TID)"
+fi
+
 # ============================================================
 # CX: Codex hooks
 # ============================================================

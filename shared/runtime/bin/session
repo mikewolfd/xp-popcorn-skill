@@ -139,6 +139,63 @@ merge_state() {
   jq "$@" "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
+# Subagent mode has no PostToolUse(TaskUpdate); keep agent-state aligned when teammates use the session CLI.
+px_mark_agent_task_complete() {
+  local AGENT="${1:?}" pre_d="$2" pre_n="$3" pre_a="$4" TS="${5:?}"
+  local next_role="" ts_norm cur_tid
+  ts_norm=$(normalize_task_slug "$TS")
+  if [ "$AGENT" = "$pre_a" ]; then
+    next_role="advisor"
+  elif [ "$AGENT" = "$pre_n" ] || [ "$AGENT" = "$pre_d" ]; then
+    next_role="navigator"
+  else
+    cur_tid=$(jq -r '.task_id // ""' "$(state_file "$AGENT")" 2>/dev/null || true)
+    if [ "$(normalize_task_slug "$cur_tid")" = "$ts_norm" ]; then
+      next_role="navigator"
+    else
+      return 0
+    fi
+  fi
+  merge_state "$AGENT" "" \
+    --arg agent "$AGENT" \
+    --arg role "$next_role" \
+    --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    '.agent = $agent
+     | .role = $role
+     | .phase = "completed"
+     | .task_id = ""
+     | .blocked_on = ""
+     | .next_action = "Read the latest snapshot and advise the next driver."
+     | .navigator_ready = false
+     | .navigator_artifact_kind = ""
+     | .navigator_artifact_status = ""
+     | .write_set = []
+     | .updated_at = $updated_at'
+}
+
+px_mark_agent_task_release() {
+  local AGENT="${1:?}" pre_d="$2" pre_n="$3" pre_a="$4" TS="${5:?}"
+  local ts_norm cur_tid clear_ws
+  ts_norm=$(normalize_task_slug "$TS")
+  if [ "$AGENT" != "$pre_d" ] && [ "$AGENT" != "$pre_n" ] && [ "$AGENT" != "$pre_a" ]; then
+    cur_tid=$(jq -r '.task_id // ""' "$(state_file "$AGENT")" 2>/dev/null || true)
+    if [ "$(normalize_task_slug "$cur_tid")" != "$ts_norm" ]; then
+      return 0
+    fi
+  fi
+  clear_ws=false
+  [ "$AGENT" = "$pre_d" ] && clear_ws=true
+  merge_state "$AGENT" "" \
+    --argjson clear_ws "$clear_ws" \
+    --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    '.phase = "bench"
+     | .task_id = ""
+     | .blocked_on = ""
+     | .next_action = "Released task claim; set state with session state before claiming again."
+     | .write_set = (if $clear_ws then [] else .write_set end)
+     | .updated_at = $updated_at'
+}
+
 cmd="${1:-}"; [ -z "$cmd" ] && exit 1; shift
 
 if [ -f "$DIR/.closed.json" ] && [ "$cmd" != "close" ]; then
@@ -308,6 +365,7 @@ PY
     ;;
   state)
     AGENT="${1:?}"; ROLE="${2:?}"; PHASE="${3:?}"; TASK_ID="${4:?}"; BLOCKED_ON="${5:--}"; shift 5
+    [ "$TASK_ID" = "-" ] && TASK_ID=""
     NEXT_ACTION="${*:--}"
     merge_state "$AGENT" "$TASK_ID" --arg agent "$AGENT" --arg role "$ROLE" --arg phase "$PHASE" --arg task_id "$TASK_ID" \
       --arg blocked_on "$BLOCKED_ON" --arg next_action "$NEXT_ACTION" --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
@@ -318,7 +376,8 @@ PY
        | .task_id = $task_id
        | .blocked_on = (if $blocked_on == "-" then "" else $blocked_on end)
        | .next_action = (if $next_action == "-" then "" else $next_action end)
-       | .updated_at = $updated_at'
+       | .updated_at = $updated_at
+       | (if $phase == "completed" then .navigator_ready = false | .navigator_artifact_kind = "" | .navigator_artifact_status = "" else . end)'
     ;;
   ready)
     AGENT="${1:?}"; TASK_ID="${2:?}"; KIND="${3:?}"; shift 3
@@ -588,6 +647,9 @@ PY
     META="$TD/meta.json"
     [ ! -f "$META" ] && exit 0
     px_session_acquire_lock || exit 2
+    pre_d=$(jq -r '.driver // ""' "$META")
+    pre_n=$(jq -r '.navigator // ""' "$META")
+    pre_a=$(jq -r '.advisor // ""' "$META")
     tmp="$META.tmp.$$"
     jq \
       --arg agent "$AGENT" \
@@ -611,6 +673,7 @@ PY
       fi
     fi
     px_sync_task_log_from_meta "$TID"
+    px_mark_agent_task_release "$AGENT" "$pre_d" "$pre_n" "$pre_a" "$TS"
     px_event_log task_release "$(jq -nc --arg t "$TS" --arg a "$AGENT" '{task:$t, agent:$a}')"
     px_session_release_lock
     ;;
@@ -631,6 +694,9 @@ PY
       exit 2
     fi
     px_session_acquire_lock || exit 2
+    pre_d=$(jq -r '.driver // ""' "$META")
+    pre_n=$(jq -r '.navigator // ""' "$META")
+    pre_a=$(jq -r '.advisor // ""' "$META")
     tmp="$META.tmp.$$"
     jq \
       --arg agent "$AGENT" \
@@ -654,6 +720,7 @@ PY
         rm -f "$ACTIVE_DRIVER_FILE"
       fi
     fi
+    px_mark_agent_task_complete "$AGENT" "$pre_d" "$pre_n" "$pre_a" "$TS"
     px_event_log task_complete "$(jq -nc --arg t "$TS" --arg a "$AGENT" --arg o "$OUTCOME" '{task:$t, agent:$a, outcome:$o}')"
     px_session_release_lock
     printf '\n### Task complete\nTask %s by @%s — %s %s\n' "$TS" "$AGENT" "$OUTCOME" "$NOTE" >> "$DIR/LOG.md"
