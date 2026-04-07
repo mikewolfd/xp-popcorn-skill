@@ -57,7 +57,12 @@
 
     <div class="page-shell" id="page-shell" hidden aria-hidden="true">
 
-      <!-- Session hero / overview -->
+      <!--
+        Session hero / overview — 2-column grid.
+        Left column (.hero-story): team name, summary, runtime mode, metrics.
+        Right column (.hero-agents aside): agent roster cards.
+        Both are direct children of .hero so the CSS grid-template-columns applies.
+      -->
       <header class="hero" id="sec-overview">
         <div class="hero-story">
           <p class="eyebrow">Popcorn XP / Session viewer</p>
@@ -81,17 +86,69 @@
       <div class="viewer-layout">
         <nav class="sidebar-nav" aria-label="Section navigation">
           <ul class="nav-list">
-            <li><a class="nav-link" href="#sec-overview" data-section="sec-overview">Overview</a></li>
-            <li><a class="nav-link" href="#sec-health" data-section="sec-health">Health</a></li>
-            <li><a class="nav-link" href="#sec-events" data-section="sec-events">Events</a></li>
-            <li><a class="nav-link" href="#sec-tasks" data-section="sec-tasks">Tasks</a></li>
-            <li><a class="nav-link" href="#sec-advice" data-section="sec-advice">Advice</a></li>
-            <li><a class="nav-link" href="#sec-log" data-section="sec-log">Log</a></li>
-            <li><a class="nav-link" href="#sec-retro" data-section="sec-retro">Retro</a></li>
+            <li><a class="nav-link" href="#sec-overview"  data-section="sec-overview">Overview</a></li>
+            <li><a class="nav-link" href="#sec-lifecycle" data-section="sec-lifecycle">Lifecycle</a></li>
+            <li><a class="nav-link" href="#sec-health"    data-section="sec-health">Health</a></li>
+            <li><a class="nav-link" href="#sec-events"    data-section="sec-events">Events</a></li>
+            <li><a class="nav-link" href="#sec-context"   data-section="sec-context">Context</a></li>
+            <li><a class="nav-link" href="#sec-tasks"     data-section="sec-tasks">Tasks</a></li>
+            <li><a class="nav-link" href="#sec-advice"    data-section="sec-advice">Advice</a></li>
+            <li><a class="nav-link" href="#sec-log"       data-section="sec-log">Log</a></li>
+            <li><a class="nav-link" href="#sec-retro"     data-section="sec-retro">Retro</a></li>
+            <li><a class="nav-link" href="#sec-agent-docs" data-section="sec-agent-docs">Agent Docs</a></li>
           </ul>
         </nav>
 
         <main class="viewer-content">
+
+          <!-- Session lifecycle — signal files, active driver, closed state -->
+          <section class="content-section" id="sec-lifecycle" aria-labelledby="lifecycle-title">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="section-kicker">Signal files</p>
+                <h2 id="lifecycle-title">Session lifecycle</h2>
+              </div>
+            </div>
+            <!--
+              lifecycle-state: single derived state badge (open / active / retro-pending /
+              shutdown / closed). app.js sets textContent and a data-state attribute.
+            -->
+            <div class="lifecycle-status" id="lifecycle-status">
+              <span class="lifecycle-state-label">State</span>
+              <span class="lifecycle-state-badge" id="lifecycle-state-badge">—</span>
+            </div>
+            <!--
+              lifecycle-signals: individual signal indicators.
+              Each indicator has a data-active attribute set by app.js (true/false).
+            -->
+            <div class="lifecycle-signals" id="lifecycle-signals">
+              <!-- Active driver -->
+              <div class="lifecycle-signal" id="lifecycle-active-driver">
+                <span class="signal-label">Active driver</span>
+                <span class="signal-value" id="lifecycle-active-driver-value">—</span>
+              </div>
+              <!-- Retro requested -->
+              <div class="lifecycle-signal" id="lifecycle-retro-requested">
+                <span class="signal-label">Retro requested</span>
+                <span class="signal-indicator" id="lifecycle-retro-indicator" aria-label="Retro not requested">off</span>
+              </div>
+              <!-- Shutdown signal -->
+              <div class="lifecycle-signal" id="lifecycle-shutdown">
+                <span class="signal-label">Shutdown signal</span>
+                <span class="signal-indicator" id="lifecycle-shutdown-indicator" aria-label="No shutdown signal">off</span>
+              </div>
+              <!-- Checkpoint cursor (team mode) -->
+              <div class="lifecycle-signal" id="lifecycle-checkpoint-cursor">
+                <span class="signal-label">Checkpoint cursor</span>
+                <span class="signal-value" id="lifecycle-checkpoint-cursor-value">—</span>
+              </div>
+              <!-- Closed timestamp -->
+              <div class="lifecycle-signal" id="lifecycle-closed">
+                <span class="signal-label">Closed at</span>
+                <span class="signal-value" id="lifecycle-closed-value">—</span>
+              </div>
+            </div>
+          </section>
 
           <!-- Health dashboard -->
           <section class="content-section health-stage" id="sec-health" aria-labelledby="health-title">
@@ -121,6 +178,29 @@
             <button class="show-more-btn" id="events-show-more" hidden type="button">Show more</button>
           </section>
 
+          <!-- Context store -->
+          <section class="content-section" id="sec-context" aria-labelledby="context-title">
+            <div class="stage-head">
+              <div>
+                <p class="section-kicker">Cross-agent file awareness</p>
+                <h2 id="context-title">Context store</h2>
+              </div>
+              <!--
+                context-store-filters: filter chips for agent and event type.
+                app.js populates these based on unique agents and event types in contextStore[].
+              -->
+              <div class="events-filters" id="context-store-filters" role="group" aria-label="Filter context store entries"></div>
+            </div>
+            <!--
+              context-store-table: container for the entries table.
+              app.js renders a <table> or list into this element.
+              Columns: time, event, agent, file, detail.
+            -->
+            <div class="context-store-table" id="context-store-table">
+              <div class="empty-state">No context store entries loaded.</div>
+            </div>
+          </section>
+
           <!-- Task board -->
           <section class="content-section" id="sec-tasks" aria-labelledby="tasks-title">
             <div class="section-head section-head-tight">
@@ -129,6 +209,14 @@
                 <h2 id="tasks-title">Tasks</h2>
               </div>
             </div>
+            <!--
+              task-board: app.js renders task cards here.
+              Each card has id="task-{id}" and contains:
+                - Status badge (.task-status)
+                - Role display (driver, navigator, advisor)
+                - Write set (.task-write-set) — from meta.json write_set array
+                - Chat thread (expandable <details>)
+            -->
             <div class="task-board" id="task-board">
               <div class="empty-state">No tasks loaded.</div>
             </div>
@@ -171,6 +259,28 @@
             </div>
             <div class="retro-viewer" id="retro-viewer">
               <div class="empty-state">No retro loaded.</div>
+            </div>
+          </section>
+
+          <!-- Agent documents — per-agent retro submissions, handoffs, snapshots, compact signals -->
+          <section class="content-section" id="sec-agent-docs" aria-labelledby="agent-docs-title">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="section-kicker">Per-agent artifacts</p>
+                <h2 id="agent-docs-title">Agent documents</h2>
+              </div>
+            </div>
+            <!--
+              agent-docs-grid: app.js renders one card per agent that has any document.
+              Each agent card contains sub-sections for:
+                - Retro submission (.retro-{agent}.md)
+                - Handoff document (handoff-{agent}.md)
+                - Snapshot document (snapshot-{agent}.md)
+                - Compact pending (.compact-pending-{agent}.json)
+                - Compact stop (.compact-stop-{agent}.json)
+            -->
+            <div class="agent-docs-grid" id="agent-docs-grid">
+              <div class="empty-state">No agent documents loaded.</div>
             </div>
           </section>
 
